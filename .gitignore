@@ -1,0 +1,16 @@
+.gradle/
+build/
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+.vscode/
+.env
+local/.env.local
+bin/
+.doc/
+.DS_Store
+out/
+hs_err_pid*.log
+*.hprof

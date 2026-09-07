@@ -1,0 +1,120 @@
+fail_fast: true
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  # 🔒 security
+  - repo: local
+    hooks:
+      - id: trufflehog-working-tree
+        name: "🔒 security · Scan working tree with TruffleHog"
+        language: system
+        entry: ./bin/trufflehog filesystem --exclude-paths local/trufflehog-exclude-paths.txt --results=verified,unknown,unverified --fail .
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: trufflehog-git-history
+        name: "🔒 security · Scan pushed history with TruffleHog"
+        language: system
+        entry: bash -c './bin/trufflehog git file://. --since-commit HEAD --results=verified,unknown --fail --trust-local-git-config'
+        pass_filenames: false
+        stages: [pre-push]
+      - id: gitleaks
+        name: "🔒 security · Scan staged secrets with Gitleaks"
+        language: system
+        entry: ./bin/gitleaks protect --staged --redact --verbose
+        pass_filenames: false
+        stages: [pre-commit]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+        name: "🔒 security · Detect private keys"
+
+  # ☕ java
+  - repo: local
+    hooks:
+      - id: spotless-apply
+        name: "☕ java · Format and stage"
+        language: system
+        entry: bash -c 'outpost/gradlew -p outpost spotlessApply && git add -- "$@"' --
+        types: [java]
+      - id: checkstyle
+        name: "☕ java · Check style"
+        language: system
+        entry: ./outpost/gradlew -p outpost checkstyleMain checkstyleTest
+        pass_filenames: false
+      - id: build
+        name: "☕ java · Build"
+        language: system
+        entry: ./outpost/gradlew -p outpost build
+        pass_filenames: false
+
+  # 🗂 files
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: "🗂 files · Trim trailing whitespace"
+      - id: end-of-file-fixer
+        name: "🗂 files · Fix end of files"
+      - id: check-merge-conflict
+        name: "🗂 files · Check merge conflicts"
+      - id: check-added-large-files
+        name: "🗂 files · Check added file size"
+      - id: check-yaml
+        name: "🗂 files · Validate YAML"
+      - id: check-json
+        name: "🗂 files · Validate JSON"
+      - id: pretty-format-json
+        name: "🗂 files · Format JSON"
+        args: [--autofix, --no-sort-keys, --indent=2]
+
+  # 📝 markdown
+  - repo: https://github.com/hukkin/mdformat
+    rev: 0.7.22
+    hooks:
+      - id: mdformat
+        name: "📝 markdown · Format Markdown"
+        additional_dependencies: [mdformat-gfm]
+
+  # 🐚 shell
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        name: "🐚 shell · Check shell scripts"
+  - repo: https://github.com/openstack/bashate
+    rev: 2.1.1
+    hooks:
+      - id: bashate
+        name: "🐚 shell · Check shell style"
+        language: python
+        files: ^local/.*\.sh$
+
+  # 🔨 make
+  - repo: https://github.com/checkmake/checkmake
+    rev: v0.3.2
+    hooks:
+      - id: checkmake
+        name: "🔨 make · Check Makefiles"
+
+  # 🗄 sql
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.2.2
+    hooks:
+      - id: sqlfluff-fix
+        name: "🗄 sql · Format PostgreSQL"
+        args: [--dialect, postgres]
+      - id: sqlfluff-lint
+        name: "🗄 sql · Lint PostgreSQL"
+        args: [--dialect, postgres]
+
+  # 🌳 git
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        name: "🌳 git · Protect the default branch"
+        args: [--branch, main]
+
+  # 💬 commit message
+  # Commit message enforcement is deferred until the convention is selected.

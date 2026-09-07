@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            bin/
+          key: ${{ runner.os }}-tooling-${{ hashFiles('local/setup.sh', 'outpost/gradle/wrapper/gradle-wrapper.properties') }}
+      - run: python3 -m pip install pre-commit
+      - run: ./local/setup.sh
+      - run: pre-commit run --all-files
+      - run: ./outpost/gradlew -p outpost build
