@@ -6,10 +6,11 @@ build/
 .classpath
 .settings/
 .vscode/
+.worktrees/
 .env
 local/.env.local
 bin/
-.doc/
+.docs
 .DS_Store
 out/
 hs_err_pid*.log

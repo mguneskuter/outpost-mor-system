@@ -37,7 +37,13 @@ Security hooks block private keys and likely secrets. TruffleHog scans the worki
 
 Formatting hooks re-stage their changes before the commit continues. Validation and security violations block the commit until corrected.
 
-`make precommit` skips only the branch-protection hook because this repository is checked out on `main`; direct commits still run that hook and are blocked.
+`make precommit` skips only the branch-protection hook. That hook protects local
+commits and is not a content check, so repository-wide verification and CI must
+not run it. Direct commits on `main` still run the hook and are blocked.
+
+CI runs for pull requests targeting `main` and for pushes to `main`. Pull-request
+CI is the merge gate. The post-merge `main` run is a regression signal and cannot
+retroactively block a merge that has already completed.
 
 In an emergency, skip hooks with `git commit --no-verify`. Use this only when the change is independently verified and follow up immediately, because it bypasses formatting, static analysis, and secret scanning.
 
@@ -45,14 +51,47 @@ In an emergency, skip hooks with `git commit --no-verify`. Use this only when th
 
 `main` is the integration branch. Do not commit directly to it.
 
-1. Update `main` and make uncommitted changes there.
-1. Move those changes to an MR branch with `git switch -c mr/<topic>`.
-1. Commit and push the MR branch for review.
-1. After approval, update the MR branch with `git fetch origin` and `git rebase origin/main`.
-1. Force-push the rebased MR branch with `git push --force-with-lease` if its review branch already exists.
-1. Fast-forward `main` with `git switch main` followed by `git merge --ff-only mr/<topic>`, then push `main`.
+1. Update the integration branch with `git switch main` followed by
+   `git pull --ff-only`.
+1. Create `mr/<topic>` before staging or committing. Uncommitted work already on
+   `main` moves with `git switch -c mr/<topic>`.
+1. Verify the change with `make precommit`, then create exactly one commit ahead
+   of `origin/main`. If necessary, squash local implementation commits before
+   the first push.
+1. Confirm the invariant with
+   `git rev-list --count origin/main..HEAD`; it must print `1`.
+1. Push the MR branch for review, then immediately return locally to `main`.
+1. Open the pull request. Do not integrate it until review is approved and the
+   `CI / verify` status check passes.
+1. Before integration, run `git fetch origin`, rebase the MR branch onto
+   `origin/main`, verify it still has exactly one commit, and rerun
+   `make precommit`.
+1. If the already-pushed branch changed during rebase, update it only with
+   `git push --force-with-lease`, then immediately return locally to `main`.
+1. After the rebased commit is approved and green, integrate it locally with
+   `git switch main` followed by `git merge --ff-only mr/<topic>`. Push `main`
+   only with explicit authorization.
 
-The repository permits rebase merges only and local Git rejects non-fast-forward merges.
+Never commit directly to `main`, create a merge commit, rebase `main`, or bypass
+the configured hooks. The current private repository plan does not support
+required status checks. Until the repository is public or its plan is upgraded,
+the maintainer must verify `CI / verify` succeeded before integration; the
+workflow file alone cannot enforce that gate.
+
+### Parallel work
+
+Run completely independent tasks concurrently in separate Git worktrees. Use
+one `mr/<topic>` branch and one worktree per task; never let two tasks share a
+branch or working directory. Keep worktrees under the gitignored `.worktrees/`
+directory, start each from a base containing all declared dependencies, and run
+the repository build before making changes so baseline failures are visible.
+Recreate the ignored `.docs` symlink in each worktree with the same target as the
+primary checkout so its task specification remains available.
+
+Do not parallelize tasks that modify the same files, define an interface the
+other consumes, require ordered migrations, or otherwise depend on each other's
+output. Rebase and integrate each completed MR through the workflow above, then
+remove only clean worktrees whose branches have been integrated.
 
 ## Layout
 
