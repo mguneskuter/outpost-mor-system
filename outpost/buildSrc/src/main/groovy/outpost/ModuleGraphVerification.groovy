@@ -30,7 +30,9 @@ class ModuleGraphVerification {
         rootProject.allprojects.findAll { it.path != ':' }.each { project ->
             project.configurations.each { configuration ->
                 configuration.dependencies.findAll { it instanceof ProjectDependency }.each { dependency ->
-                    actualDependencies[project.path] << dependency.path
+                    if (project.path != dependency.path) {
+                        actualDependencies[project.path] << dependency.path
+                    }
                 }
             }
         }
@@ -56,6 +58,9 @@ class ModuleGraphVerification {
             actualDependencies[domainPath].each { dependencyPath ->
                 if (ModuleGraphSpec.DEPLOYABLE_PROJECT_PATHS.contains(dependencyPath)) {
                     errors << "Domain module depends on deployable: ${ModuleGraphSpec.edge(domainPath, dependencyPath)}"
+                }
+                if (ModuleGraphSpec.PERSISTENCE_FRAMEWORK_PATHS.contains(dependencyPath)) {
+                    errors << "Domain module depends on persistence framework: ${ModuleGraphSpec.edge(domainPath, dependencyPath)}"
                 }
                 if (domainPath != ':payment' && dependencyPath == ':payment') {
                     errors << "Domain module other than payment depends on payment: ${ModuleGraphSpec.edge(domainPath, dependencyPath)}"

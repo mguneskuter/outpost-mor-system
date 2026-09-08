@@ -1,0 +1,51 @@
+plugins {
+    id 'outpost.java-conventions'
+    id 'java-library'
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    api 'org.springframework.boot:spring-boot-starter-jdbc'
+    api 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
+    implementation 'org.postgresql:postgresql'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    testFixturesImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testFixturesImplementation 'org.testcontainers:testcontainers-postgresql'
+}
+
+configurations {
+    testFixturesImplementation {
+        extendsFrom implementation
+    }
+}
+
+sourceSets {
+    test {
+        compileClasspath += sourceSets.testFixtures.output
+        runtimeClasspath += sourceSets.testFixtures.output
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
+}
+
+tasks.register('migrate', JavaExec) {
+    group = 'verification'
+    description = 'Explicitly runs Flyway against the configured database. Never invoked from application startup.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.outpost.persistence.flyway.FlywayCli'
+    systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
+    args(
+        providers.gradleProperty('outpostDbUrl').orElse('jdbc:postgresql://localhost:5432/outpost').get(),
+        providers.gradleProperty('outpostDbUsername').orElse('outpost').get(),
+        providers.gradleProperty('outpostDbPassword').getOrElse('')
+    )
+}

@@ -56,6 +56,27 @@ class ModuleGraphVerificationPluginTest {
     }
 
     @Test
+    void domainToPersistenceFrameworkEdgeFails() {
+        Map<String, Set<String>> dependencies = fixtureDependencies()
+        dependencies[':common-iso'] << ':common-persistence'
+
+        BuildResult failure = buildAndFail(dependencies)
+
+        assertTrue(failure.output.contains(
+            'Domain module depends on persistence framework: :common-iso -> :common-persistence'
+        ))
+    }
+
+    @Test
+    void deployableToPersistenceFrameworkEdgeIsAllowed() {
+        Map<String, Set<String>> dependencies = fixtureDependencies()
+
+        BuildResult result = runFixture(dependencies)
+
+        assertTrue(result.output.contains('BUILD SUCCESSFUL'))
+    }
+
+    @Test
     void deployableToDeployableEdgeFails() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
         dependencies[':outpost-api'] << ':outpost-worker'

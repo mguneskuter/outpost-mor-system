@@ -30,6 +30,20 @@ It downloads verified, pinned TruffleHog and Gitleaks binaries into `bin/`, then
 | `make build`        | Compile and run all build checks, including Error Prone. |
 | `make test`         | Run the test suite.                                      |
 | `make precommit`    | Run every content hook across repository files.          |
+| `make db-up`        | Start the local PostgreSQL 18 Compose service.           |
+| `make db-status`    | Show local database container status.                    |
+| `make db-down`      | Stop the local database; preserves the named volume.     |
+| `make migrate`      | Run Flyway migrations against the local database.        |
+
+## Persistence foundation
+
+The `outpost/common-persistence` module is the shared Spring/MyBatis/JDBC and
+PostgreSQL/Testcontainers foundation. Spring Boot creates exactly one Hikari
+datasource per deployable from that deployable's `spring.datasource.*`
+properties; the foundation supplies the shared MyBatis mapper-marker discovery,
+transaction and datasource validation conventions, Flyway tooling, and reusable
+PostgreSQL 18 Testcontainers test fixtures. It introduces no business tables,
+mappers, or data.
 
 ## Hooks
 

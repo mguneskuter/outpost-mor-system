@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    implementation project(':common-persistence')
     implementation project(':platform-sanity:static-data-check')
     implementation project(':common-iso')
     implementation project(':account-configuration')

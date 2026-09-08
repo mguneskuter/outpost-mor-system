@@ -9,6 +9,7 @@ include(
     ':platform-sanity:static-data-check',
     ':common-iso',
     ':common-payment',
+    ':common-persistence',
     ':account-configuration',
     ':merchant-configuration',
     ':accounting',
