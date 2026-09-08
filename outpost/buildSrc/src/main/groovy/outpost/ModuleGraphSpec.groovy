@@ -37,7 +37,9 @@ class ModuleGraphSpec {
         ],
         ':merchant-configuration': [
             ':platform-sanity:static-data-model',
-            ':common-iso'
+            ':common-iso',
+            ':common-payment',
+            ':account-configuration'
         ],
         ':accounting': [
             ':platform-sanity:static-data-model',
