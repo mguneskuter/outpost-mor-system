@@ -11,6 +11,7 @@ build/
 local/.env.local
 bin/
 .docs
+.agents/
 .DS_Store
 out/
 hs_err_pid*.log
