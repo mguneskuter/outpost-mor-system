@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /** The countries supported by Outpost, each owning exactly one {@link Country} value. */
@@ -44,6 +45,7 @@ public enum Countries {
               Collectors.toUnmodifiableMap(
                   constant -> constant.value().isoCode(), constant -> constant));
 
+  @SuppressWarnings("Immutable")
   private final Country value;
 
   Countries(long countryId, String isoCode, String name) {
@@ -59,5 +61,67 @@ public enum Countries {
   public static Optional<Country> fromIsoCode(String isoCode) {
     Objects.requireNonNull(isoCode, "isoCode");
     return Optional.ofNullable(BY_CODE.get(isoCode)).map(Countries::value);
+  }
+
+  /** Immutable country value owned by one {@link Countries} constant. */
+  public static final class Country {
+
+    private static final Pattern ISO_CODE = Pattern.compile("[A-Z]{2}");
+
+    private final long countryId;
+    private final String isoCode;
+    private final String name;
+
+    private Country(long countryId, String isoCode, String name) {
+      if (countryId <= 0) {
+        throw new IllegalArgumentException("countryId must be positive: " + countryId);
+      }
+      if (isoCode == null || isoCode.isBlank() || !ISO_CODE.matcher(isoCode).matches()) {
+        throw new IllegalArgumentException(
+            "isoCode must be exactly two uppercase ASCII letters: " + isoCode);
+      }
+      if (name == null || name.isBlank()) {
+        throw new IllegalArgumentException("name must not be null or blank");
+      }
+      this.countryId = countryId;
+      this.isoCode = isoCode;
+      this.name = name;
+    }
+
+    /** Returns the stable country identifier. */
+    public long countryId() {
+      return countryId;
+    }
+
+    /** Returns the exact ISO alpha-2 code. */
+    public String isoCode() {
+      return isoCode;
+    }
+
+    /** Returns the exact country name. */
+    public String name() {
+      return name;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (!(other instanceof Country that)) {
+        return false;
+      }
+      return countryId == that.countryId && isoCode.equals(that.isoCode) && name.equals(that.name);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(countryId, isoCode, name);
+    }
+
+    @Override
+    public String toString() {
+      return "Country{countryId=" + countryId + ", isoCode=" + isoCode + ", name=" + name + '}';
+    }
   }
 }
