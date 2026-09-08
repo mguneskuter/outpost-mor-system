@@ -1,14 +1,19 @@
 package com.outpost
 
 import com.diffplug.gradle.spotless.SpotlessExtension
+import net.ltgt.gradle.errorprone.ErrorProneOptions
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.plugins.quality.CheckstyleExtension
+import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 
 class JavaConventionsPlugin implements Plugin<Project> {
+    private static final String JSPECIFY_ANNOTATIONS = 'org.jspecify:jspecify:1.0.1'
+    private static final String NULLAWAY = 'com.uber.nullaway:nullaway:0.14.1'
+
     @Override
     void apply(Project project) {
         project.group = 'com.outpost'
@@ -40,6 +45,17 @@ class JavaConventionsPlugin implements Plugin<Project> {
                 'google_checks.xml'
             )
         }
+        project.dependencies.add('compileOnly', JSPECIFY_ANNOTATIONS)
+        project.dependencies.add('testCompileOnly', JSPECIFY_ANNOTATIONS)
+        project.dependencies.add('errorprone', NULLAWAY)
         project.dependencies.add('errorprone', 'com.google.errorprone:error_prone_core:2.50.0')
+
+        project.tasks.withType(JavaCompile).configureEach { task ->
+            task.options.errorprone.with {
+                error('NullAway')
+                option('NullAway:OnlyNullMarked', true)
+                error('RequireExplicitNullMarking')
+            }
+        }
     }
 }
