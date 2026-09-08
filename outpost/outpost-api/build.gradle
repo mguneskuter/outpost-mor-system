@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    implementation project(':common-persistence')
     implementation project(':platform-sanity:static-data-check')
     implementation project(':common-iso')
     implementation project(':common-payment')
@@ -11,4 +12,13 @@ dependencies {
     implementation project(':tax')
     implementation project(':payment')
     implementation project(':psp-integration')
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation testFixtures(project(':common-persistence'))
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }

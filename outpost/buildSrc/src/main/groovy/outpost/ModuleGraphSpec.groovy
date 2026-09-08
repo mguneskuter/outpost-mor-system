@@ -6,6 +6,7 @@ class ModuleGraphSpec {
         ':platform-sanity:static-data-check',
         ':common-iso',
         ':common-payment',
+        ':common-persistence',
         ':account-configuration',
         ':merchant-configuration',
         ':accounting',
@@ -31,6 +32,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-model',
             ':common-iso'
         ],
+        ':common-persistence': [],
         ':account-configuration': [
             ':platform-sanity:static-data-model',
             ':common-iso'
@@ -72,6 +74,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-check',
             ':common-iso',
             ':common-payment',
+            ':common-persistence',
             ':account-configuration',
             ':merchant-configuration',
             ':tax',
@@ -82,6 +85,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-check',
             ':common-iso',
             ':common-payment',
+            ':common-persistence',
             ':account-configuration',
             ':merchant-configuration',
             ':accounting',
@@ -91,6 +95,7 @@ class ModuleGraphSpec {
         ':outpost-worker': [
             ':platform-sanity:static-data-check',
             ':common-iso',
+            ':common-persistence',
             ':account-configuration',
             ':merchant-configuration',
             ':payment',
@@ -100,6 +105,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-check',
             ':common-iso',
             ':common-payment',
+            ':common-persistence',
             ':account-configuration',
             ':merchant-configuration',
             ':accounting',
@@ -129,6 +135,10 @@ class ModuleGraphSpec {
         ':outpost-ledger-service',
         ':outpost-worker',
         ':seed-job'
+    ] as Set
+
+    static final Set<String> PERSISTENCE_FRAMEWORK_PATHS = [
+        ':common-persistence'
     ] as Set
 
     static Set<String> expectedEdges() {
