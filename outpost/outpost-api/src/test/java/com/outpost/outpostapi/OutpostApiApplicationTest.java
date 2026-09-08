@@ -42,7 +42,7 @@ class OutpostApiApplicationTest {
 
   @Test
   void exposesNoBusinessMappersOrRepositories() {
-    assertThat(context.getBeansWithAnnotation(com.outpost.persistence.CommonMapper.class))
+    assertThat(context.getBeansWithAnnotation(com.outpost.persistence.RegisteredMapper.class))
         .isEmpty();
   }
 }

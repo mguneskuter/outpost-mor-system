@@ -1,5 +1,8 @@
 package com.outpost.persistence.testfixtures;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -7,24 +10,38 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * Reusable PostgreSQL 18 Testcontainers fixture for Outpost integration tests.
  *
- * <p>It runs a disposable PostgreSQL 18 instance in isolation and registers the standard {@code
+ * <p>It runs a disposable PostgreSQL instance in isolation and registers the standard {@code
  * spring.datasource.*} properties from it. Tests must reuse this fixture instead of connecting to a
- * developer's local Compose database.
+ * developer's local Compose database. The image is read from {@code postgresql-fixture.properties}
+ * so it stays in sync with the local Compose tag.
  */
 public final class PostgresTestDatabase {
 
+  private static final String FIXTURE_PROPERTIES = "postgresql-fixture.properties";
+  private static final String IMAGE_PROPERTY = "postgresql.image";
+  private static final String FIXTURE_DATABASE = "outpost_test";
+  private static final String FIXTURE_USERNAME = "outpost_test";
+  private static final String FIXTURE_PASSWORD = "outpost_test";
+
   private static final DockerImageName POSTGRES_18 =
-      DockerImageName.parse(
-              "postgres:18@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280")
-          .asCompatibleSubstituteFor("postgres");
+      DockerImageName.parse(fixtureImage()).asCompatibleSubstituteFor("postgres");
 
   private static final PostgreSQLContainer<?> CONTAINER =
       new PostgreSQLContainer<>(POSTGRES_18)
-          .withDatabaseName("outpost_test")
-          .withUsername("outpost_test")
-          .withPassword("outpost_test");
+          .withDatabaseName(FIXTURE_DATABASE)
+          .withUsername(FIXTURE_USERNAME)
+          .withPassword(FIXTURE_PASSWORD);
 
   private PostgresTestDatabase() {}
+
+  /** Creates a fresh disposable PostgreSQL container from the shared fixture image. */
+  public static PostgreSQLContainer<?> startContainer(
+      String databaseName, String username, String password) {
+    return new PostgreSQLContainer<>(POSTGRES_18)
+        .withDatabaseName(databaseName)
+        .withUsername(username)
+        .withPassword(password);
+  }
 
   /** Registers datasource properties from the shared Testcontainers PostgreSQL instance. */
   public static void registerDataSourceProperties(DynamicPropertyRegistry registry) {
@@ -40,5 +57,23 @@ public final class PostgresTestDatabase {
     if (!CONTAINER.isRunning()) {
       CONTAINER.start();
     }
+  }
+
+  private static String fixtureImage() {
+    Properties properties = new Properties();
+    try (InputStream stream =
+        PostgresTestDatabase.class.getClassLoader().getResourceAsStream(FIXTURE_PROPERTIES)) {
+      if (stream == null) {
+        throw new IllegalStateException("Missing test fixture resource: " + FIXTURE_PROPERTIES);
+      }
+      properties.load(stream);
+    } catch (IOException exception) {
+      throw new IllegalStateException("Could not load " + FIXTURE_PROPERTIES, exception);
+    }
+    String image = properties.getProperty(IMAGE_PROPERTY);
+    if (image == null || image.isEmpty()) {
+      throw new IllegalStateException("Missing '" + IMAGE_PROPERTY + "' in " + FIXTURE_PROPERTIES);
+    }
+    return image;
   }
 }

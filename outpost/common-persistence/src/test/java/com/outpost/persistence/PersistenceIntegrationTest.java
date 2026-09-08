@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.outpost.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.persistence.testservices.TestMapper;
+import com.outpost.persistence.testservices.TestXmlMapper;
 import com.outpost.persistence.testservices.TransactionalTestService;
 import com.outpost.persistence.testservices.UnmarkedMapper;
 import com.zaxxer.hikari.HikariDataSource;
@@ -21,6 +22,7 @@ class PersistenceIntegrationTest {
   private final ApplicationContext context;
   private final DataSource dataSource;
   private final TestMapper testMapper;
+  private final TestXmlMapper testXmlMapper;
   private final TransactionalTestService transactionalTestService;
 
   @Autowired
@@ -28,10 +30,12 @@ class PersistenceIntegrationTest {
       ApplicationContext context,
       DataSource dataSource,
       TestMapper testMapper,
+      TestXmlMapper testXmlMapper,
       TransactionalTestService transactionalTestService) {
     this.context = context;
     this.dataSource = dataSource;
     this.testMapper = testMapper;
+    this.testXmlMapper = testXmlMapper;
     this.transactionalTestService = transactionalTestService;
   }
 
@@ -59,6 +63,11 @@ class PersistenceIntegrationTest {
   void executesQueryViaMyBatisAndParticipatesInSpringTransaction() {
     assertThat(testMapper.one()).isEqualTo(1);
     assertThat(transactionalTestService.runsInTransactionAndQueries()).isTrue();
+  }
+
+  @Test
+  void loadsHandcraftedXmlMapperFromDbMapperFolder() {
+    assertThat(testXmlMapper.oneViaXml()).isEqualTo(1);
   }
 
   @Test
