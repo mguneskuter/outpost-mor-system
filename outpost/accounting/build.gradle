@@ -5,7 +5,15 @@ plugins {
 dependencies {
     implementation project(':platform-sanity:static-data-model')
     implementation project(':common-iso')
+    implementation project(':common-payment')
+    implementation project(':account-configuration')
     implementation project(':merchant-configuration')
     implementation project(':tax')
     implementation project(':fx')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }

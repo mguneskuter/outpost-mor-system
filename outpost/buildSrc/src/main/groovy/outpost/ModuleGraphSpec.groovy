@@ -46,6 +46,8 @@ class ModuleGraphSpec {
         ':accounting': [
             ':platform-sanity:static-data-model',
             ':common-iso',
+            ':common-payment',
+            ':account-configuration',
             ':merchant-configuration',
             ':tax',
             ':fx'
