@@ -16,11 +16,11 @@ import org.jspecify.annotations.Nullable;
  */
 public final class Account {
 
-  private static final Map<AccountType, Set<AccountType>> ALLOWED_CHILDREN_TYPES =
-      buildAllowedChildrenTypes();
+  private static final Map<AccountTypes.AccountType, Set<AccountTypes.AccountType>>
+      ALLOWED_CHILDREN_TYPES = buildAllowedChildrenTypes();
 
   private final long accountId;
-  private final AccountType accountType;
+  private final AccountTypes.AccountType accountType;
   private final String code;
   private final String name;
   private final boolean active;
@@ -30,7 +30,7 @@ public final class Account {
 
   private Account(
       long accountId,
-      AccountType accountType,
+      AccountTypes.AccountType accountType,
       String code,
       String name,
       boolean active,
@@ -69,7 +69,7 @@ public final class Account {
    */
   public static Account of(
       long accountId,
-      AccountType accountType,
+      AccountTypes.AccountType accountType,
       String code,
       String name,
       boolean active,
@@ -103,7 +103,7 @@ public final class Account {
   }
 
   /** Returns the account's immutable type. */
-  public AccountType accountType() {
+  public AccountTypes.AccountType accountType() {
     return accountType;
   }
 
@@ -144,7 +144,7 @@ public final class Account {
     return Collections.unmodifiableList(childAccounts);
   }
 
-  private boolean allowedChildAccountType(AccountType childType) {
+  private boolean allowedChildAccountType(AccountTypes.AccountType childType) {
     return isAllowedChildrenType(accountType, childType);
   }
 
@@ -185,11 +185,13 @@ public final class Account {
         + '}';
   }
 
-  private static boolean isAllowedChildrenType(AccountType parentType, AccountType childType) {
+  private static boolean isAllowedChildrenType(
+      AccountTypes.AccountType parentType, AccountTypes.AccountType childType) {
     return ALLOWED_CHILDREN_TYPES.getOrDefault(parentType, Set.of()).contains(childType);
   }
 
-  private static Map<AccountType, Set<AccountType>> buildAllowedChildrenTypes() {
+  private static Map<AccountTypes.AccountType, Set<AccountTypes.AccountType>>
+      buildAllowedChildrenTypes() {
     return Map.of(
         AccountTypes.ROOT.value(),
             Set.of(

@@ -1,0 +1,5 @@
+# Deliberately narrow linked-worktree bootstrap allowlist.
+# git-worktreeinclude copies only entries that are also ignored by Git.
+# Do not add .env, local/.env.local, credentials, caches, or mutable agent state.
+/bin/trufflehog
+/bin/gitleaks

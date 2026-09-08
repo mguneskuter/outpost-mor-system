@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /** The United States subdivisions supported by Outpost, each owning exactly one value. */
@@ -66,6 +67,7 @@ public enum CountrySubdivisions {
               Collectors.toUnmodifiableMap(
                   constant -> constant.value().code(), constant -> constant));
 
+  @SuppressWarnings("Immutable")
   private final CountrySubdivision value;
 
   CountrySubdivisions(long countrySubdivisionId, String code, String name) {
@@ -82,5 +84,93 @@ public enum CountrySubdivisions {
   public static Optional<CountrySubdivision> fromCode(String code) {
     Objects.requireNonNull(code, "code");
     return Optional.ofNullable(BY_CODE.get(code)).map(CountrySubdivisions::value);
+  }
+
+  /** Immutable subdivision value owned by one {@link CountrySubdivisions} constant. */
+  public static final class CountrySubdivision {
+
+    private static final Pattern CODE = Pattern.compile("[A-Z]{2}-[A-Z0-9]+");
+
+    private final long countrySubdivisionId;
+    private final Countries.Country country;
+    private final String code;
+    private final String name;
+
+    private CountrySubdivision(
+        long countrySubdivisionId, Countries.Country country, String code, String name) {
+      if (countrySubdivisionId <= 0) {
+        throw new IllegalArgumentException(
+            "countrySubdivisionId must be positive: " + countrySubdivisionId);
+      }
+      if (country == null) {
+        throw new IllegalArgumentException("country must not be null");
+      }
+      if (code == null
+          || code.isBlank()
+          || !CODE.matcher(code).matches()
+          || !code.startsWith(country.isoCode())) {
+        throw new IllegalArgumentException(
+            "code must be an uppercase ISO 3166-2 shape for its country: " + code);
+      }
+      if (name == null || name.isBlank()) {
+        throw new IllegalArgumentException("name must not be null or blank");
+      }
+      this.countrySubdivisionId = countrySubdivisionId;
+      this.country = country;
+      this.code = code;
+      this.name = name;
+    }
+
+    /** Returns the stable subdivision identifier. */
+    public long countrySubdivisionId() {
+      return countrySubdivisionId;
+    }
+
+    /** Returns the owning country. */
+    public Countries.Country country() {
+      return country;
+    }
+
+    /** Returns the exact ISO 3166-2 code. */
+    public String code() {
+      return code;
+    }
+
+    /** Returns the exact subdivision name. */
+    public String name() {
+      return name;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (!(other instanceof CountrySubdivision that)) {
+        return false;
+      }
+      return countrySubdivisionId == that.countrySubdivisionId
+          && country.equals(that.country)
+          && code.equals(that.code)
+          && name.equals(that.name);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(countrySubdivisionId, country, code, name);
+    }
+
+    @Override
+    public String toString() {
+      return "CountrySubdivision{countrySubdivisionId="
+          + countrySubdivisionId
+          + ", country="
+          + country
+          + ", code="
+          + code
+          + ", name="
+          + name
+          + '}';
+    }
   }
 }
