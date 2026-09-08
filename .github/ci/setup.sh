@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 require_command() {
     local command_name="$1"
@@ -15,10 +15,7 @@ require_command() {
     fi
 }
 
-require_command python3 'Install Python 3 from https://www.python.org/downloads/'
-require_command pre-commit 'python3 -m pip install --user pre-commit'
+require_command python3 'python3 -m pip install pre-commit'
+require_command pre-commit 'python3 -m pip install pre-commit'
 
 "${repository_root}/.github/ci/install-security-tools.sh"
-
-cd "${repository_root}"
-pre-commit install --install-hooks

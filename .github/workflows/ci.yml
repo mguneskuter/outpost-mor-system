@@ -18,8 +18,8 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             bin/
-          key: ${{ runner.os }}-tooling-${{ hashFiles('local/setup.sh', 'outpost/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-tooling-${{ hashFiles('local/setup.sh', '.github/ci/*.sh', '.pre-commit-config.yaml', 'outpost/gradle/wrapper/gradle-wrapper.properties') }}
       - run: python3 -m pip install pre-commit
-      - run: ./local/setup.sh
+      - run: ./.github/ci/setup.sh
       - run: pre-commit run --all-files
       - run: ./outpost/gradlew -p outpost build
