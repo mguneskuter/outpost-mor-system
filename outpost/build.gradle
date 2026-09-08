@@ -1,7 +1,9 @@
 plugins {
-    id 'outpost.java-conventions'
+    id 'outpost.module-graph-verification'
 }
 
-dependencies {
-    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+group = 'com.outpost'
+
+tasks.register('clean', Delete) {
+    delete layout.buildDirectory
 }

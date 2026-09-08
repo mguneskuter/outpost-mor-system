@@ -1,0 +1,11 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+dependencies {
+    implementation project(':platform-sanity:static-data-model')
+    implementation project(':common-iso')
+    implementation project(':common-payment')
+    implementation project(':tax')
+    implementation project(':psp-integration')
+}

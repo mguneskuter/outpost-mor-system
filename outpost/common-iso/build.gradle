@@ -1,0 +1,7 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+dependencies {
+    implementation project(':platform-sanity:static-data-model')
+}

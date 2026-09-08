@@ -62,4 +62,4 @@ The repository permits rebase merges only and local Git rejects non-fast-forward
 | `bin/`               | Gitignored repository-local tool binaries.                |
 | `deployment/`        | Dockerfiles built into images.                            |
 | `local/`             | Local setup, orchestration, and local-only configuration. |
-| `outpost/`           | Gradle root and future Java modules.                      |
+| `outpost/`           | Gradle root and Java modules for the Outpost system.      |
