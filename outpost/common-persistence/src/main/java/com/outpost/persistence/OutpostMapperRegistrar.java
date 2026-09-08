@@ -12,11 +12,13 @@ import org.springframework.util.StringUtils;
 
 /**
  * Registers a MyBatis mapper scanner that discovers only interfaces annotated with {@link
- * CommonMapper}.
+ * RegisteredMapper}.
  *
  * <p>The scanner base package is the package of the class that declares {@link
- * EnableOutpostPersistence}, which is the deployable's application class. Mappers and the SQL they
- * own belong to that deployable.
+ * EnableOutpostPersistence}, which is the deployable's application class. Mapper interfaces and the
+ * handcrafted XML files that implement them belong to the deployable or a persistence adapter; the
+ * shared {@code mybatis.mapper-locations} default points MyBatis at every module's {@code
+ * db/mapper} folder.
  */
 class OutpostMapperRegistrar implements ImportBeanDefinitionRegistrar {
 
@@ -31,7 +33,7 @@ class OutpostMapperRegistrar implements ImportBeanDefinitionRegistrar {
     BeanDefinitionBuilder builder =
         BeanDefinitionBuilder.genericBeanDefinition(MapperScannerConfigurer.class);
     builder.addPropertyValue("processPropertyPlaceHolders", true);
-    builder.addPropertyValue("annotationClass", CommonMapper.class);
+    builder.addPropertyValue("annotationClass", RegisteredMapper.class);
     builder.addPropertyValue("basePackage", basePackage);
     builder.addPropertyValue("sqlSessionFactoryBeanName", "sqlSessionFactory");
     builder.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);

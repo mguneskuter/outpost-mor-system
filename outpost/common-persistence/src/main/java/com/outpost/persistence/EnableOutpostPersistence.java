@@ -12,9 +12,9 @@ import org.springframework.context.annotation.Import;
  * Enables Outpost's shared persistence conventions on a deployable.
  *
  * <p>It registers the shared mapper-discovery mechanism, which registers only interfaces marked
- * with {@link CommonMapper}, and validates at startup that a usable datasource is available. The
- * datasource itself is always created by Spring Boot's {@link DataSourceAutoConfiguration} from the
- * deployable's own {@code spring.datasource.*} properties; this configuration never creates or
+ * with {@link RegisteredMapper}, and validates at startup that a usable datasource is available.
+ * The datasource itself is always created by Spring Boot's {@link DataSourceAutoConfiguration} from
+ * the deployable's own {@code spring.datasource.*} properties; this configuration never creates or
  * wraps a datasource.
  */
 @Retention(RetentionPolicy.RUNTIME)

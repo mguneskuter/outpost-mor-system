@@ -1,5 +1,5 @@
 .PHONY: all clean hooks format format-check lint build test precommit setup \
-	db-up db-down db-status migrate
+	up down status migrate
 
 -include .env
 
@@ -35,16 +35,16 @@ precommit:
 setup:
 	./local/setup.sh
 
-db-up:
+up:
 	docker compose --env-file .env -f local/docker-compose.yml up -d
 
-db-down:
+down:
 	docker compose --env-file .env -f local/docker-compose.yml down
 
-db-status:
+status:
 	docker compose --env-file .env -f local/docker-compose.yml ps
 	@docker compose --env-file .env -f local/docker-compose.yml exec -T postgres pg_isready -U "$(OUTPOST_DB_USER)" -d outpost
 
 migrate:
 	@test -n "$(OUTPOST_DB_PASSWORD)" || { echo "OUTPOST_DB_PASSWORD must be set in .env (see .env.example)"; exit 1; }
-	./outpost/gradlew -p outpost -PoutpostDbUrl="jdbc:postgresql://localhost:$(OUTPOST_DB_PORT)/outpost" -PoutpostDbUsername="$(OUTPOST_DB_USER)" -PoutpostDbPassword="$(OUTPOST_DB_PASSWORD)" :common-persistence:migrate
+	OUTPOST_DB_URL="jdbc:postgresql://localhost:$(OUTPOST_DB_PORT)/outpost" OUTPOST_DB_USER="$(OUTPOST_DB_USER)" OUTPOST_DB_PASSWORD="$(OUTPOST_DB_PASSWORD)" ./local/migrate.sh

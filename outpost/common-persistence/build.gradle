@@ -4,12 +4,26 @@ plugins {
     id 'java-test-fixtures'
 }
 
+sourceSets {
+    cli
+}
+
 dependencies {
     api 'org.springframework.boot:spring-boot-starter-jdbc'
     api 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
     implementation 'org.postgresql:postgresql'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
+
+    // The Flyway CLI (make migrate) deliberately avoids the Spring/MyBatis runtime
+    // tree: it needs only Flyway, the Postgres driver, and SLF4J.
+    cliImplementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    cliImplementation 'org.flywaydb:flyway-core'
+    cliImplementation 'org.flywaydb:flyway-database-postgresql'
+    cliImplementation 'org.postgresql:postgresql'
+    cliImplementation 'org.slf4j:slf4j-api'
+    cliImplementation 'org.slf4j:slf4j-jdk14'
+    cliCompileOnly 'org.jspecify:jspecify:1.0.1'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
@@ -37,15 +51,14 @@ tasks.named('test') {
     systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
 }
 
-tasks.register('migrate', JavaExec) {
-    group = 'verification'
-    description = 'Explicitly runs Flyway against the configured database. Never invoked from application startup.'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.outpost.persistence.flyway.FlywayCli'
-    systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
-    args(
-        providers.gradleProperty('outpostDbUrl').orElse('jdbc:postgresql://localhost:5432/outpost').get(),
-        providers.gradleProperty('outpostDbUsername').orElse('outpost').get(),
-        providers.gradleProperty('outpostDbPassword').getOrElse('')
-    )
+// Resolves the narrow Flyway CLI classpath to a file so `make migrate` can run the
+// CLI with plain `java` (Gradle's JavaExec interferes with Flyway's plugin loading).
+tasks.register('writeCliClasspath') {
+    def outFile = layout.buildDirectory.file('cli/classpath.txt')
+    doLast {
+        def cp = sourceSets.cli.runtimeClasspath.asPath + File.pathSeparator + sourceSets.cli.output.asPath
+        outFile.get().asFile.parentFile.mkdirs()
+        outFile.get().asFile.text = cp
+    }
+    outputs.file(outFile)
 }

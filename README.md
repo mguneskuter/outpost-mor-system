@@ -30,9 +30,9 @@ It downloads verified, pinned TruffleHog and Gitleaks binaries into `bin/`, then
 | `make build`        | Compile and run all build checks, including Error Prone. |
 | `make test`         | Run the test suite.                                      |
 | `make precommit`    | Run every content hook across repository files.          |
-| `make db-up`        | Start the local PostgreSQL 18 Compose service.           |
-| `make db-status`    | Show local database container status.                    |
-| `make db-down`      | Stop the local database; preserves the named volume.     |
+| `make up`           | Start the local platform Compose services.               |
+| `make status`       | Show local platform container status.                    |
+| `make down`         | Stop the local platform; preserves the named volume.     |
 | `make migrate`      | Run Flyway migrations against the local database.        |
 
 ## Persistence foundation
