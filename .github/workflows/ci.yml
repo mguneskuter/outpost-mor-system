@@ -1,8 +1,10 @@
 name: CI
 
 on:
-  push:
   pull_request:
+    branches: [main]
+  push:
+    branches: [main]
 
 jobs:
   verify:
@@ -21,5 +23,5 @@ jobs:
           key: ${{ runner.os }}-tooling-${{ hashFiles('local/setup.sh', '.github/ci/*.sh', '.pre-commit-config.yaml', 'outpost/gradle/wrapper/gradle-wrapper.properties') }}
       - run: python3 -m pip install pre-commit
       - run: ./.github/ci/setup.sh
-      - run: pre-commit run --all-files
+      - run: make precommit
       - run: ./outpost/gradlew -p outpost build
