@@ -1,4 +1,4 @@
-package outpost
+package com.outpost
 
 import com.diffplug.gradle.spotless.SpotlessExtension
 import org.gradle.api.Plugin
@@ -11,6 +11,7 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 class JavaConventionsPlugin implements Plugin<Project> {
     @Override
     void apply(Project project) {
+        project.group = 'com.outpost'
         project.repositories.mavenCentral()
         project.pluginManager.apply(JavaPlugin)
         project.pluginManager.apply('checkstyle')
@@ -20,6 +21,10 @@ class JavaConventionsPlugin implements Plugin<Project> {
         project.extensions.configure(JavaPluginExtension) { javaExtension ->
             javaExtension.toolchain.languageVersion = JavaLanguageVersion.of(21)
         }
+        project.dependencies.add(
+            'implementation',
+            project.dependencies.platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+        )
         project.extensions.configure(SpotlessExtension) { spotlessExtension ->
             spotlessExtension.java {
                 googleJavaFormat()

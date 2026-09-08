@@ -3,3 +3,21 @@ plugins {
 }
 
 rootProject.name = 'outpost'
+
+include(
+    ':platform-sanity:static-data-model',
+    ':platform-sanity:static-data-check',
+    ':common-iso',
+    ':common-payment',
+    ':account-configuration',
+    ':merchant-configuration',
+    ':accounting',
+    ':tax',
+    ':fx',
+    ':payment',
+    ':psp-integration',
+    ':outpost-api',
+    ':outpost-ledger-service',
+    ':outpost-worker',
+    ':seed-job'
+)
