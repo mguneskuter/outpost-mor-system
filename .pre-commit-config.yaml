@@ -8,13 +8,13 @@ repos:
       - id: trufflehog-working-tree
         name: "🔒 security · Scan working tree with TruffleHog"
         language: system
-        entry: ./bin/trufflehog filesystem --exclude-paths local/trufflehog-exclude-paths.txt --results=verified,unknown,unverified --fail .
+        entry: local/trufflehog-working-tree.sh
         pass_filenames: false
         stages: [pre-commit]
       - id: trufflehog-git-history
         name: "🔒 security · Scan pushed history with TruffleHog"
         language: system
-        entry: bash -c './bin/trufflehog git file://. --since-commit HEAD --results=verified,unknown --fail --trust-local-git-config'
+        entry: local/trufflehog-pushed-history.sh
         pass_filenames: false
         stages: [pre-push]
       - id: gitleaks
