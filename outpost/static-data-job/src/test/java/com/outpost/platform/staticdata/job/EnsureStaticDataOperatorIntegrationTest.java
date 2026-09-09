@@ -3,7 +3,7 @@ package com.outpost.platform.staticdata.job;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.outpost.persistence.testfixtures.PostgresTestDatabase;
+import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;

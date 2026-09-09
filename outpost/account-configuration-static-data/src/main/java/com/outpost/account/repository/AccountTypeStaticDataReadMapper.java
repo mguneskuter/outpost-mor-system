@@ -1,6 +1,6 @@
 package com.outpost.account.repository;
 
-import com.outpost.persistence.RegisteredMapper;
+import com.outpost.framework.persistence.RegisteredMapper;
 import java.util.List;
 
 /** Read-only MyBatis mapper for account types. */

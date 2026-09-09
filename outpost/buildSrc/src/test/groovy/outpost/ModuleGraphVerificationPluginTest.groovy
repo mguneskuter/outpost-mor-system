@@ -58,12 +58,12 @@ class ModuleGraphVerificationPluginTest {
     @Test
     void domainToPersistenceFrameworkEdgeFails() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':common-iso'] << ':common-persistence'
+        dependencies[':common-iso'] << ':framework:persistence'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Domain module depends on persistence framework: :common-iso -> :common-persistence'
+            'Domain module depends on persistence framework: :common-iso -> :framework:persistence'
         ))
     }
 

@@ -1,6 +1,6 @@
 package com.outpost.gateway;
 
-import com.outpost.persistence.EnableOutpostPersistence;
+import com.outpost.framework.persistence.EnableOutpostPersistence;
 import com.outpost.platform.staticdata.check.EnableSystemSanityCheck;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

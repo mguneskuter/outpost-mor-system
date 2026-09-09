@@ -1,6 +1,6 @@
 package com.outpost.common.iso.repository;
 
-import com.outpost.persistence.RegisteredMapper;
+import com.outpost.framework.persistence.RegisteredMapper;
 import java.util.List;
 
 /** Read-only MyBatis mapper for countries. */

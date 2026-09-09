@@ -18,32 +18,52 @@ It downloads verified, pinned TruffleHog and Gitleaks binaries into `bin/`, then
 
 ## Commands
 
-| Command             | Purpose                                                  |
-| ------------------- | -------------------------------------------------------- |
-| `make all`          | Run the build.                                           |
-| `make clean`        | Remove Gradle build outputs.                             |
-| `make setup`        | Provision repo-local scanners and install Git hooks.     |
-| `make hooks`        | Install or refresh Git hooks and their dependencies.     |
-| `make format`       | Apply Google Java Format.                                |
-| `make format-check` | Verify Java formatting without changing files.           |
-| `make lint`         | Run Checkstyle for main and test sources.                |
-| `make build`        | Compile and run all build checks, including Error Prone. |
-| `make test`         | Run the test suite.                                      |
-| `make precommit`    | Run every content hook across repository files.          |
-| `make up`           | Start the local platform Compose services.               |
-| `make status`       | Show local platform container status.                    |
-| `make down`         | Stop the local platform; preserves the named volume.     |
-| `make migrate`      | Run Flyway migrations against the local database.        |
+| Command                   | Purpose                                                  |
+| ------------------------- | -------------------------------------------------------- |
+| `make all`                | Run the build.                                           |
+| `make clean`              | Remove Gradle build outputs.                             |
+| `make setup`              | Provision repo-local scanners and install Git hooks.     |
+| `make hooks`              | Install or refresh Git hooks and their dependencies.     |
+| `make format`             | Apply Google Java Format.                                |
+| `make format-check`       | Verify Java formatting without changing files.           |
+| `make lint`               | Run Checkstyle for main and test sources.                |
+| `make build`              | Compile and run all build checks, including Error Prone. |
+| `make test`               | Run the test suite.                                      |
+| `make precommit`          | Run every content hook across repository files.          |
+| `make up`                 | Start the local platform Compose services.               |
+| `make status`             | Show local platform container status.                    |
+| `make down`               | Stop the local platform; preserves the named volume.     |
+| `make migrate`            | Run Flyway migrations against the local database.        |
+| `make ensure-static-data` | Materialise enum reference data explicitly.              |
+| `make seed`               | Run deterministic non-enum seed SQL explicitly.          |
+| `make lifecycle`          | Run migration, enum materialisation, then seed SQL.      |
 
-## Persistence foundation
+## Framework foundation
 
-The `outpost/common-persistence` module is the shared Spring/MyBatis/JDBC and
-PostgreSQL/Testcontainers foundation. Spring Boot creates exactly one Hikari
+The `outpost/framework/persistence` module is the shared Spring/MyBatis/JDBC
+and PostgreSQL/Testcontainers foundation. Spring Boot creates exactly one Hikari
 datasource per deployable from that deployable's `spring.datasource.*`
-properties; the foundation supplies the shared MyBatis mapper-marker discovery,
-transaction and datasource validation conventions, Flyway tooling, and reusable
-PostgreSQL 18 Testcontainers test fixtures. It introduces no business tables,
-mappers, or data.
+properties; the foundation supplies shared mapper-marker discovery, transaction
+and datasource validation conventions, Flyway tooling, and reusable PostgreSQL
+18 Testcontainers fixtures. It introduces no business tables, mappers, or data.
+
+`framework/logging` accepts only owner-defined `LogFields` descriptors and emits
+safe JSON context fields. `framework/security` provides Java-standard-library
+HMAC-SHA-256 signing/verification and narrow API-key and service-hop seams.
+Neither module owns business keys, HTTP policy, persistence, request bodies, or
+secret storage. Gateway API, Ledger API, and Worker include Spring Boot Actuator
+for later same-port health and metrics exposure.
+
+Service startup follows one fail-closed sequence:
+
+```text
+database reachable
+-> VerifyStaticData (read-only)
+-> applicable immutable tax/FX snapshot validation
+-> ready
+```
+
+Health requests never run the verification or materialisation steps again.
 
 ## Hooks
 
@@ -72,8 +92,7 @@ In an emergency, skip hooks with `git commit --no-verify`. Use this only when th
 1. Verify the change with `make precommit`, then create exactly one commit ahead
    of `origin/main`. If necessary, squash local implementation commits before
    the first push.
-1. Confirm the invariant with
-   `git rev-list --count origin/main..HEAD`; it must print `1`.
+1. Confirm the invariant with `git rev-list --count origin/main..HEAD`; it must print `1`.
 1. Push the MR branch for review, then immediately return locally to `main`.
 1. Open the pull request. Do not integrate it until review is approved and the
    `CI / verify` status check passes.
@@ -86,11 +105,7 @@ In an emergency, skip hooks with `git commit --no-verify`. Use this only when th
    `git switch main` followed by `git merge --ff-only mr/<topic>`. Push `main`
    only with explicit authorization.
 
-Never commit directly to `main`, create a merge commit, rebase `main`, or bypass
-the configured hooks. The current private repository plan does not support
-required status checks. Until the repository is public or its plan is upgraded,
-the maintainer must verify `CI / verify` succeeded before integration; the
-workflow file alone cannot enforce that gate.
+Never commit directly to `main`, create a merge commit, rebase `main`, or bypass the configured hooks. The current private repository plan does not support required status checks. Until the repository is public or its plan is upgraded, the maintainer must verify `CI / verify` succeeded before integration; the workflow file alone cannot enforce that gate.
 
 ### Parallel work
 
@@ -111,7 +126,7 @@ remove only clean worktrees whose branches have been integrated.
 
 | Path                 | Purpose                                                   |
 | -------------------- | --------------------------------------------------------- |
-| `.github/workflows/` | Continuous integration workflows.                         |
+| `.github/workflows/` | Docker/CI workflows.                                      |
 | `bin/`               | Gitignored repository-local tool binaries.                |
 | `deployment/`        | Dockerfiles built into images.                            |
 | `local/`             | Local setup, orchestration, and local-only configuration. |

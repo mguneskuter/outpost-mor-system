@@ -1,7 +1,7 @@
 package com.outpost.platform.staticdata.job.repository;
 
 import com.outpost.account.repository.AccountTypeRecord;
-import com.outpost.persistence.RegisteredMapper;
+import com.outpost.framework.persistence.RegisteredMapper;
 
 /** Job-only insert mapper for account types. */
 @RegisteredMapper

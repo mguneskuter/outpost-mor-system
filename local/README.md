@@ -27,6 +27,15 @@ Data lives in the named volume `outpost-postgres-data`, and the application role
 
 There is no automated database reset or volume-deletion target.
 
+### Framework operations
+
+The shared persistence foundation lives at `outpost/framework/persistence`.
+Gateway API, Ledger API, and Worker use the Actuator starter but do not expose
+business HTTP routes in the framework-foundation stage. Structured logs are JSON
+lines on stdout; the `application` field comes from each service's
+`spring.application.name`. Shared logging fields are owner-defined and must not
+contain PII, secrets, raw payloads, or throwable-derived messages.
+
 ### Migrations
 
 Flyway uses a single repository-level migration location at `outpost/db/migration/`, the `public` schema, and its default `flyway_schema_history` history table. Migrations never run from an application startup path; run `make migrate` explicitly.
