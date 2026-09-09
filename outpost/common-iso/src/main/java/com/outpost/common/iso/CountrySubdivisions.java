@@ -88,6 +88,13 @@ public enum CountrySubdivisions {
     return Optional.ofNullable(BY_CODE.get(code)).map(CountrySubdivisions::value);
   }
 
+  /** Returns the subdivision for an exact code owned by the given country, if any. */
+  public static Optional<CountrySubdivision> fromCode(Countries.Country country, String code) {
+    Objects.requireNonNull(country, "country");
+    Objects.requireNonNull(code, "code");
+    return fromCode(code).filter(subdivision -> subdivision.country().equals(country));
+  }
+
   /** Immutable subdivision value owned by one {@link CountrySubdivisions} constant. */
   public static final class CountrySubdivision {
 

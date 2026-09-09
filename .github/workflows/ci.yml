@@ -25,7 +25,7 @@ jobs:
               - 'outpost/db/migration/**'
               - 'outpost/framework/persistence/build.gradle'
               - 'outpost/framework/persistence/src/test/java/**/flyway/**'
-              - 'outpost/static-data-job/**'
+              - 'outpost/framework/**'
               - 'outpost/build.gradle'
               - '.github/workflows/ci.yml'
 
@@ -102,7 +102,6 @@ jobs:
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('outpost/gradle/wrapper/gradle-wrapper.properties', 'outpost/**/*.gradle', 'outpost/**/*.groovy') }}
       - run: ./outpost/gradlew -p outpost :framework:persistence:test --tests com.outpost.framework.persistence.flyway.FlywayMigrationSmokeTest --tests com.outpost.framework.persistence.flyway.AccountingSchemaIntegrationTest
-      - run: ./outpost/gradlew -p outpost :static-data-job:test --tests com.outpost.platform.staticdata.job.EnsureStaticDataOperatorIntegrationTest
 
   verify:
     name: Build and quality

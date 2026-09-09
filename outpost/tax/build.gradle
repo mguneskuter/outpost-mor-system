@@ -6,4 +6,10 @@ dependencies {
     implementation project(':platform-sanity:static-data-model')
     implementation project(':common-iso')
     implementation project(':common-payment')
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }
