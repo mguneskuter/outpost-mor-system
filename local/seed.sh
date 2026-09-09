@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+seed_dir="${OUTPOST_SEED_DIR:-${repository_root}/local/seed_data}"
+psql_bin="${OUTPOST_PSQL_BIN:-psql}"
+
+if ! ls "${seed_dir}"/*.sql >/dev/null 2>&1; then
+    echo "No non-enum seed input found in ${seed_dir}."
+    exit 2
+fi
+
+for seed_file in "${seed_dir}"/*.sql; do
+    echo "Running seed file: ${seed_file}"
+    PGPASSWORD="${OUTPOST_DB_PASSWORD}" "${psql_bin}" \
+        -h "${OUTPOST_DB_HOST:-localhost}" \
+        -p "${OUTPOST_DB_PORT:-5432}" \
+        -U "${OUTPOST_DB_USER:-outpost}" \
+        -d outpost \
+        -v ON_ERROR_STOP=1 \
+        -f "${seed_file}"
+done

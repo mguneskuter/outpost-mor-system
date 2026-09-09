@@ -1,5 +1,6 @@
 package com.outpost.payment.common;
 
+import com.outpost.platform.staticdata.StaticData;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
@@ -7,6 +8,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /** The product types supported by Outpost, each owning exactly one value. */
+@StaticData
 public enum ProductTypes {
   DIGITAL_GOODS(1L, "DIGITAL_GOODS"),
   PHYSICAL_GOODS(2L, "PHYSICAL_GOODS");

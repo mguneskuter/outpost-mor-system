@@ -1,5 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test precommit setup \
-	up down status migrate
+.PHONY: all clean hooks format format-check lint build test precommit setup up down status migrate ensure-static-data seed seed-test lifecycle
 
 -include .env
 
@@ -48,3 +47,19 @@ status:
 migrate:
 	@test -n "$(OUTPOST_DB_PASSWORD)" || { echo "OUTPOST_DB_PASSWORD must be set in .env (see .env.example)"; exit 1; }
 	OUTPOST_DB_URL="jdbc:postgresql://localhost:$(OUTPOST_DB_PORT)/outpost" OUTPOST_DB_USER="$(OUTPOST_DB_USER)" OUTPOST_DB_PASSWORD="$(OUTPOST_DB_PASSWORD)" ./local/migrate.sh
+
+ensure-static-data:
+	@test -n "$(OUTPOST_DB_PASSWORD)" || { echo "OUTPOST_DB_PASSWORD must be set in .env (see .env.example)"; exit 1; }
+	./outpost/gradlew -p outpost :static-data-job:bootBuildImage
+	OUTPOST_DB_URL="jdbc:postgresql://host.docker.internal:$(OUTPOST_DB_PORT)/outpost" \
+	OUTPOST_DB_USER="$(OUTPOST_DB_USER)" OUTPOST_DB_PASSWORD="$(OUTPOST_DB_PASSWORD)" \
+		./local/run-static-data-job.sh
+
+seed:
+	@test -n "$(OUTPOST_DB_PASSWORD)" || { echo "OUTPOST_DB_PASSWORD must be set in .env (see .env.example)"; exit 1; }
+	./local/seed.sh
+
+seed-test:
+	./local/seed_test.sh
+
+lifecycle: migrate ensure-static-data seed

@@ -4,10 +4,15 @@ class ModuleGraphSpec {
     static final Set<String> PROJECT_PATHS = [
         ':platform-sanity:static-data-model',
         ':platform-sanity:static-data-check',
+        ':platform-sanity:static-data-repository',
+        ':common-iso-static-data',
         ':common-iso',
+        ':common-payment-static-data',
         ':common-payment',
         ':common-persistence',
+        ':account-configuration-static-data',
         ':account-configuration',
+        ':merchant-configuration-static-data',
         ':merchant-configuration',
         ':accounting',
         ':tax',
@@ -17,13 +22,43 @@ class ModuleGraphSpec {
         ':outpost-api',
         ':outpost-ledger-service',
         ':outpost-worker',
-        ':seed-job'
+        ':static-data-job'
     ] as Set
 
     static final Map<String, Set<String>> PROJECT_DEPENDENCIES = [
         ':platform-sanity:static-data-model': [],
         ':platform-sanity:static-data-check': [
-            ':platform-sanity:static-data-model'
+            ':platform-sanity:static-data-repository'
+            ,':platform-sanity:static-data-model'
+            ,':common-iso-static-data'
+            ,':common-payment-static-data'
+            ,':account-configuration-static-data'
+            ,':merchant-configuration-static-data'
+            ,':common-iso'
+            ,':common-payment'
+            ,':account-configuration'
+            ,':merchant-configuration'
+        ],
+        ':platform-sanity:static-data-repository': [],
+        ':common-iso-static-data': [
+            ':common-iso',
+            ':platform-sanity:static-data-repository',
+            ':common-persistence'
+        ],
+        ':common-payment-static-data': [
+            ':common-payment',
+            ':platform-sanity:static-data-repository',
+            ':common-persistence'
+        ],
+        ':account-configuration-static-data': [
+            ':account-configuration',
+            ':platform-sanity:static-data-repository',
+            ':common-persistence'
+        ],
+        ':merchant-configuration-static-data': [
+            ':merchant-configuration',
+            ':platform-sanity:static-data-repository',
+            ':common-persistence'
         ],
         ':common-iso': [
             ':platform-sanity:static-data-model'
@@ -103,12 +138,17 @@ class ModuleGraphSpec {
             ':payment',
             ':psp-integration'
         ],
-        ':seed-job': [
+        ':static-data-job': [
             ':platform-sanity:static-data-check',
+            ':platform-sanity:static-data-repository',
+            ':common-iso-static-data',
             ':common-iso',
+            ':common-payment-static-data',
             ':common-payment',
             ':common-persistence',
+            ':account-configuration-static-data',
             ':account-configuration',
+            ':merchant-configuration-static-data',
             ':merchant-configuration',
             ':accounting',
             ':tax',
@@ -136,7 +176,7 @@ class ModuleGraphSpec {
         ':outpost-api',
         ':outpost-ledger-service',
         ':outpost-worker',
-        ':seed-job'
+        ':static-data-job'
     ] as Set
 
     static final Set<String> PERSISTENCE_FRAMEWORK_PATHS = [

@@ -21,4 +21,7 @@ import org.springframework.context.annotation.Import;
 @Target(ElementType.TYPE)
 @Documented
 @Import({OutpostPersistenceConfiguration.class, OutpostMapperRegistrar.class})
-public @interface EnableOutpostPersistence {}
+public @interface EnableOutpostPersistence {
+  /** Additional packages scanned for interfaces annotated with {@link RegisteredMapper}. */
+  String[] mapperPackages() default {};
+}

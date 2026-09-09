@@ -1,5 +1,6 @@
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+    id 'org.springframework.boot' version '4.1.1' apply false
 }
 
 rootProject.name = 'outpost'
@@ -7,11 +8,16 @@ rootProject.name = 'outpost'
 include(
     ':platform-sanity:static-data-model',
     ':platform-sanity:static-data-check',
+    ':platform-sanity:static-data-repository',
+    ':common-iso-static-data',
     ':common-iso',
+    ':common-payment-static-data',
     ':common-payment',
-    ':common-persistence',
+    ':account-configuration-static-data',
     ':account-configuration',
+    ':merchant-configuration-static-data',
     ':merchant-configuration',
+    ':common-persistence',
     ':accounting',
     ':tax',
     ':fx',
@@ -20,5 +26,5 @@ include(
     ':outpost-api',
     ':outpost-ledger-service',
     ':outpost-worker',
-    ':seed-job'
+    ':static-data-job'
 )

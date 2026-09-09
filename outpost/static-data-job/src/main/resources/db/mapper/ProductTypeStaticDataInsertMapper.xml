@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.platform.staticdata.job.repository.ProductTypeStaticDataInsertMapper">
+  <insert id="insert" parameterType="com.outpost.payment.common.repository.ProductTypeRecord">
+    INSERT INTO product_type (product_type_id, code)
+    VALUES (#{productTypeId}, #{code})
+  </insert>
+</mapper>

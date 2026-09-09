@@ -1,6 +1,7 @@
 package com.outpost.outpostapi;
 
 import com.outpost.persistence.EnableOutpostPersistence;
+import com.outpost.platform.staticdata.check.EnableSystemSanityCheck;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -14,6 +15,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication
 @EnableOutpostPersistence
+@EnableSystemSanityCheck
 public class OutpostApiApplication {
 
   /** Starts the application. */

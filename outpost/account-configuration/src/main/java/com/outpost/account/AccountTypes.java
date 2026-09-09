@@ -1,5 +1,6 @@
 package com.outpost.account;
 
+import com.outpost.platform.staticdata.StaticData;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
@@ -12,6 +13,7 @@ import java.util.stream.Collectors;
  * merchant, BANK_ACCOUNT for a payout bank child). Each constant owns the single {@link
  * AccountType} value that carries its stable surrogate identifier and code.
  */
+@StaticData
 public enum AccountTypes {
   ROOT(1L, "ROOT"),
   MERCHANT(2L, "MERCHANT"),

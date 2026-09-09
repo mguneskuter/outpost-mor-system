@@ -89,6 +89,18 @@ class ModuleGraphVerificationPluginTest {
     }
 
     @Test
+    void deployableCannotDependOnEnsureStaticDataJob() {
+        Map<String, Set<String>> dependencies = fixtureDependencies()
+        dependencies[':outpost-api'] << ':static-data-job'
+
+        BuildResult failure = buildAndFail(dependencies)
+
+        assertTrue(failure.output.contains(
+            'Deployable must not depend on EnsureStaticData job: :outpost-api -> :static-data-job'
+        ))
+    }
+
+    @Test
     void cycleFailsAndPrintsTheCycle() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
         dependencies[':platform-sanity:static-data-model'] << ':common-iso'
@@ -102,9 +114,9 @@ class ModuleGraphVerificationPluginTest {
 
     @Test
     void missingProjectFailsAndNamesTheProject() {
-        BuildResult failure = buildFixtureWithoutProject(':seed-job')
+        BuildResult failure = buildFixtureWithoutProject(':static-data-job')
 
-        assertTrue(failure.output.contains('Missing required project: :seed-job'))
+        assertTrue(failure.output.contains('Missing required project: :static-data-job'))
     }
 
     @Test
