@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.outpost.merchant.repository.FeeModeStaticDataReadMapper">
-  <select id="findAll" resultType="com.outpost.merchant.repository.FeeModeRecord">
+<mapper namespace="com.outpost.account.configuration.repository.FeeModeStaticDataReadMapper">
+  <select id="findAll" resultType="com.outpost.account.configuration.repository.FeeModeRecord">
     SELECT fee_mode_id, code FROM fee_mode ORDER BY fee_mode_id
   </select>
 </mapper>

@@ -46,12 +46,12 @@ class ModuleGraphVerificationPluginTest {
     @Test
     void domainToDeployableEdgeFails() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':common-iso'] << ':outpost-api'
+        dependencies[':common-iso'] << ':gateway-api'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Domain module depends on deployable: :common-iso -> :outpost-api'
+            'Domain module depends on deployable: :common-iso -> :gateway-api'
         ))
     }
 
@@ -79,24 +79,24 @@ class ModuleGraphVerificationPluginTest {
     @Test
     void deployableToDeployableEdgeFails() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':outpost-api'] << ':outpost-worker'
+        dependencies[':gateway-api'] << ':outpost-worker'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Deployable depends on deployable: :outpost-api -> :outpost-worker'
+            'Deployable depends on deployable: :gateway-api -> :outpost-worker'
         ))
     }
 
     @Test
     void deployableCannotDependOnEnsureStaticDataJob() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':outpost-api'] << ':static-data-job'
+        dependencies[':gateway-api'] << ':static-data-job'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Deployable must not depend on EnsureStaticData job: :outpost-api -> :static-data-job'
+            'Deployable must not depend on EnsureStaticData job: :gateway-api -> :static-data-job'
         ))
     }
 

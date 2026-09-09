@@ -19,8 +19,8 @@ class ModuleGraphSpec {
         ':fx',
         ':payment',
         ':psp-integration',
-        ':outpost-api',
-        ':outpost-ledger-service',
+        ':gateway-api',
+        ':ledger-api',
         ':outpost-worker',
         ':static-data-job'
     ] as Set
@@ -107,7 +107,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-model',
             ':common-iso'
         ],
-        ':outpost-api': [
+        ':gateway-api': [
             ':platform-sanity:static-data-check',
             ':common-iso',
             ':common-payment',
@@ -118,7 +118,7 @@ class ModuleGraphSpec {
             ':payment',
             ':psp-integration'
         ],
-        ':outpost-ledger-service': [
+        ':ledger-api': [
             ':platform-sanity:static-data-check',
             ':common-iso',
             ':common-payment',
@@ -173,8 +173,8 @@ class ModuleGraphSpec {
     ] as Set
 
     static final Set<String> DEPLOYABLE_PROJECT_PATHS = [
-        ':outpost-api',
-        ':outpost-ledger-service',
+        ':gateway-api',
+        ':ledger-api',
         ':outpost-worker',
         ':static-data-job'
     ] as Set
