@@ -15,8 +15,6 @@ dependencies {
     implementation project(':psp-integration')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.testcontainers:testcontainers-postgresql'
-    testImplementation testFixtures(project(':framework:persistence'))
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

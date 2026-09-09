@@ -47,3 +47,5 @@ Handcrafted MyBatis SQL lives in XML mapper files. Any module may contain a `db/
 ### Seed lifecycle
 
 `local/seed_data/*.sql` holds non-enum seed SQL, executed by `make seed` in deterministic lexicographic order after migration and enum-backed reference-data seeding. Until a production seed file exists, `make seed` fails clearly with the missing-input condition rather than silently succeeding. Migrations remain DDL-only.
+
+The directory contains committed non-enum seed data executed by that lifecycle.
