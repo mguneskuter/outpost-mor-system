@@ -1,5 +1,7 @@
 .PHONY: all clean hooks format format-check lint build test precommit setup up down status migrate ensure-static-data seed seed-test lifecycle
 
+PRECOMMIT_SKIP ?= no-commit-to-branch
+
 -include .env
 
 OUTPOST_DB_PORT ?= 5432
@@ -29,7 +31,7 @@ test:
 	./outpost/gradlew -p outpost test
 
 precommit:
-	SKIP=no-commit-to-branch pre-commit run --all-files
+	SKIP=$(PRECOMMIT_SKIP) pre-commit run --all-files
 
 setup:
 	./local/setup.sh

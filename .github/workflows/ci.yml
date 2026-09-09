@@ -7,8 +7,31 @@ on:
     branches: [main]
 
 jobs:
+  changes:
+    name: Detect migration changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            migrations:
+              - 'outpost/db/migration/**'
+              - 'outpost/framework/persistence/build.gradle'
+              - 'outpost/framework/persistence/src/test/java/**/flyway/**'
+              - 'outpost/static-data-job/**'
+              - 'outpost/build.gradle'
+              - '.github/workflows/ci.yml'
+
   test:
-    name: Test
+    name: Unit and domain tests
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -22,11 +45,72 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('outpost/gradle/wrapper/gradle-wrapper.properties', 'outpost/**/*.gradle', 'outpost/**/*.groovy') }}
-      - run: ./outpost/gradlew -p outpost test
+      - run: ./outpost/gradlew -p outpost test -PskipIntegrationTests
+
+  integration:
+    name: Application integration tests
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: outpost_test
+          POSTGRES_USER: outpost_test
+          POSTGRES_PASSWORD: outpost_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U outpost_test -d outpost_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      OUTPOST_TEST_DB_URL: jdbc:postgresql://localhost:5432/outpost_test
+      OUTPOST_TEST_DB_USER: outpost_test
+      OUTPOST_TEST_DB_PASSWORD: outpost_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('outpost/gradle/wrapper/gradle-wrapper.properties', 'outpost/**/*.gradle', 'outpost/**/*.groovy') }}
+      - run: ./outpost/gradlew -p outpost :framework:persistence:test --tests com.outpost.framework.persistence.PersistenceIntegrationTest
+      - run: ./outpost/gradlew -p outpost :gateway-api:test
+
+  migrations:
+    name: Migration and schema tests
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('outpost/gradle/wrapper/gradle-wrapper.properties', 'outpost/**/*.gradle', 'outpost/**/*.groovy') }}
+      - run: ./outpost/gradlew -p outpost :framework:persistence:test --tests com.outpost.framework.persistence.flyway.FlywayMigrationSmokeTest --tests com.outpost.framework.persistence.flyway.AccountingSchemaIntegrationTest
+      - run: ./outpost/gradlew -p outpost :static-data-job:test --tests com.outpost.platform.staticdata.job.EnsureStaticDataOperatorIntegrationTest
 
   verify:
     name: Build and quality
-    needs: test
+    needs: [test, integration, migrations]
+    if: >-
+      always() && needs.test.result == 'success' &&
+      needs.integration.result == 'success' &&
+      (needs.migrations.result == 'success' || needs.migrations.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -46,5 +130,5 @@ jobs:
           key: ${{ runner.os }}-tooling-${{ hashFiles('local/setup.sh', '.github/ci/*.sh', '.pre-commit-config.yaml', 'outpost/gradle/wrapper/gradle-wrapper.properties') }}
       - run: python3 -m pip install pre-commit
       - run: ./.github/ci/setup.sh
-      - run: make precommit
-      - run: ./outpost/gradlew -p outpost build
+      - run: make precommit PRECOMMIT_SKIP=build,no-commit-to-branch
+      - run: ./outpost/gradlew -p outpost build -x test
