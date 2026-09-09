@@ -43,8 +43,21 @@ public final class PostgresTestDatabase {
         .withPassword(password);
   }
 
-  /** Registers datasource properties from the shared Testcontainers PostgreSQL instance. */
+  /**
+   * Registers datasource properties from the CI PostgreSQL service when configured, otherwise from
+   * a local Testcontainers PostgreSQL instance.
+   */
   public static void registerDataSourceProperties(DynamicPropertyRegistry registry) {
+    String externalUrl = System.getenv("OUTPOST_TEST_DB_URL");
+    String externalUsername = System.getenv("OUTPOST_TEST_DB_USER");
+    String externalPassword = System.getenv("OUTPOST_TEST_DB_PASSWORD");
+    if (externalUrl != null && !externalUrl.isBlank()) {
+      registry.add("spring.datasource.url", () -> externalUrl);
+      registry.add("spring.datasource.username", () -> externalUsername);
+      registry.add("spring.datasource.password", () -> externalPassword);
+      registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+      return;
+    }
     startIfNeeded();
     registry.add("spring.datasource.url", CONTAINER::getJdbcUrl);
     registry.add("spring.datasource.username", CONTAINER::getUsername);

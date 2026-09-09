@@ -2,6 +2,17 @@ plugins {
     id 'outpost.module-graph-verification'
 }
 
+subprojects {
+    if (providers.gradleProperty('skipIntegrationTests').isPresent()) {
+        tasks.withType(Test).configureEach {
+            exclude '**/*IntegrationTest.class'
+            exclude '**/*ApplicationTest.class'
+            exclude '**/FlywayMigrationSmokeTest.class'
+            failOnNoDiscoveredTests = false
+        }
+    }
+}
+
 group = 'com.outpost'
 
 tasks.register('clean', Delete) {
