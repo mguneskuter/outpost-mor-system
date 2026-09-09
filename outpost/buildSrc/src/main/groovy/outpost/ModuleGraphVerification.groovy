@@ -70,7 +70,10 @@ class ModuleGraphVerification {
 
         ModuleGraphSpec.DEPLOYABLE_PROJECT_PATHS.each { deployablePath ->
             actualDependencies[deployablePath].each { dependencyPath ->
-                if (ModuleGraphSpec.DEPLOYABLE_PROJECT_PATHS.contains(dependencyPath)) {
+                if (dependencyPath == ':static-data-job' && deployablePath != ':static-data-job') {
+                    errors << "Deployable must not depend on EnsureStaticData job: " +
+                        ModuleGraphSpec.edge(deployablePath, dependencyPath)
+                } else if (ModuleGraphSpec.DEPLOYABLE_PROJECT_PATHS.contains(dependencyPath)) {
                     errors << "Deployable depends on deployable: ${ModuleGraphSpec.edge(deployablePath, dependencyPath)}"
                 }
             }

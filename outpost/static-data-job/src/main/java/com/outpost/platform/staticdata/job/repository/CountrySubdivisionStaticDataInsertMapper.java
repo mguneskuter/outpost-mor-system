@@ -1,0 +1,11 @@
+package com.outpost.platform.staticdata.job.repository;
+
+import com.outpost.common.iso.repository.CountrySubdivisionRecord;
+import com.outpost.persistence.RegisteredMapper;
+
+/** Job-only insert mapper for country subdivisions. */
+@RegisteredMapper
+public interface CountrySubdivisionStaticDataInsertMapper {
+  /** Inserts one record. */
+  int insert(CountrySubdivisionRecord record);
+}

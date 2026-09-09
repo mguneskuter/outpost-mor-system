@@ -1,0 +1,164 @@
+package com.outpost.platform.staticdata.job;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.outpost.persistence.testfixtures.PostgresTestDatabase;
+import java.util.List;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+
+@SpringBootTest(classes = EnsureStaticDataJobApplication.class)
+class EnsureStaticDataOperatorIntegrationTest {
+  private static final PostgreSQLContainer<?> DATABASE =
+      PostgresTestDatabase.startContainer(
+          "outpost_static_data", "outpost_static_data", "outpost_static_data");
+
+  static {
+    DATABASE.start();
+    Flyway.configure()
+        .dataSource(DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword())
+        .locations("filesystem:" + migrationLocation())
+        .load()
+        .migrate();
+  }
+
+  private final JdbcTemplate jdbcTemplate;
+
+  @Autowired
+  EnsureStaticDataOperatorIntegrationTest(JdbcTemplate jdbcTemplate) {
+    this.jdbcTemplate = jdbcTemplate;
+  }
+
+  @DynamicPropertySource
+  static void databaseProperties(DynamicPropertyRegistry registry) {
+    registry.add("spring.datasource.url", DATABASE::getJdbcUrl);
+    registry.add("spring.datasource.username", DATABASE::getUsername);
+    registry.add("spring.datasource.password", DATABASE::getPassword);
+  }
+
+  @BeforeEach
+  void createFixtureTable() {
+    jdbcTemplate.execute("DROP TABLE IF EXISTS ensure_operator_fixture");
+    jdbcTemplate.execute(
+        "CREATE TABLE ensure_operator_fixture (fixture_id BIGINT PRIMARY KEY, code TEXT NOT NULL)");
+  }
+
+  @Test
+  void insertsMissingFixtureRowsAndIsIdempotent() {
+    var operator = fixtureOperator();
+
+    operator.ensure();
+    operator.ensure();
+
+    assertThat(jdbcTemplate.queryForList("SELECT fixture_id, code FROM ensure_operator_fixture"))
+        .containsExactlyInAnyOrder(
+            java.util.Map.of("fixture_id", 101L, "code", "ONE"),
+            java.util.Map.of("fixture_id", 202L, "code", "TWO"));
+  }
+
+  @Test
+  void failsClosedOnDivergence() {
+    jdbcTemplate.update("INSERT INTO ensure_operator_fixture VALUES (?, ?)", 101L, "WRONG");
+
+    assertThatThrownBy(() -> fixtureOperator().ensure())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("ensure_operator_fixture");
+  }
+
+  private EnsureStaticDataOperator<FixtureValues, FixtureValue, FixtureRecord> fixtureOperator() {
+    var repository =
+        new FixtureRepository(
+            jdbcTemplate, List.of(new FixtureRecord(101L, "ONE"), new FixtureRecord(202L, "TWO")));
+    return new EnsureStaticDataOperator<>(
+        repository,
+        record ->
+            jdbcTemplate.update(
+                "INSERT INTO ensure_operator_fixture VALUES (?, ?)", record.id(), record.code()));
+  }
+
+  private static String migrationLocation() {
+    String location = System.getProperty("outpost.migration.location");
+    if (location == null || location.isBlank()) {
+      throw new IllegalStateException("outpost.migration.location is required");
+    }
+    return location;
+  }
+
+  @SuppressWarnings("ImmutableEnumChecker")
+  private enum FixtureValues {
+    ONE(new FixtureValue(101L, "ONE")),
+    TWO(new FixtureValue(202L, "TWO"));
+
+    private final FixtureValue value;
+
+    FixtureValues(FixtureValue value) {
+      this.value = value;
+    }
+  }
+
+  private record FixtureValue(long id, String code) {}
+
+  private record FixtureRecord(long id, String code) {}
+
+  private static final class FixtureRepository
+      implements com.outpost.platform.staticdata.StaticDataRepository<
+          FixtureValues, FixtureValue, FixtureRecord> {
+    private final JdbcTemplate jdbcTemplate;
+    private final List<FixtureRecord> expected;
+
+    private FixtureRepository(JdbcTemplate jdbcTemplate, List<FixtureRecord> expected) {
+      this.jdbcTemplate = jdbcTemplate;
+      this.expected = expected;
+    }
+
+    @Override
+    public Class<FixtureValues> staticDataEnum() {
+      return FixtureValues.class;
+    }
+
+    @Override
+    public String table() {
+      return "ensure_operator_fixture";
+    }
+
+    @Override
+    public FixtureValue enumValue(FixtureValues constant) {
+      return constant.value;
+    }
+
+    @Override
+    public FixtureRecord toDatabaseRecord(FixtureValue value) {
+      return new FixtureRecord(value.id(), value.code());
+    }
+
+    @Override
+    public FixtureValue toDomainValue(FixtureRecord record) {
+      return new FixtureValue(record.id(), record.code());
+    }
+
+    @Override
+    public List<FixtureRecord> findAll() {
+      return jdbcTemplate.query(
+          "SELECT fixture_id, code FROM ensure_operator_fixture",
+          (resultSet, rowNum) -> new FixtureRecord(resultSet.getLong(1), resultSet.getString(2)));
+    }
+
+    @Override
+    public List<FixtureRecord> expectedRecords() {
+      return expected;
+    }
+
+    @Override
+    public long id(FixtureRecord record) {
+      return record.id();
+    }
+  }
+}

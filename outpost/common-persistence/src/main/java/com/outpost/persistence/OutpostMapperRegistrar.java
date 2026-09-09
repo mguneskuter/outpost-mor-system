@@ -2,6 +2,10 @@ package com.outpost.persistence;
 
 import static org.springframework.util.ClassUtils.getPackageName;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import org.mybatis.spring.mapper.MapperScannerConfigurer;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
@@ -30,11 +34,18 @@ class OutpostMapperRegistrar implements ImportBeanDefinitionRegistrar {
       throw new IllegalStateException(
           "EnableOutpostPersistence cannot determine a base package to scan for mappers");
     }
+    Map<String, Object> attributes =
+        importingClassMetadata.getAnnotationAttributes(EnableOutpostPersistence.class.getName());
+    String[] mapperPackages =
+        attributes != null ? (String[]) attributes.get("mapperPackages") : new String[0];
+    Set<String> packages = new LinkedHashSet<>();
+    packages.add(basePackage);
+    packages.addAll(Arrays.asList(mapperPackages));
     BeanDefinitionBuilder builder =
         BeanDefinitionBuilder.genericBeanDefinition(MapperScannerConfigurer.class);
     builder.addPropertyValue("processPropertyPlaceHolders", true);
     builder.addPropertyValue("annotationClass", RegisteredMapper.class);
-    builder.addPropertyValue("basePackage", basePackage);
+    builder.addPropertyValue("basePackage", String.join(",", packages));
     builder.addPropertyValue("sqlSessionFactoryBeanName", "sqlSessionFactory");
     builder.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
     registry.registerBeanDefinition(

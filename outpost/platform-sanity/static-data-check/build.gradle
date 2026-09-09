@@ -3,5 +3,25 @@ plugins {
 }
 
 dependencies {
-    implementation project(':platform-sanity:static-data-model')
+    implementation 'org.springframework:spring-context'
+    implementation 'com.tngtech.archunit:archunit:1.4.1'
+    testImplementation 'org.assertj:assertj-core'
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.junit-pioneer:junit-pioneer:2.3.0'
+    testImplementation project(':common-iso-static-data')
+    testImplementation project(':common-payment-static-data')
+    testImplementation project(':account-configuration-static-data')
+    testImplementation project(':merchant-configuration-static-data')
+    testImplementation project(':common-iso')
+    testImplementation project(':common-payment')
+    testImplementation project(':account-configuration')
+    testImplementation project(':merchant-configuration')
+    implementation project(':platform-sanity:static-data-repository')
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation project(path: ':platform-sanity:static-data-model')
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }

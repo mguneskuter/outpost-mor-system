@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export SPRING_DATASOURCE_URL
+export SPRING_DATASOURCE_USERNAME
+export SPRING_DATASOURCE_PASSWORD
+
+docker run --rm \
+    -e "SPRING_DATASOURCE_URL=${OUTPOST_DB_URL}" \
+    -e "SPRING_DATASOURCE_USERNAME=${OUTPOST_DB_USER}" \
+    -e "SPRING_DATASOURCE_PASSWORD=${OUTPOST_DB_PASSWORD}" \
+    -e SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver \
+    static-data-job
