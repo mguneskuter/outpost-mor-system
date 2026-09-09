@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
       "com.outpost.common.iso.repository",
       "com.outpost.payment.common.repository",
       "com.outpost.account.repository",
-      "com.outpost.merchant.repository",
+      "com.outpost.account.configuration.repository",
       "com.outpost.platform.staticdata.job.repository"
     })
 public class EnsureStaticDataJobApplication {

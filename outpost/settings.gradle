@@ -23,8 +23,8 @@ include(
     ':fx',
     ':payment',
     ':psp-integration',
-    ':outpost-api',
-    ':outpost-ledger-service',
+    ':gateway-api',
+    ':ledger-api',
     ':outpost-worker',
     ':static-data-job'
 )
