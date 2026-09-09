@@ -2,7 +2,7 @@ package com.outpost.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.outpost.persistence.testfixtures.PostgresTestDatabase;
+import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
@@ -42,7 +42,9 @@ class GatewayApiApplicationTest {
 
   @Test
   void exposesNoBusinessMappersOrRepositories() {
-    assertThat(context.getBeansWithAnnotation(com.outpost.persistence.RegisteredMapper.class))
+    assertThat(
+            context.getBeansWithAnnotation(
+                com.outpost.framework.persistence.RegisteredMapper.class))
         .isEmpty();
   }
 }

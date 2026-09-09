@@ -5,6 +5,6 @@ plugins {
 dependencies {
     implementation project(':account-configuration')
     implementation project(':platform-sanity:static-data-repository')
-    implementation project(':common-persistence')
+    implementation project(':framework:persistence')
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
 }

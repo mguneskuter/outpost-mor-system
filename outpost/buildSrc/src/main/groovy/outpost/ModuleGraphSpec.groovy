@@ -9,7 +9,9 @@ class ModuleGraphSpec {
         ':common-iso',
         ':common-payment-static-data',
         ':common-payment',
-        ':common-persistence',
+        ':framework:persistence',
+        ':framework:logging',
+        ':framework:security',
         ':account-configuration-static-data',
         ':account-configuration',
         ':merchant-configuration-static-data',
@@ -28,37 +30,37 @@ class ModuleGraphSpec {
     static final Map<String, Set<String>> PROJECT_DEPENDENCIES = [
         ':platform-sanity:static-data-model': [],
         ':platform-sanity:static-data-check': [
-            ':platform-sanity:static-data-repository'
-            ,':platform-sanity:static-data-model'
-            ,':common-iso-static-data'
-            ,':common-payment-static-data'
-            ,':account-configuration-static-data'
-            ,':merchant-configuration-static-data'
-            ,':common-iso'
-            ,':common-payment'
-            ,':account-configuration'
-            ,':merchant-configuration'
+            ':platform-sanity:static-data-repository',
+            ':platform-sanity:static-data-model',
+            ':common-iso-static-data',
+            ':common-payment-static-data',
+            ':account-configuration-static-data',
+            ':merchant-configuration-static-data',
+            ':common-iso',
+            ':common-payment',
+            ':account-configuration',
+            ':merchant-configuration'
         ],
         ':platform-sanity:static-data-repository': [],
         ':common-iso-static-data': [
             ':common-iso',
             ':platform-sanity:static-data-repository',
-            ':common-persistence'
+            ':framework:persistence'
         ],
         ':common-payment-static-data': [
             ':common-payment',
             ':platform-sanity:static-data-repository',
-            ':common-persistence'
+            ':framework:persistence'
         ],
         ':account-configuration-static-data': [
             ':account-configuration',
             ':platform-sanity:static-data-repository',
-            ':common-persistence'
+            ':framework:persistence'
         ],
         ':merchant-configuration-static-data': [
             ':merchant-configuration',
             ':platform-sanity:static-data-repository',
-            ':common-persistence'
+            ':framework:persistence'
         ],
         ':common-iso': [
             ':platform-sanity:static-data-model'
@@ -67,7 +69,9 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-model',
             ':common-iso'
         ],
-        ':common-persistence': [],
+        ':framework:persistence': [],
+        ':framework:logging': [],
+        ':framework:security': [],
         ':account-configuration': [
             ':platform-sanity:static-data-model',
             ':common-iso'
@@ -111,7 +115,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-check',
             ':common-iso',
             ':common-payment',
-            ':common-persistence',
+            ':framework:persistence',
             ':account-configuration',
             ':merchant-configuration',
             ':tax',
@@ -122,7 +126,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-check',
             ':common-iso',
             ':common-payment',
-            ':common-persistence',
+            ':framework:persistence',
             ':account-configuration',
             ':merchant-configuration',
             ':accounting',
@@ -132,7 +136,7 @@ class ModuleGraphSpec {
         ':outpost-worker': [
             ':platform-sanity:static-data-check',
             ':common-iso',
-            ':common-persistence',
+            ':framework:persistence',
             ':account-configuration',
             ':merchant-configuration',
             ':payment',
@@ -145,7 +149,7 @@ class ModuleGraphSpec {
             ':common-iso',
             ':common-payment-static-data',
             ':common-payment',
-            ':common-persistence',
+            ':framework:persistence',
             ':account-configuration-static-data',
             ':account-configuration',
             ':merchant-configuration-static-data',
@@ -180,7 +184,7 @@ class ModuleGraphSpec {
     ] as Set
 
     static final Set<String> PERSISTENCE_FRAMEWORK_PATHS = [
-        ':common-persistence'
+        ':framework:persistence'
     ] as Set
 
     static Set<String> expectedEdges() {

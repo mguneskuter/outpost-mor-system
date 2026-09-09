@@ -3,7 +3,8 @@ plugins {
 }
 
 dependencies {
-    implementation project(':common-persistence')
+    implementation project(':framework:persistence')
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation project(':platform-sanity:static-data-check')
     implementation project(':common-iso')
     implementation project(':account-configuration')

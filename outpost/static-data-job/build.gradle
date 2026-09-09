@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    implementation project(':common-persistence')
+    implementation project(':framework:persistence')
     implementation project(':platform-sanity:static-data-check')
     implementation project(':platform-sanity:static-data-repository')
     implementation project(':common-iso-static-data')
@@ -14,7 +14,7 @@ dependencies {
     implementation project(':account-configuration-static-data')
     implementation project(':account-configuration')
     implementation project(':merchant-configuration-static-data')
-    implementation project(':common-persistence')
+    implementation project(':framework:persistence')
     implementation project(':merchant-configuration')
     implementation project(':accounting')
     implementation project(':tax')
@@ -27,7 +27,7 @@ dependencies {
     testImplementation 'org.flywaydb:flyway-core'
     testImplementation 'org.flywaydb:flyway-database-postgresql'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
-    testImplementation testFixtures(project(':common-persistence'))
+    testImplementation testFixtures(project(':framework:persistence'))
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

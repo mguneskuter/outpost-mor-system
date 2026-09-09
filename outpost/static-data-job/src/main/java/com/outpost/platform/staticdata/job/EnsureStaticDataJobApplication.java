@@ -1,6 +1,6 @@
 package com.outpost.platform.staticdata.job;
 
-import com.outpost.persistence.EnableOutpostPersistence;
+import com.outpost.framework.persistence.EnableOutpostPersistence;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
