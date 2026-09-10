@@ -41,7 +41,7 @@ public enum RegisterTypes {
         .map(RegisterTypes::getValue);
   }
 
-  /** Immutable catalogue value owned exclusively by a {@link RegisterTypes} constant. */
+  /** Immutable register-type value owned by one {@link RegisterTypes} constant. */
   public static final class RegisterType {
     private static final Pattern CODE = Pattern.compile("[A-Z]+(_[A-Z]+)*");
     private final long registerTypeId;

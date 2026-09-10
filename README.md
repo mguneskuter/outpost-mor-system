@@ -114,8 +114,10 @@ one `mr/<topic>` branch and one worktree per task; never let two tasks share a
 branch or working directory. Keep worktrees under the gitignored `.worktrees/`
 directory, start each from a base containing all declared dependencies, and run
 the repository build before making changes so baseline failures are visible.
-Recreate the ignored `.docs` symlink in each worktree with the same target as the
-primary checkout so its task specification remains available.
+A linked worktree contains tracked files only: before baseline verification, run
+`git -C <worktree> worktreeinclude apply` to copy the ignored scanner binaries
+listed in `.worktreeinclude`, and read other ignored local context, such as
+`.docs`, from the primary checkout.
 
 Do not parallelize tasks that modify the same files, define an interface the
 other consumes, require ordered migrations, or otherwise depend on each other's
