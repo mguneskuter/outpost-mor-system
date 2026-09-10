@@ -10,8 +10,8 @@ class StructuredLoggingContractTest {
 
   @Test
   void testOnlyFieldExtensionUsesStableOwnerKeys() {
-    assertThat(TestFields.APPLICATION.jsonKey()).isEqualTo("application");
-    assertThat(TestFields.REQUEST_ID.jsonKey()).isEqualTo("request_id");
+    assertThat(TestFields.APPLICATION.getJsonKey()).isEqualTo("application");
+    assertThat(TestFields.REQUEST_ID.getJsonKey()).isEqualTo("request_id");
     assertThat(
             Arrays.stream(StructuredLoggingContractTest.class.getDeclaredClasses())
                 .filter(Class::isEnum)
@@ -73,7 +73,7 @@ class StructuredLoggingContractTest {
     }
 
     @Override
-    public String jsonKey() {
+    public String getJsonKey() {
       return jsonKey;
     }
   }

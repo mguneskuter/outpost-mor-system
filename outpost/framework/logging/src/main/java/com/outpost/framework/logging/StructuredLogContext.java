@@ -18,9 +18,9 @@ public final class StructuredLogContext {
   public static Scope open(LogFields field, String value) {
     Objects.requireNonNull(field, "field");
     Objects.requireNonNull(value, "value");
-    String key = Objects.requireNonNull(field.jsonKey(), "field.jsonKey()");
+    String key = Objects.requireNonNull(field.getJsonKey(), "field.getJsonKey()");
     if (key.isBlank()) {
-      throw new IllegalArgumentException("field.jsonKey() must not be blank");
+      throw new IllegalArgumentException("field.getJsonKey() must not be blank");
     }
     String previousValue = MDC.get(key);
     MDC.put(key, value);

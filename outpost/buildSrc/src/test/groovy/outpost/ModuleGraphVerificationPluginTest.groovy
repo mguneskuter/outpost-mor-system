@@ -22,48 +22,48 @@ class ModuleGraphVerificationPluginTest {
     @Test
     void missingEdgeFailsAndNamesTheEdge() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':common-iso'].remove(':platform-sanity:static-data-model')
+        dependencies[':common-iso:domain'].remove(':platform-sanity:static-data-model')
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Missing required dependency edge: :common-iso -> :platform-sanity:static-data-model'
+            'Missing required dependency edge: :common-iso:domain -> :platform-sanity:static-data-model'
         ))
     }
 
     @Test
     void unexpectedEdgeFailsAndNamesTheEdge() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':common-iso'] << ':tax'
+        dependencies[':common-iso:domain'] << ':tax'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Unexpected dependency edge: :common-iso -> :tax'
+            'Unexpected dependency edge: :common-iso:domain -> :tax'
         ))
     }
 
     @Test
     void domainToDeployableEdgeFails() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':common-iso'] << ':gateway-api'
+        dependencies[':common-iso:domain'] << ':gateway-api'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Domain module depends on deployable: :common-iso -> :gateway-api'
+            'Domain module depends on deployable: :common-iso:domain -> :gateway-api'
         ))
     }
 
     @Test
     void domainToPersistenceFrameworkEdgeFails() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':common-iso'] << ':framework:persistence'
+        dependencies[':common-iso:domain'] << ':framework:persistence'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Domain module depends on persistence framework: :common-iso -> :framework:persistence'
+            'Domain module depends on persistence framework: :common-iso:domain -> :framework:persistence'
         ))
     }
 
@@ -103,12 +103,12 @@ class ModuleGraphVerificationPluginTest {
     @Test
     void cycleFailsAndPrintsTheCycle() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':platform-sanity:static-data-model'] << ':common-iso'
+        dependencies[':platform-sanity:static-data-model'] << ':common-iso:domain'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Dependency cycle detected: :common-iso -> :platform-sanity:static-data-model -> :common-iso'
+            'Dependency cycle detected: :common-iso:domain -> :platform-sanity:static-data-model -> :common-iso:domain'
         ))
     }
 

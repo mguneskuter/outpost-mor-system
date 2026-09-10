@@ -8,14 +8,15 @@ dependencies {
     testImplementation 'org.assertj:assertj-core'
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'org.junit-pioneer:junit-pioneer:2.3.0'
-    testImplementation project(':common-iso-static-data')
-    testImplementation project(':common-payment-static-data')
-    testImplementation project(':account-configuration-static-data')
-    testImplementation project(':merchant-configuration-static-data')
-    testImplementation project(':common-iso')
-    testImplementation project(':common-payment')
-    testImplementation project(':account-configuration')
-    testImplementation project(':merchant-configuration')
+    testImplementation project(':common-iso:repository')
+    testImplementation project(':common-payment:repository')
+    testImplementation project(':account:repository')
+    testImplementation project(':merchant-configuration:repository')
+    testImplementation project(':accounting:persistence')
+    testImplementation project(':common-iso:domain')
+    testImplementation project(':common-payment:domain')
+    testImplementation project(':account:domain')
+    testImplementation project(':merchant-configuration:domain')
     implementation project(':platform-sanity:static-data-repository')
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

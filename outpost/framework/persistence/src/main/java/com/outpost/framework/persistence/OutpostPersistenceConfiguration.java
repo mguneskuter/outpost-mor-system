@@ -23,7 +23,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 @Configuration(proxyBeanMethods = false)
 class OutpostPersistenceConfiguration {
 
-  private static final String MAPPER_XML_LOCATION = "classpath*:db/mapper/*.xml";
+  private static final String MAPPER_XML_LOCATION = "classpath*:db/mapper/**/*.xml";
 
   @Bean
   static OutpostDataSourceConnectionValidator outpostDataSourceConnectionValidator(

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.platform.staticdata.job.accounting.TransactionEventTypeWriteMapper">
+  <select id="findAll" resultType="com.outpost.accounting.repository.TransactionEventTypeRecord">
+    SELECT transaction_event_type_id, code, requires_journal_entry
+      FROM transaction_event_type ORDER BY transaction_event_type_id
+  </select>
+  <insert id="insert" parameterType="com.outpost.accounting.repository.TransactionEventTypeRecord">
+    INSERT INTO transaction_event_type
+      (transaction_event_type_id, code, requires_journal_entry)
+    VALUES (#{transactionEventTypeId}, #{code}, #{requiresJournalEntry})
+  </insert>
+</mapper>

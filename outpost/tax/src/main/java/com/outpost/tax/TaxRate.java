@@ -16,7 +16,7 @@ public record TaxRate(Country country, @Nullable CountrySubdivision subdivision,
     if (rate.signum() < 0) {
       throw new IllegalArgumentException("rate must not be negative: " + rate);
     }
-    if (subdivision != null && !subdivision.country().equals(country)) {
+    if (subdivision != null && !subdivision.getCountry().equals(country)) {
       throw new IllegalArgumentException("subdivision must belong to country");
     }
   }

@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class SystemSanityCheckTest {
 
   @Test
-  void rejectsMissingAndDivergentRows() {
+  void rejectsDivergentRows() {
     StaticDataRepository<?, ?, ?> repository = new Repository(List.of(new TestRecord(1, "WRONG")));
 
     SystemSanityCheck verifier = new SystemSanityCheck(List.of(repository));
@@ -19,6 +19,29 @@ class SystemSanityCheckTest {
     assertThatThrownBy(verifier::verify)
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("divergent row");
+  }
+
+  @Test
+  void rejectsMissingRows() {
+    assertThatThrownBy(() -> new SystemSanityCheck(List.of(new Repository(List.of()))).verify())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("missing row");
+  }
+
+  @Test
+  void rejectsUnexpectedRows() {
+    assertThatThrownBy(
+            () ->
+                new SystemSanityCheck(
+                        List.of(new Repository(List.of(new TestRecord(99, "UNEXPECTED")))))
+                    .verify())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("unexpected row");
+  }
+
+  @Test
+  void acceptsMatchingRows() {
+    new SystemSanityCheck(List.of(new Repository(List.of(new TestRecord(1, "ONE"))))).verify();
   }
 
   @Test
