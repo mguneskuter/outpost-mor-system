@@ -43,7 +43,7 @@ public final class CachedTaxRateProvider implements TaxRateProvider {
     Objects.requireNonNull(asOf, "asOf");
     TaxRate taxRate = rates.get(new RateKey(country, subdivision));
     if (taxRate == null) {
-      if (subdivision == null && Countries.UNITED_STATES.value().equals(country)) {
+      if (subdivision == null && Countries.UNITED_STATES.getValue().equals(country)) {
         throw new IllegalArgumentException("United States resolution requires a subdivision");
       }
       throw new IllegalArgumentException("no tax rate for jurisdiction: " + country);

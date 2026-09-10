@@ -1,8 +1,8 @@
 plugins {
-    id 'outpost.java-conventions'
+    id 'outpost.domain-conventions'
 }
 
 dependencies {
     implementation project(':platform-sanity:static-data-model')
-    implementation project(':common-iso')
+    implementation project(':common-iso:domain')
 }

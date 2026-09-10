@@ -1,0 +1,15 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+group = 'com.outpost.accounting'
+
+base {
+    archivesName = 'accounting-persistence'
+}
+
+dependencies {
+    implementation project(':accounting:domain')
+    implementation project(':platform-sanity:static-data-repository')
+    implementation project(':framework:persistence')
+}

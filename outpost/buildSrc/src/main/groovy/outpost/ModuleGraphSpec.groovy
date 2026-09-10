@@ -3,20 +3,22 @@ package com.outpost
 class ModuleGraphSpec {
     static final Set<String> PROJECT_PATHS = [
         ':platform-sanity:static-data-model',
+        ':platform-sanity:domain-architecture',
         ':platform-sanity:static-data-check',
         ':platform-sanity:static-data-repository',
-        ':common-iso-static-data',
-        ':common-iso',
-        ':common-payment-static-data',
-        ':common-payment',
+        ':common-iso:repository',
+        ':common-iso:domain',
+        ':common-payment:repository',
+        ':common-payment:domain',
         ':framework:persistence',
         ':framework:logging',
         ':framework:security',
-        ':account-configuration-static-data',
-        ':account-configuration',
-        ':merchant-configuration-static-data',
-        ':merchant-configuration',
-        ':accounting',
+        ':account:repository',
+        ':account:domain',
+        ':merchant-configuration:repository',
+        ':merchant-configuration:domain',
+        ':accounting:domain',
+        ':accounting:persistence',
         ':tax',
         ':fx',
         ':payment',
@@ -29,132 +31,149 @@ class ModuleGraphSpec {
 
     static final Map<String, Set<String>> PROJECT_DEPENDENCIES = [
         ':platform-sanity:static-data-model': [],
+        ':platform-sanity:domain-architecture': [
+            ':platform-sanity:static-data-model',
+            ':common-iso:domain',
+            ':common-payment:domain',
+            ':account:domain',
+            ':merchant-configuration:domain',
+            ':accounting:domain',
+            ':tax'
+        ],
         ':platform-sanity:static-data-check': [
             ':platform-sanity:static-data-repository',
             ':platform-sanity:static-data-model',
-            ':common-iso-static-data',
-            ':common-payment-static-data',
-            ':account-configuration-static-data',
-            ':merchant-configuration-static-data',
-            ':common-iso',
-            ':common-payment',
-            ':account-configuration',
-            ':merchant-configuration'
+            ':common-iso:repository',
+            ':common-payment:repository',
+            ':account:repository',
+            ':merchant-configuration:repository',
+            ':accounting:persistence',
+            ':common-iso:domain',
+            ':common-payment:domain',
+            ':account:domain',
+            ':merchant-configuration:domain'
         ],
         ':platform-sanity:static-data-repository': [],
-        ':common-iso-static-data': [
-            ':common-iso',
+        ':common-iso:repository': [
+            ':common-iso:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
-        ':common-payment-static-data': [
-            ':common-payment',
+        ':common-payment:repository': [
+            ':common-payment:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
-        ':account-configuration-static-data': [
-            ':account-configuration',
+        ':account:repository': [
+            ':account:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
-        ':merchant-configuration-static-data': [
-            ':merchant-configuration',
+        ':merchant-configuration:repository': [
+            ':merchant-configuration:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
-        ':common-iso': [
+        ':common-iso:domain': [
             ':platform-sanity:static-data-model'
         ],
-        ':common-payment': [
+        ':common-payment:domain': [
             ':platform-sanity:static-data-model',
-            ':common-iso'
+            ':common-iso:domain'
         ],
         ':framework:persistence': [],
         ':framework:logging': [],
         ':framework:security': [],
-        ':account-configuration': [
+        ':account:domain': [
             ':platform-sanity:static-data-model',
-            ':common-iso'
+            ':common-iso:domain'
         ],
-        ':merchant-configuration': [
+        ':merchant-configuration:domain': [
             ':platform-sanity:static-data-model',
-            ':common-iso',
-            ':common-payment',
-            ':account-configuration'
+            ':common-iso:domain',
+            ':common-payment:domain',
+            ':account:domain'
         ],
-        ':accounting': [
+        ':accounting:domain': [
             ':platform-sanity:static-data-model',
-            ':common-iso',
-            ':common-payment',
-            ':account-configuration',
-            ':merchant-configuration',
+            ':common-iso:domain',
+            ':common-payment:domain',
+            ':account:domain',
+            ':merchant-configuration:domain',
             ':tax',
             ':fx'
         ],
+        ':accounting:persistence': [
+            ':accounting:domain',
+            ':platform-sanity:static-data-repository',
+            ':framework:persistence'
+        ],
         ':tax': [
             ':platform-sanity:static-data-model',
-            ':common-iso',
-            ':common-payment'
+            ':common-iso:domain',
+            ':common-payment:domain'
         ],
         ':fx': [
             ':platform-sanity:static-data-model',
-            ':common-iso'
+            ':common-iso:domain'
         ],
         ':payment': [
             ':platform-sanity:static-data-model',
-            ':common-iso',
-            ':common-payment',
+            ':common-iso:domain',
+            ':common-payment:domain',
             ':tax',
             ':psp-integration'
         ],
         ':psp-integration': [
             ':platform-sanity:static-data-model',
-            ':common-iso'
+            ':common-iso:domain'
         ],
         ':gateway-api': [
             ':platform-sanity:static-data-check',
-            ':common-iso',
-            ':common-payment',
+            ':common-iso:domain',
+            ':common-payment:domain',
             ':framework:persistence',
-            ':account-configuration',
-            ':merchant-configuration',
+            ':account:domain',
+            ':merchant-configuration:domain',
             ':tax',
             ':payment',
             ':psp-integration'
         ],
         ':ledger-api': [
             ':platform-sanity:static-data-check',
-            ':common-iso',
-            ':common-payment',
+            ':accounting:persistence',
+            ':common-iso:domain',
+            ':common-payment:domain',
             ':framework:persistence',
-            ':account-configuration',
-            ':merchant-configuration',
-            ':accounting',
+            ':account:domain',
+            ':merchant-configuration:domain',
+            ':accounting:domain',
             ':tax',
             ':fx'
         ],
         ':outpost-worker': [
             ':platform-sanity:static-data-check',
-            ':common-iso',
+            ':common-iso:domain',
             ':framework:persistence',
-            ':account-configuration',
-            ':merchant-configuration',
+            ':account:domain',
+            ':merchant-configuration:domain',
             ':payment',
             ':psp-integration'
         ],
         ':static-data-job': [
             ':platform-sanity:static-data-check',
             ':platform-sanity:static-data-repository',
-            ':common-iso-static-data',
-            ':common-iso',
-            ':common-payment-static-data',
-            ':common-payment',
+            ':common-iso:repository',
+            ':common-iso:domain',
+            ':common-payment:repository',
+            ':common-payment:domain',
             ':framework:persistence',
-            ':account-configuration-static-data',
-            ':account-configuration',
-            ':merchant-configuration-static-data',
-            ':merchant-configuration',
-            ':accounting',
+            ':account:repository',
+            ':account:domain',
+            ':merchant-configuration:repository',
+            ':merchant-configuration:domain',
+            ':accounting:domain',
+            ':accounting:persistence',
             ':tax',
             ':fx',
             ':payment',
@@ -165,11 +184,11 @@ class ModuleGraphSpec {
     }.asUnmodifiable()
 
     static final Set<String> DOMAIN_PROJECT_PATHS = [
-        ':common-iso',
-        ':common-payment',
-        ':account-configuration',
-        ':merchant-configuration',
-        ':accounting',
+        ':common-iso:domain',
+        ':common-payment:domain',
+        ':account:domain',
+        ':merchant-configuration:domain',
+        ':accounting:domain',
         ':tax',
         ':fx',
         ':payment',

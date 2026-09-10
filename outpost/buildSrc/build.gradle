@@ -20,6 +20,10 @@ gradlePlugin {
             id = 'outpost.java-conventions'
             implementationClass = 'com.outpost.JavaConventionsPlugin'
         }
+        domainConventions {
+            id = 'outpost.domain-conventions'
+            implementationClass = 'com.outpost.DomainConventionsPlugin'
+        }
         moduleGraphVerification {
             id = 'outpost.module-graph-verification'
             implementationClass = 'com.outpost.ModuleGraphVerificationPlugin'

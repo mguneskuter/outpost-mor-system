@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.outpost.common.iso.repository.CurrencyStaticDataReadMapper">
-  <select id="findAll" resultType="com.outpost.common.iso.repository.CurrencyRecord">
-    SELECT currency_id, currency_code, exponent FROM currency ORDER BY currency_id
-  </select>
-</mapper>

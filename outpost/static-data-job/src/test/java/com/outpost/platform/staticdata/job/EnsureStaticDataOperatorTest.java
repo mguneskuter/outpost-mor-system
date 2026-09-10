@@ -11,14 +11,13 @@ class EnsureStaticDataOperatorTest {
 
   @Test
   void insertsMissingRowsWithoutUpdatingEqualRows() {
-    FakeRepository repository = new FakeRepository(List.of());
+    FakeRepository repository = new FakeRepository(List.of(new TestRecord(1, "ONE")));
     EnsureStaticDataOperator<TestValues, Value, TestRecord> operator =
         new EnsureStaticDataOperator<>(repository, record -> repository.inserted.add(record));
 
     operator.ensure();
 
-    assertThat(repository.inserted)
-        .containsExactly(new TestRecord(1, "ONE"), new TestRecord(2, "TWO"));
+    assertThat(repository.inserted).containsExactly(new TestRecord(2, "TWO"));
   }
 
   @Test
@@ -28,6 +27,18 @@ class EnsureStaticDataOperatorTest {
         new EnsureStaticDataOperator<>(repository, record -> repository.inserted.add(record));
 
     assertThatThrownBy(operator::ensure).isInstanceOf(IllegalStateException.class);
+    assertThat(repository.inserted).isEmpty();
+  }
+
+  @Test
+  void failsClosedOnUnexpectedRows() {
+    FakeRepository repository = new FakeRepository(List.of(new TestRecord(99, "UNEXPECTED")));
+    EnsureStaticDataOperator<TestValues, Value, TestRecord> operator =
+        new EnsureStaticDataOperator<>(repository, record -> repository.inserted.add(record));
+
+    assertThatThrownBy(operator::ensure)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("unexpected record ids");
     assertThat(repository.inserted).isEmpty();
   }
 

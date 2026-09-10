@@ -1,0 +1,19 @@
+plugins {
+    id 'outpost.domain-conventions'
+}
+
+group = 'com.outpost.common.iso'
+
+base {
+    archivesName = 'common-iso-domain'
+}
+
+dependencies {
+    implementation project(':platform-sanity:static-data-model')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

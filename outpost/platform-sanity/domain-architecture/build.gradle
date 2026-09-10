@@ -1,0 +1,20 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+dependencies {
+    testImplementation 'com.tngtech.archunit:archunit:1.4.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation project(':platform-sanity:static-data-model')
+    testImplementation project(':common-iso:domain')
+    testImplementation project(':common-payment:domain')
+    testImplementation project(':account:domain')
+    testImplementation project(':merchant-configuration:domain')
+    testImplementation project(':accounting:domain')
+    testImplementation project(':tax')
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

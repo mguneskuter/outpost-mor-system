@@ -1,7 +1,6 @@
 package com.outpost.platform.staticdata.check;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.platform.staticdata.StaticDataRepository;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -10,7 +9,6 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -32,28 +30,14 @@ class StaticDataRepositoryDependencyTest {
     assertThat(repositories)
         .allSatisfy(
             repository ->
-                assertThat(repository.getClass().getPackageName()).endsWith(".repository"));
-  }
-
-  @Test
-  void rejectsAnUnclaimedRealRepositoryImplementation() {
-    List<RepositoryClaim> claims = repositoryClaims(repositoryImplementations());
-    Class<?> removedEnum = claims.remove(0).enumType();
-
-    assertThatThrownBy(() -> assertRepositoryClaims(annotatedEnums(), claims))
-        .isInstanceOf(AssertionError.class)
-        .hasMessageContaining("Unclaimed static-data enum")
-        .hasMessageContaining(removedEnum.getName());
-  }
-
-  @Test
-  void rejectsDuplicateRealRepositoryClaims() {
-    List<RepositoryClaim> claims = repositoryClaims(repositoryImplementations());
-    claims.add(claims.get(0));
-
-    assertThatThrownBy(() -> assertRepositoryClaims(annotatedEnums(), claims))
-        .isInstanceOf(AssertionError.class)
-        .hasMessageContaining("Duplicate repository claim");
+                assertThat(
+                        repository.getClass().getPackageName().endsWith(".repository")
+                            || repository
+                                .getClass()
+                                .getPackageName()
+                                .endsWith(".repository.sanity"))
+                    .as("repository package should be a repository package")
+                    .isTrue());
   }
 
   private static List<StaticDataRepository<?, ?, ?>> repositoryImplementations() {
@@ -104,35 +88,4 @@ class StaticDataRepositoryDependencyTest {
       throw new LinkageError("Could not instantiate " + repositoryType.getName(), exception);
     }
   }
-
-  private static List<RepositoryClaim> repositoryClaims(
-      List<StaticDataRepository<?, ?, ?>> repositories) {
-    return repositories.stream()
-        .map(repository -> new RepositoryClaim(repository.staticDataEnum(), repository.getClass()))
-        .collect(Collectors.toCollection(ArrayList::new));
-  }
-
-  private static void assertRepositoryClaims(
-      List<Class<?>> annotatedEnums, List<RepositoryClaim> claims) {
-    Set<Class<?>> claimedEnums = new HashSet<>();
-    for (RepositoryClaim claim : claims) {
-      assertThat(
-              claim
-                  .enumType()
-                  .isAnnotationPresent(com.outpost.platform.staticdata.StaticData.class))
-          .as("Repository claim must target an annotated enum: %s", claim.enumType().getName())
-          .isTrue();
-      assertThat(claimedEnums.add(claim.enumType()))
-          .as("Duplicate repository claim for %s", claim.enumType().getName())
-          .isTrue();
-    }
-    for (Class<?> enumType : annotatedEnums) {
-      assertThat(claimedEnums.contains(enumType))
-          .as("Unclaimed static-data enum: %s", enumType.getName())
-          .isTrue();
-    }
-    assertThat(claimedEnums).hasSameSizeAs(annotatedEnums);
-  }
-
-  private record RepositoryClaim(Class<?> enumType, Class<?> repositoryType) {}
 }

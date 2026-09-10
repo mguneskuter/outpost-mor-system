@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.outpost.account.repository.AccountTypeStaticDataReadMapper">
-  <select id="findAll" resultType="com.outpost.account.repository.AccountTypeRecord">
-    SELECT account_type_id, code FROM account_type ORDER BY account_type_id
-  </select>
-</mapper>

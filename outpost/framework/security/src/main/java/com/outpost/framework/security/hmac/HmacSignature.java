@@ -1,5 +1,6 @@
 package com.outpost.framework.security.hmac;
 
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Objects;
 
@@ -49,7 +50,7 @@ public final class HmacSignature {
 
   @Override
   public int hashCode() {
-    return 1;
+    return Arrays.hashCode(bytes);
   }
 
   @Override

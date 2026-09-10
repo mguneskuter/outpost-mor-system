@@ -1,0 +1,21 @@
+plugins {
+    id 'outpost.domain-conventions'
+}
+
+group = 'com.outpost.accounting'
+
+dependencies {
+    implementation project(':platform-sanity:static-data-model')
+    implementation project(':common-iso:domain')
+    implementation project(':common-payment:domain')
+    implementation project(':account:domain')
+    implementation project(':merchant-configuration:domain')
+    implementation project(':tax')
+    implementation project(':fx')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

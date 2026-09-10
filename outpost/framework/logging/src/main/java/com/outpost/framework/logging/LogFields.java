@@ -9,5 +9,5 @@ package com.outpost.framework.logging;
 public interface LogFields {
 
   /** Returns the stable JSON key owned by the implementing module. */
-  String jsonKey();
+  String getJsonKey();
 }

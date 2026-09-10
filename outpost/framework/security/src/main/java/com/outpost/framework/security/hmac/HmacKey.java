@@ -1,6 +1,7 @@
 package com.outpost.framework.security.hmac;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Objects;
 
 /** Immutable HMAC key that never reveals its bytes in diagnostics. */
@@ -41,7 +42,7 @@ public final class HmacKey {
 
   @Override
   public int hashCode() {
-    return 1;
+    return Arrays.hashCode(bytes);
   }
 
   @Override

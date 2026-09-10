@@ -2,7 +2,10 @@ package com.outpost.platform.staticdata.job;
 
 import com.outpost.platform.staticdata.StaticDataRepository;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Inserts absent expected records and fails closed when a database record diverges. */
 public final class EnsureStaticDataOperator<E extends Enum<E>, V, R> {
@@ -22,7 +25,17 @@ public final class EnsureStaticDataOperator<E extends Enum<E>, V, R> {
       actual.put(repository.id(record), record);
     }
 
-    for (R expected : repository.expectedRecords()) {
+    List<R> expectedRecords = repository.expectedRecords();
+    Set<Long> expectedIds = new HashSet<>();
+    for (R expected : expectedRecords) {
+      expectedIds.add(repository.id(expected));
+    }
+    if (!actual.keySet().stream().allMatch(expectedIds::contains)) {
+      throw new IllegalStateException(
+          "%s contains unexpected record ids: %s".formatted(repository.table(), actual.keySet()));
+    }
+
+    for (R expected : expectedRecords) {
       long id = repository.id(expected);
       R databaseRecord = actual.get(id);
       if (databaseRecord == null) {
@@ -32,6 +45,7 @@ public final class EnsureStaticDataOperator<E extends Enum<E>, V, R> {
             "%s record %d diverged: expected=%s actual=%s"
                 .formatted(repository.table(), id, expected, databaseRecord));
       }
+      actual.remove(id);
     }
   }
 

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.platform.staticdata.job.accounting.JournalEntryTypeWriteMapper">
+  <select id="findAll" resultType="com.outpost.accounting.repository.JournalEntryTypeRecord">
+    SELECT journal_entry_type_id, code FROM journal_entry_type ORDER BY journal_entry_type_id
+  </select>
+  <insert id="insert" parameterType="com.outpost.accounting.repository.JournalEntryTypeRecord">
+    INSERT INTO journal_entry_type (journal_entry_type_id, code)
+    VALUES (#{journalEntryTypeId}, #{code})
+  </insert>
+</mapper>

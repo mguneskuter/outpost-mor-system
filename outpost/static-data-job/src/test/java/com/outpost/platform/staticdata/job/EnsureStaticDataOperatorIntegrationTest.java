@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import java.util.List;
+import java.util.Map;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,10 +32,12 @@ class EnsureStaticDataOperatorIntegrationTest {
   }
 
   private final JdbcTemplate jdbcTemplate;
+  private final EnsureStaticDataJob job;
 
   @Autowired
-  EnsureStaticDataOperatorIntegrationTest(JdbcTemplate jdbcTemplate) {
+  EnsureStaticDataOperatorIntegrationTest(JdbcTemplate jdbcTemplate, EnsureStaticDataJob job) {
     this.jdbcTemplate = jdbcTemplate;
+    this.job = job;
   }
 
   @DynamicPropertySource
@@ -46,6 +49,18 @@ class EnsureStaticDataOperatorIntegrationTest {
 
   @BeforeEach
   void createFixtureTable() {
+    jdbcTemplate.update("DELETE FROM transaction_event_type WHERE transaction_event_type_id = 500");
+    jdbcTemplate.update(
+        "INSERT INTO transaction_event_type VALUES (?, ?, ?) "
+            + "ON CONFLICT (transaction_event_type_id) DO NOTHING",
+        5L,
+        "CAPTURED",
+        true);
+    jdbcTemplate.update(
+        "UPDATE transaction_event_type SET code = ?, requires_journal_entry = ? "
+            + "WHERE transaction_event_type_id = 5",
+        "CAPTURED",
+        true);
     jdbcTemplate.execute("DROP TABLE IF EXISTS ensure_operator_fixture");
     jdbcTemplate.execute(
         "CREATE TABLE ensure_operator_fixture (fixture_id BIGINT PRIMARY KEY, code TEXT NOT NULL)");
@@ -71,6 +86,60 @@ class EnsureStaticDataOperatorIntegrationTest {
     assertThatThrownBy(() -> fixtureOperator().ensure())
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("ensure_operator_fixture");
+  }
+
+  @Test
+  void insertsMissingAccountingRowAndIsIdempotent() {
+    jdbcTemplate.update("DELETE FROM journal_entry_type WHERE journal_entry_type_id = 2");
+
+    job.ensure();
+    job.ensure();
+
+    assertThat(
+            jdbcTemplate.queryForMap(
+                "SELECT journal_entry_type_id, code FROM journal_entry_type "
+                    + "WHERE journal_entry_type_id = 2"))
+        .containsEntry("journal_entry_type_id", 2L)
+        .containsEntry("code", "REFUND");
+  }
+
+  @Test
+  void failsOnDivergentAccountingCode() {
+    jdbcTemplate.update(
+        "UPDATE transaction_event_type SET code = ? WHERE transaction_event_type_id = 5", "WRONG");
+
+    assertThatThrownBy(job::ensure).isInstanceOf(IllegalStateException.class);
+    assertThat(transactionEventRow()).containsEntry("code", "WRONG");
+  }
+
+  @Test
+  void failsOnDivergentAccountingBookingFlag() {
+    jdbcTemplate.update(
+        "UPDATE transaction_event_type SET requires_journal_entry = false "
+            + "WHERE transaction_event_type_id = 5");
+
+    assertThatThrownBy(job::ensure).isInstanceOf(IllegalStateException.class);
+    assertThat(transactionEventRow()).containsEntry("requires_journal_entry", false);
+  }
+
+  @Test
+  void failsOnDivergentAccountingId() {
+    jdbcTemplate.update(
+        "UPDATE transaction_event_type SET transaction_event_type_id = 500 "
+            + "WHERE transaction_event_type_id = 5");
+
+    assertThatThrownBy(job::ensure).isInstanceOf(IllegalStateException.class);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transaction_event_type WHERE transaction_event_type_id = 500",
+                Integer.class))
+        .isEqualTo(1);
+  }
+
+  private Map<String, Object> transactionEventRow() {
+    return jdbcTemplate.queryForMap(
+        "SELECT code, requires_journal_entry FROM transaction_event_type "
+            + "WHERE transaction_event_type_id = 5");
   }
 
   private EnsureStaticDataOperator<FixtureValues, FixtureValue, FixtureRecord> fixtureOperator() {

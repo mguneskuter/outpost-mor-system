@@ -16,20 +16,20 @@ class CachedTaxRateProviderTest {
 
   @Test
   void resolvesCountryAndSubdivisionRates() {
-    var austria = Countries.AUSTRIA.value();
-    var california = CountrySubdivisions.US_CA.value();
+    var austria = Countries.AUSTRIA.getValue();
+    var california = CountrySubdivisions.US_CA.getValue();
     var provider =
         new CachedTaxRateProvider(
             List.of(
                 new TaxRate(austria, null, new BigDecimal("0.2000")),
                 new TaxRate(
-                    Countries.UNITED_STATES.value(), california, new BigDecimal("0.0725"))));
+                    Countries.UNITED_STATES.getValue(), california, new BigDecimal("0.0725"))));
 
     assertThat(provider.resolve(austria, null, productType(), date()).rate())
         .isEqualByComparingTo("0.2000");
     assertThat(
             provider
-                .resolve(Countries.UNITED_STATES.value(), california, productType(), date())
+                .resolve(Countries.UNITED_STATES.getValue(), california, productType(), date())
                 .rate())
         .isEqualByComparingTo("0.0725");
   }
@@ -40,18 +40,59 @@ class CachedTaxRateProviderTest {
         new CachedTaxRateProvider(
             List.of(
                 new TaxRate(
-                    Countries.UNITED_STATES.value(),
-                    CountrySubdivisions.US_CA.value(),
+                    Countries.UNITED_STATES.getValue(),
+                    CountrySubdivisions.US_CA.getValue(),
                     new BigDecimal("0.0725"))));
 
     assertThatThrownBy(
-            () -> provider.resolve(Countries.UNITED_STATES.value(), null, productType(), date()))
+            () -> provider.resolve(Countries.UNITED_STATES.getValue(), null, productType(), date()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("United States resolution requires a subdivision");
   }
 
+  @Test
+  void rejectsDuplicateJurisdictions() {
+    var austria = Countries.AUSTRIA.getValue();
+    assertThatThrownBy(
+            () ->
+                new CachedTaxRateProvider(
+                    List.of(
+                        new TaxRate(austria, null, new BigDecimal("0.20")),
+                        new TaxRate(austria, null, new BigDecimal("0.21")))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("duplicate tax-rate jurisdiction");
+  }
+
+  @Test
+  void rejectsMissingJurisdictionRates() {
+    var provider =
+        new CachedTaxRateProvider(
+            List.of(new TaxRate(Countries.AUSTRIA.getValue(), null, new BigDecimal("0.20"))));
+
+    assertThatThrownBy(
+            () -> provider.resolve(Countries.NETHERLANDS.getValue(), null, productType(), date()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("no tax rate for jurisdiction");
+  }
+
+  @Test
+  @SuppressWarnings("NullAway")
+  void rejectsNullResolutionArguments() {
+    var provider =
+        new CachedTaxRateProvider(
+            List.of(new TaxRate(Countries.AUSTRIA.getValue(), null, new BigDecimal("0.20"))));
+
+    assertThatThrownBy(() -> provider.resolve(null, null, productType(), date()))
+        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> provider.resolve(Countries.AUSTRIA.getValue(), null, null, date()))
+        .isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(
+            () -> provider.resolve(Countries.AUSTRIA.getValue(), null, productType(), null))
+        .isInstanceOf(NullPointerException.class);
+  }
+
   private static ProductTypes.ProductType productType() {
-    return ProductTypes.DIGITAL_GOODS.value();
+    return ProductTypes.DIGITAL_GOODS.getValue();
   }
 
   private static LocalDate date() {
