@@ -36,7 +36,7 @@ public enum JournalEntryTypes {
         .map(JournalEntryTypes::getValue);
   }
 
-  /** Immutable catalogue value owned exclusively by a {@link JournalEntryTypes} constant. */
+  /** Immutable journal-entry-type value owned by one {@link JournalEntryTypes} constant. */
   public static final class JournalEntryType {
     private static final Pattern CODE = Pattern.compile("[A-Z]+(_[A-Z]+)*");
     private final long journalEntryTypeId;

@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/** The immutable catalogue of events recorded against a transaction. */
+/** The event types recorded against a transaction. */
 @StaticData
 public enum TransactionEventTypes {
   ORDER_CREATED(1L, "ORDER_CREATED", false),
@@ -44,7 +44,7 @@ public enum TransactionEventTypes {
         .map(TransactionEventTypes::getValue);
   }
 
-  /** Immutable catalogue value owned exclusively by a {@link TransactionEventTypes} constant. */
+  /** Immutable transaction-event-type value owned by one {@link TransactionEventTypes} constant. */
   public static final class TransactionEventType {
     private static final Pattern CODE = Pattern.compile("[A-Z]+(_[A-Z]+)*");
     private final long transactionEventTypeId;

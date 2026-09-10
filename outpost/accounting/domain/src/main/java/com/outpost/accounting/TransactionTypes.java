@@ -37,7 +37,7 @@ public enum TransactionTypes {
         .map(TransactionTypes::getValue);
   }
 
-  /** Immutable catalogue value owned exclusively by a {@link TransactionTypes} constant. */
+  /** Immutable transaction-type value owned by one {@link TransactionTypes} constant. */
   public static final class TransactionType {
     private static final Pattern CODE = Pattern.compile("[A-Z]+(_[A-Z]+)*");
     private final long transactionTypeId;
