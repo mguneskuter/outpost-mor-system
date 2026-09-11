@@ -97,6 +97,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('outpost/gradle/wrapper/gradle-wrapper.properties', 'outpost/**/*.gradle', 'outpost/**/*.groovy') }}
       - run: ./outpost/gradlew -p outpost :framework:persistence:test --tests com.outpost.framework.persistence.PersistenceIntegrationTest
       - run: ./outpost/gradlew -p outpost :gateway-api:test
+      - run: ./outpost/gradlew -p outpost :ledger-api:test
 
   migrations:
     name: Migration and schema tests
