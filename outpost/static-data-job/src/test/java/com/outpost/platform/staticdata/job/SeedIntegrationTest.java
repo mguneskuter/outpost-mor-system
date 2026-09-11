@@ -101,6 +101,32 @@ class SeedIntegrationTest {
   }
 
   @Test
+  void divergentTaxAuthorityAndFeeRowsFailWithoutOverwrite() {
+    runPrerequisiteSeeds();
+    jdbcTemplate.update("UPDATE tax_authority_account SET account_id = 1029 WHERE country_id = 1");
+    jdbcTemplate.update(
+        "UPDATE merchant_fee_configuration SET fee_rate_bps = 999 "
+            + "WHERE account_id = 200 AND currency_id = "
+            + "(SELECT currency_id FROM currency WHERE currency_code = 'EUR')");
+
+    assertThatThrownBy(() -> runSeed("tax_authority_account.sql"))
+        .isInstanceOf(DataAccessException.class);
+    assertThatThrownBy(() -> runSeed("merchant_fee_configuration.sql"))
+        .isInstanceOf(DataAccessException.class);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT account_id FROM tax_authority_account WHERE country_id = 1", Long.class))
+        .isEqualTo(1029L);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT fee_rate_bps FROM merchant_fee_configuration WHERE account_id = 200 "
+                    + "AND currency_id = (SELECT currency_id FROM currency "
+                    + "WHERE currency_code = 'EUR')",
+                Long.class))
+        .isEqualTo(999L);
+  }
+
+  @Test
   void rerunningRestoresDeletedRegistersWithoutChangingAccounts() {
     runSeed("account.sql");
     runSeed("register.sql");
@@ -187,6 +213,13 @@ class SeedIntegrationTest {
               }
               return true;
             });
+  }
+
+  private void runPrerequisiteSeeds() {
+    runSeed("account.sql");
+    runSeed("register.sql");
+    runSeed("tax_authority_account.sql");
+    runSeed("merchant_fee_configuration.sql");
   }
 
   private void assertAccount(long accountId, long parentAccountId, String code, String name) {
