@@ -1,0 +1,110 @@
+package com.outpost.ledger.configuration;
+
+import com.outpost.common.iso.Currencies;
+import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.fx.FxFee;
+import com.outpost.fx.FxRate;
+import com.outpost.fx.provider.FxRateProvider;
+import com.outpost.fx.provider.cached.CachedFxRateProvider;
+import com.outpost.fx.repository.FxFeeRepository;
+import com.outpost.fx.repository.FxRateRepository;
+import com.outpost.ledger.fx.repository.mybatis.FxFeeMapper;
+import com.outpost.ledger.fx.repository.mybatis.FxRateMapper;
+import com.outpost.ledger.fx.repository.mybatis.MyBatisFxFeeRepository;
+import com.outpost.ledger.fx.repository.mybatis.MyBatisFxRateRepository;
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
+
+/** Wires FX persistence and validates all loaded data before exposing the provider. */
+@Configuration(proxyBeanMethods = false)
+public class ApplicationBeanConfiguration {
+
+  /** Creates the repository that converts persisted rate rows to domain rates. */
+  @Bean
+  FxRateRepository fxRateRepository(FxRateMapper mapper) {
+    return new MyBatisFxRateRepository(mapper);
+  }
+
+  /** Creates the repository that converts persisted fee rows to domain fees. */
+  @Bean
+  FxFeeRepository fxFeeRepository(FxFeeMapper mapper) {
+    return new MyBatisFxFeeRepository(mapper);
+  }
+
+  /**
+   * Loads and validates FX data before returning an in-memory provider.
+   *
+   * @throws IllegalStateException when the rates or fees do not cover the required currency pairs
+   */
+  @Bean
+  @DependsOn("com.outpost.platform.staticdata.check.SystemSanityCheck")
+  FxRateProvider fxRateProvider(FxRateRepository rateRepository, FxFeeRepository feeRepository) {
+    List<FxRate> rates = List.copyOf(rateRepository.findAll());
+    List<FxFee> fees = List.copyOf(feeRepository.findAll());
+    Set<CurrencyPair> expectedPairs = expectedPairs();
+    validateRates(rates, expectedPairs);
+    validateFees(fees, expectedPairs);
+    return new CachedFxRateProvider(() -> rates);
+  }
+
+  private static Set<CurrencyPair> expectedPairs() {
+    Set<CurrencyPair> pairs = new HashSet<>();
+    for (Currencies base : Currencies.values()) {
+      for (Currencies quote : Currencies.values()) {
+        if (base != quote) {
+          pairs.add(new CurrencyPair(base.getValue(), quote.getValue()));
+        }
+      }
+    }
+    return Set.copyOf(pairs);
+  }
+
+  private static void validateRates(List<FxRate> rates, Set<CurrencyPair> expectedPairs) {
+    if (rates.isEmpty()) {
+      throw new IllegalStateException("FX rates must contain at least one date");
+    }
+    Map<LocalDate, Set<CurrencyPair>> pairsByDate = new HashMap<>();
+    Set<RateKey> keys = new HashSet<>();
+    for (FxRate rate : rates) {
+      RateKey key = new RateKey(rate.baseCurrency(), rate.quoteCurrency(), rate.rateDate());
+      if (!keys.add(key)) {
+        throw new IllegalStateException("duplicate FX rate key: " + key);
+      }
+      CurrencyPair pair = new CurrencyPair(rate.baseCurrency(), rate.quoteCurrency());
+      if (!expectedPairs.contains(pair)) {
+        throw new IllegalStateException("unexpected FX rate pair: " + pair);
+      }
+      pairsByDate.computeIfAbsent(rate.rateDate(), ignored -> new HashSet<>()).add(pair);
+    }
+    for (Map.Entry<LocalDate, Set<CurrencyPair>> entry : pairsByDate.entrySet()) {
+      if (!entry.getValue().equals(expectedPairs)) {
+        throw new IllegalStateException(
+            "FX rate date is missing a currency pair: " + entry.getKey());
+      }
+    }
+  }
+
+  private static void validateFees(List<FxFee> fees, Set<CurrencyPair> expectedPairs) {
+    Set<CurrencyPair> actualPairs = new HashSet<>();
+    for (FxFee fee : fees) {
+      CurrencyPair pair = new CurrencyPair(fee.baseCurrency(), fee.quoteCurrency());
+      if (!actualPairs.add(pair)) {
+        throw new IllegalStateException("duplicate FX fee pair: " + pair);
+      }
+    }
+    if (!actualPairs.equals(expectedPairs)) {
+      throw new IllegalStateException("FX fees must contain exactly one entry per currency pair");
+    }
+  }
+
+  private record CurrencyPair(Currency baseCurrency, Currency quoteCurrency) {}
+
+  private record RateKey(Currency baseCurrency, Currency quoteCurrency, LocalDate rateDate) {}
+}

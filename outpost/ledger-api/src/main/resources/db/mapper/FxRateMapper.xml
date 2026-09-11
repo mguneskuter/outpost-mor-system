@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.ledger.fx.repository.mybatis.FxRateMapper">
+  <select id="findAll" resultType="com.outpost.ledger.fx.repository.mybatis.FxRateRecord">
+    SELECT fr.fx_rate_id AS "fxRateId",
+           bc.currency_id AS "baseCurrencyId",
+           bc.currency_code AS "baseCurrencyCode",
+           bc.exponent AS "baseCurrencyExponent",
+           qc.currency_id AS "quoteCurrencyId",
+           qc.currency_code AS "quoteCurrencyCode",
+           qc.exponent AS "quoteCurrencyExponent",
+           fr.rate_date AS "rateDate",
+           fr.rate,
+           fr.source
+    FROM fx_rate fr
+    JOIN currency bc ON bc.currency_id = fr.base_currency_id
+    JOIN currency qc ON qc.currency_id = fr.quote_currency_id
+    ORDER BY fr.rate_date, fr.base_currency_id, fr.quote_currency_id
+  </select>
+</mapper>
