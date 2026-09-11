@@ -13,6 +13,29 @@ class DomainConventionsPluginTest {
     public final TemporaryFolder temporaryFolder = new TemporaryFolder()
 
     @Test
+    void slf4jApiImplementationDependencySucceedsDomainConfiguration() {
+        File projectDirectory = temporaryFolder.newFolder()
+        new File(projectDirectory, 'settings.gradle').text = "rootProject.name = 'fixture'\n"
+        new File(projectDirectory, 'build.gradle').text = '''
+            plugins {
+                id 'outpost.domain-conventions'
+            }
+
+            dependencies {
+                implementation 'org.slf4j:slf4j-api'
+            }
+        '''
+
+        BuildResult result = GradleRunner.create()
+            .withProjectDir(projectDirectory)
+            .withArguments('help')
+            .withPluginClasspath()
+            .build()
+
+        assertTrue(result.output.contains('BUILD SUCCESSFUL'))
+    }
+
+    @Test
     void arbitraryProductionDependencyFailsDomainConfiguration() {
         File projectDirectory = temporaryFolder.newFolder()
         new File(projectDirectory, 'settings.gradle').text = "rootProject.name = 'fixture'\n"
