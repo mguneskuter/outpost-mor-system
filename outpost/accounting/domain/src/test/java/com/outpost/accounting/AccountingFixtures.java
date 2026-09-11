@@ -6,22 +6,33 @@ import com.outpost.common.iso.Currencies;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
 
-final class AccountingFixtures {
+/** Accounts, transactions, and journal entries shared by accounting domain tests. */
+public final class AccountingFixtures {
   static final Instant CREATED = Instant.parse("2026-02-01T00:00:00Z");
   static final Amount EUR_100 = new Amount(Currencies.EUR.getValue(), 100L);
 
   private AccountingFixtures() {}
 
-  static Account merchant() {
+  /** Returns an active MERCHANT account. */
+  public static Account merchant() {
     Account root =
         Account.of(100L, AccountTypes.ROOT.getValue(), "ROOT", "Root", true, CREATED, null);
     return Account.of(101L, AccountTypes.MERCHANT.getValue(), "M", "Merchant", true, CREATED, root);
   }
 
-  static Account psp() {
+  /** Returns an active PSP account. */
+  public static Account psp() {
     Account root =
         Account.of(200L, AccountTypes.ROOT.getValue(), "ROOT2", "Root", true, CREATED, null);
     return Account.of(201L, AccountTypes.PSP.getValue(), "PSP", "PSP", true, CREATED, root);
+  }
+
+  /** Returns an active PLATFORM account. */
+  public static Account platform() {
+    Account root =
+        Account.of(300L, AccountTypes.ROOT.getValue(), "ROOT3", "Root", true, CREATED, null);
+    return Account.of(
+        301L, AccountTypes.PLATFORM.getValue(), "PLATFORM", "Platform", true, CREATED, root);
   }
 
   static JournalEntry journalEntry(long journalEntryId) {
@@ -35,7 +46,8 @@ final class AccountingFixtures {
         journalEntryId, event, JournalEntryTypes.CAPTURE.getValue(), CREATED, CREATED);
   }
 
-  static Transaction payment(long transactionId) {
+  /** Returns a PAYMENT transaction owned by the fixture merchant account. */
+  public static Transaction payment(long transactionId) {
     return new Transaction(
         transactionId,
         TransactionTypes.PAYMENT.getValue(),
@@ -45,7 +57,8 @@ final class AccountingFixtures {
         CREATED);
   }
 
-  static Transaction capture(long transactionId) {
+  /** Returns a CAPTURE transaction owned by the fixture merchant account. */
+  public static Transaction capture(long transactionId) {
     return new Transaction(
         transactionId,
         TransactionTypes.CAPTURE.getValue(),

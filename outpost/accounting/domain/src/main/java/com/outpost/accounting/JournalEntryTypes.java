@@ -12,7 +12,9 @@ import java.util.stream.Collectors;
 @StaticData
 public enum JournalEntryTypes {
   CAPTURE(1L, "CAPTURE"),
-  REFUND(2L, "REFUND");
+  REFUND(2L, "REFUND"),
+  FEE_PENDING(3L, "FEE_PENDING"),
+  FEE_RELEASE(4L, "FEE_RELEASE");
 
   private static final Map<String, JournalEntryTypes> BY_CODE =
       Arrays.stream(values())

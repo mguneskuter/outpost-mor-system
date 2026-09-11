@@ -45,7 +45,7 @@ class AccountingSchemaIntegrationTest {
       execute(
           connection,
           "INSERT INTO transaction_event_type VALUES "
-              + "(1, 'ORDER_CREATED', false), (5, 'CAPTURED', true)");
+              + "(1, 'ORDER_CREATED', true), (5, 'CAPTURED', true)");
       execute(connection, "INSERT INTO journal_entry_type VALUES (1, 'CAPTURE')");
       execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (3, 'PSP')");
       execute(
@@ -154,20 +154,55 @@ class AccountingSchemaIntegrationTest {
   }
 
   @Test
+  void orderCreatedEventRequiresBalancedJournalEntryAtCommit() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      setupJournalFixture(connection);
+      execute(connection, "INSERT INTO register_type VALUES (8, 'PENDING_FEE')");
+      execute(connection, "INSERT INTO journal_entry_type VALUES (3, 'FEE_PENDING')");
+      execute(connection, "INSERT INTO account_type VALUES (6, 'PLATFORM')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (110, 6, 'platform', 'Platform', true, now())");
+      execute(
+          connection,
+          "INSERT INTO register (register_id, account_id, register_type_id) VALUES "
+              + "(310, 100, 8), (311, 110, 8)");
+      connection.commit();
+
+      execute(connection, "INSERT INTO transaction_event VALUES (320, 200, 1, now())");
+      execute(connection, "INSERT INTO journal_entry VALUES (420, 320, 3, now(), now())");
+      execute(
+          connection,
+          "INSERT INTO journal_entry_line VALUES "
+              + "(420, 420, 310, 1, 10), (421, 420, 311, 1, -10)");
+      connection.commit();
+
+      assertThatThrownBy(
+              () -> {
+                execute(connection, "INSERT INTO transaction_event VALUES (321, 200, 1, now())");
+                connection.commit();
+              })
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+    }
+  }
+
+  @Test
   void rejectsUnbalancedEntriesButAllowsBalancedMultiCurrencyEntries() throws SQLException {
     try (Connection connection = database.createConnection("")) {
       setupJournalFixture(connection);
       execute(connection, "INSERT INTO currency VALUES (2, 'USD', 2)");
       connection.commit();
 
-      execute(connection, "INSERT INTO transaction_event VALUES (305, 200, 1, now())");
+      execute(connection, "INSERT INTO transaction_event VALUES (305, 200, 2, now())");
       connection.commit();
       assertThatThrownBy(
               () -> {
                 execute(
                     connection,
                     "UPDATE transaction_event_type SET requires_journal_entry = true "
-                        + "WHERE transaction_event_type_id = 1");
+                        + "WHERE transaction_event_type_id = 2");
                 connection.commit();
               })
           .isInstanceOf(SQLException.class);
@@ -197,7 +232,7 @@ class AccountingSchemaIntegrationTest {
 
       assertThatThrownBy(
               () -> {
-                execute(connection, "INSERT INTO transaction_event VALUES (304, 200, 1, now())");
+                execute(connection, "INSERT INTO transaction_event VALUES (304, 200, 2, now())");
                 execute(connection, "INSERT INTO journal_entry VALUES (404, 304, 1, now(), now())");
                 connection.commit();
               })
@@ -213,7 +248,7 @@ class AccountingSchemaIntegrationTest {
     execute(
         connection,
         "INSERT INTO transaction_event_type VALUES "
-            + "(1, 'ORDER_CREATED', false), (5, 'CAPTURED', true)");
+            + "(1, 'ORDER_CREATED', true), (2, 'AUTHORISED', false), (5, 'CAPTURED', true)");
     execute(connection, "INSERT INTO journal_entry_type VALUES (1, 'CAPTURE')");
     execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT')");
     execute(connection, "INSERT INTO currency VALUES (1, 'EUR', 2)");
