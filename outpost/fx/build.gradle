@@ -5,4 +5,11 @@ plugins {
 dependencies {
     implementation project(':platform-sanity:static-data-model')
     implementation project(':common-iso:domain')
+    implementation 'org.slf4j:slf4j-api'
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }

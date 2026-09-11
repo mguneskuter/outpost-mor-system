@@ -10,6 +10,8 @@ class DomainConventionsPlugin implements Plugin<Project> {
     private static final String DOMAIN_MARKER = 'outpost.domain-module'
     private static final String JSPECIFY_GROUP = 'org.jspecify'
     private static final String JSPECIFY_NAME = 'jspecify'
+    private static final String SLF4J_GROUP = 'org.slf4j'
+    private static final String SLF4J_API_NAME = 'slf4j-api'
     private static final List<String> PRODUCTION_CONFIGURATIONS = [
         'api', 'implementation', 'compileOnly', 'runtimeOnly', 'annotationProcessor'
     ]
@@ -33,6 +35,9 @@ class DomainConventionsPlugin implements Plugin<Project> {
             }
 
             if (configurationName == 'implementation' && dependency instanceof ExternalModuleDependency) {
+                if (dependency.group == SLF4J_GROUP && dependency.name == SLF4J_API_NAME) {
+                    return false
+                }
                 def category = dependency.attributes.getAttribute(Category.CATEGORY_ATTRIBUTE)
                 return category == null || ![
                     Category.REGULAR_PLATFORM,

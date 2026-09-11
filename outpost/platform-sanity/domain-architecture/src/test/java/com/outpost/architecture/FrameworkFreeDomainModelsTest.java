@@ -30,6 +30,7 @@ class FrameworkFreeDomainModelsTest {
       List.of(
           "java",
           "org.jspecify",
+          "org.slf4j",
           "com.outpost.platform.staticdata",
           "com.outpost.common.iso",
           "com.outpost.payment.common",
