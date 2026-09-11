@@ -9,6 +9,8 @@ build/
 .worktrees/
 .env
 local/.env.local
+local/generated/
+local/fixtures/fx/cache/
 bin/
 .docs
 .agents/

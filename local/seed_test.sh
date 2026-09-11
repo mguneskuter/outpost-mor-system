@@ -29,11 +29,13 @@ printf '%s\n' 'SELECT 1;' >"${seed_dir}/001-first.sql"
 : >"${OUTPOST_FAKE_PSQL_LOG}"
 OUTPOST_SEED_DIR="${seed_dir}" "${seed_script}" >/dev/null
 seed_call_count="$(grep -c -- '-f ' "${OUTPOST_FAKE_PSQL_LOG}")"
-[[ "${seed_call_count}" -eq 2 ]]
+[[ "${seed_call_count}" -eq 4 ]]
 first_seed_call="$(grep -- '-f ' "${OUTPOST_FAKE_PSQL_LOG}" | sed -n '1p')"
 second_seed_call="$(grep -- '-f ' "${OUTPOST_FAKE_PSQL_LOG}" | sed -n '2p')"
 [[ "${first_seed_call}" == *"001-first.sql"* ]]
 [[ "${second_seed_call}" == *"002-second.sql"* ]]
+grep -q 'fx_rate.sql' "${OUTPOST_FAKE_PSQL_LOG}"
+grep -q 'fx_fee.sql' "${OUTPOST_FAKE_PSQL_LOG}"
 
 : >"${OUTPOST_FAKE_PSQL_LOG}"
 if OUTPOST_SEED_DIR="${seed_dir}" \
