@@ -12,6 +12,7 @@ dependencies {
     testImplementation project(':merchant-configuration:domain')
     testImplementation project(':accounting:domain')
     testImplementation project(':tax')
+    testImplementation project(':payment:domain')
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
