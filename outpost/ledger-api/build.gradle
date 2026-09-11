@@ -1,10 +1,12 @@
 plugins {
     id 'outpost.java-conventions'
+    id 'org.springframework.boot'
 }
 
 dependencies {
     implementation project(':framework:persistence')
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation project(':platform-sanity:static-data-check')
     implementation project(':accounting:persistence')
     implementation project(':accounting:domain')
@@ -22,6 +24,10 @@ dependencies {
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testImplementation testFixtures(project(':framework:persistence'))
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+springBoot {
+    mainClass = 'com.outpost.ledger.LedgerApiApplication'
 }
 
 tasks.named('test') {

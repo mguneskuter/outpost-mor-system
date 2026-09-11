@@ -107,6 +107,22 @@ class LedgerApiStartupFailureIntegrationTest {
         .hasRootCauseInstanceOf(IllegalStateException.class);
   }
 
+  @Test
+  void failsWhenDatabaseIsUnreachable() {
+    MockEnvironment environment = new MockEnvironment();
+    environment.setProperty("spring.datasource.url", "jdbc:postgresql://127.0.0.1:1/unreachable");
+    environment.setProperty("spring.datasource.username", "outpost");
+    environment.setProperty("spring.datasource.password", "outpost");
+
+    assertThatThrownBy(
+            () ->
+                new SpringApplicationBuilder(LedgerApiApplication.class)
+                    .web(WebApplicationType.NONE)
+                    .environment(environment)
+                    .run())
+        .isInstanceOf(Exception.class);
+  }
+
   private void startAgainstDatabase() {
     MockEnvironment environment = new MockEnvironment();
     environment.setProperty("spring.datasource.url", DATABASE.getJdbcUrl());
