@@ -1,0 +1,58 @@
+plugins {
+    id 'java'
+    id 'checkstyle'
+    id 'com.diffplug.spotless' version '8.10.2'
+    id 'net.ltgt.errorprone' version '5.1.0'
+    id 'org.springframework.boot'
+}
+
+group = 'com.outpost'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    compileOnly 'org.jspecify:jspecify:1.0.1'
+    testCompileOnly 'org.jspecify:jspecify:1.0.1'
+    errorprone 'com.uber.nullaway:nullaway:0.14.1'
+    errorprone 'com.google.errorprone:error_prone_core:2.50.0'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+checkstyle {
+    toolVersion = '12.1.0'
+    maxWarnings = 0
+    config = resources.text.fromArchiveEntry(
+        configurations.checkstyle.filter { it.name.startsWith('checkstyle-') },
+        'google_checks.xml'
+    )
+}
+
+spotless {
+    java {
+        googleJavaFormat()
+    }
+}
+
+tasks.withType(JavaCompile).configureEach { task ->
+    task.options.errorprone.with {
+        error('NullAway')
+        option('NullAway:OnlyNullMarked', true)
+        error('RequireExplicitNullMarking')
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
