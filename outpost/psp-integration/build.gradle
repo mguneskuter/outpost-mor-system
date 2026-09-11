@@ -1,8 +1,0 @@
-plugins {
-    id 'outpost.domain-conventions'
-}
-
-dependencies {
-    implementation project(':platform-sanity:static-data-model')
-    implementation project(':common-iso:domain')
-}

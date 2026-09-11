@@ -22,7 +22,8 @@ class ModuleGraphSpec {
         ':tax',
         ':fx',
         ':payment:domain',
-        ':psp-integration',
+        ':psp-integration:domain',
+        ':psp-integration:client',
         ':gateway-api',
         ':ledger-api',
         ':outpost-worker',
@@ -82,7 +83,9 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-model',
             ':common-iso:domain'
         ],
-        ':framework:persistence': [],
+        ':framework:persistence': [
+            ':account:domain'
+        ],
         ':framework:logging': [],
         ':framework:security': [],
         ':account:domain': [
@@ -124,11 +127,19 @@ class ModuleGraphSpec {
             ':common-iso:domain',
             ':common-payment:domain',
             ':tax',
-            ':psp-integration'
+            ':psp-integration:domain'
         ],
-        ':psp-integration': [
+        ':psp-integration:domain': [
             ':platform-sanity:static-data-model',
-            ':common-iso:domain'
+            ':common-iso:domain',
+            ':common-payment:domain'
+        ],
+        ':psp-integration:client': [
+            ':psp-integration:domain',
+            ':framework:persistence',
+            ':account:domain',
+            ':common-iso:domain',
+            ':common-payment:domain'
         ],
         ':gateway-api': [
             ':platform-sanity:static-data-check',
@@ -143,7 +154,8 @@ class ModuleGraphSpec {
             ':merchant-configuration:repository',
             ':tax',
             ':payment:domain',
-            ':psp-integration'
+            ':psp-integration:domain',
+            ':psp-integration:client'
         ],
         ':ledger-api': [
             ':platform-sanity:static-data-check',
@@ -164,7 +176,8 @@ class ModuleGraphSpec {
             ':account:domain',
             ':merchant-configuration:domain',
             ':payment:domain',
-            ':psp-integration'
+            ':psp-integration:domain',
+            ':psp-integration:client'
         ],
         ':static-data-job': [
             ':platform-sanity:static-data-check',
@@ -183,7 +196,7 @@ class ModuleGraphSpec {
             ':tax',
             ':fx',
             ':payment:domain',
-            ':psp-integration'
+            ':psp-integration:domain'
         ]
     ].collectEntries { projectPath, dependencies ->
         [(projectPath): dependencies as Set]
@@ -198,7 +211,7 @@ class ModuleGraphSpec {
         ':tax',
         ':fx',
         ':payment:domain',
-        ':psp-integration'
+        ':psp-integration:domain'
     ] as Set
 
     static final Set<String> DEPLOYABLE_PROJECT_PATHS = [

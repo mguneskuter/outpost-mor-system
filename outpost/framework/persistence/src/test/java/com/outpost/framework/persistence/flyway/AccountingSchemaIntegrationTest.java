@@ -3,6 +3,7 @@ package com.outpost.framework.persistence.flyway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.outpost.account.AccountTypes;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -218,6 +219,37 @@ class AccountingSchemaIntegrationTest {
                       + "'public.account_type_register_type', "
                       + "'account_type_register_type_id')"))
           .isNull();
+    }
+  }
+
+  @Test
+  void rejectsPspConfigurationForNonPspAccount() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      seedAccountTypes(connection);
+      execute(
+          connection,
+          "INSERT INTO account (account_type_id, code, name, is_active, created_ts) "
+              + "SELECT account_type_id, 'merchant', 'Merchant', true, now() "
+              + "FROM account_type WHERE code = 'MERCHANT'");
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO psp_configuration "
+                          + "(account_id, account_type_id, base_url, api_key, hmac_secret) "
+                          + "SELECT account_id, account_type_id, 'http://simulator', 'key', 'hmac' "
+                          + "FROM account WHERE code = 'merchant'"))
+          .isInstanceOf(SQLException.class);
+    }
+  }
+
+  private void seedAccountTypes(Connection connection) throws SQLException {
+    for (AccountTypes accountType : AccountTypes.values()) {
+      execute(
+          connection,
+          "INSERT INTO account_type (account_type_id, code) VALUES (%d, '%s')"
+              .formatted(
+                  accountType.getValue().getAccountTypeId(), accountType.getValue().getCode()));
     }
   }
 

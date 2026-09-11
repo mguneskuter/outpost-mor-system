@@ -9,6 +9,9 @@ temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/outpost-seed-test.XXXXXX")"
 trap 'rm -rf "${temporary_dir}"' EXIT
 
 export OUTPOST_DB_PASSWORD=test
+export OUTPOST_PSP_SIMULATOR_BASE_URL=http://localhost:8081
+export OUTPOST_PSP_SIMULATOR_API_KEY=demo-outpost-api-key
+export OUTPOST_PSP_SIMULATOR_HMAC_SECRET=demo-hmac-secret
 export OUTPOST_PSQL_BIN="${fake_psql}"
 export OUTPOST_FAKE_PSQL_LOG="${temporary_dir}/psql.log"
 

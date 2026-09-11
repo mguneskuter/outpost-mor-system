@@ -1,0 +1,10 @@
+plugins { id 'outpost.domain-conventions' }
+
+group = 'com.outpost.integration.psp'
+base { archivesName = 'psp-integration-domain' }
+
+dependencies {
+    implementation project(':platform-sanity:static-data-model')
+    implementation project(':common-iso:domain')
+    implementation project(':common-payment:domain')
+}

@@ -34,6 +34,7 @@ jobs:
               - 'outpost/platform-sanity/**'
               - 'outpost/*/repository/**'
               - 'outpost/accounting/persistence/**'
+              - 'outpost/psp-integration/client/**'
               - 'outpost/framework/persistence/**'
               - '**/*.sql'
               - '**/db/mapper/**'
@@ -135,7 +136,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('outpost/gradle/wrapper/gradle-wrapper.properties', 'outpost/**/*.gradle', 'outpost/**/*.groovy') }}
-      - run: ./outpost/gradlew -p outpost :static-data-job:test :common-payment:repository:test :merchant-configuration:repository:test
+      - run: ./outpost/gradlew -p outpost :static-data-job:test :common-payment:repository:test :merchant-configuration:repository:test :psp-integration:client:test
       - run: make seed-test
 
   verify:

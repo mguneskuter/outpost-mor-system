@@ -26,6 +26,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 @SpringBootTest(classes = EnsureStaticDataJobApplication.class)
 class SeedIntegrationTest {
+  private static final String PSP_SIMULATOR_BASE_URL = "http://localhost:8081";
+  private static final String PSP_SIMULATOR_API_KEY = "demo-outpost-api-key";
+  private static final String PSP_SIMULATOR_HMAC_SECRET = "demo-hmac-secret";
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer("outpost_seed", "outpost_seed", "outpost_seed");
 
@@ -82,6 +85,11 @@ class SeedIntegrationTest {
     assertAccount(210L, 1L, "DEMO_MERCHANT_2", "Demo Merchant 2");
     assertAccount(211L, 210L, "DEMO_MERCHANT_2_PAYOUT", "Demo Merchant 2 Payout Account");
     assertAccount(300L, 1L, "DEMO_PSP", "Demo PSP");
+    runSeed("psp_configuration.sql");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT account_id FROM psp_configuration WHERE account_id = 300", Long.class))
+        .isEqualTo(300L);
     assertThat(
             jdbcTemplate.queryForMap(
                 "SELECT parent_account_id, code, name FROM account WHERE account_id = 1029"))
@@ -205,11 +213,16 @@ class SeedIntegrationTest {
     } catch (IOException exception) {
       throw new UncheckedIOException(exception);
     }
+    String jdbcScript =
+        script
+            .replace(":'psp_simulator_base_url'", "'" + PSP_SIMULATOR_BASE_URL + "'")
+            .replace(":'psp_simulator_api_key'", "'" + PSP_SIMULATOR_API_KEY + "'")
+            .replace(":'psp_simulator_hmac_secret'", "'" + PSP_SIMULATOR_HMAC_SECRET + "'");
     jdbcTemplate.execute(
         (org.springframework.jdbc.core.ConnectionCallback<Boolean>)
             (Connection connection) -> {
               try (var statement = connection.createStatement()) {
-                statement.execute(script);
+                statement.execute(jdbcScript);
               }
               return true;
             });
