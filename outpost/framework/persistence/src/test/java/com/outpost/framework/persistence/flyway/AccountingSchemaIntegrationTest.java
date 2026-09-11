@@ -76,6 +76,17 @@ class AccountingSchemaIntegrationTest {
               + "(transaction_id, transaction_type_id, shopper_country_id, psp_account_id, "
               + "net_quantity, tax_quantity) VALUES (200, 1, 1, 101, 900, 100)");
       connection.commit();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "UPDATE payment_detail SET tax_quantity = 101 WHERE transaction_id = 200"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () -> execute(connection, "DELETE FROM payment_detail WHERE transaction_id = 200"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
       execute(
           connection,
           "INSERT INTO transaction (transaction_id, transaction_type_id, account_id, "
@@ -171,6 +182,110 @@ class AccountingSchemaIntegrationTest {
   }
 
   @Test
+  void rejectsAccountingEvidenceMutationAndDuplicateReferences() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      setupJournalFixture(connection);
+      connection.commit();
+
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "UPDATE transaction SET quantity = 101 WHERE transaction_id = 200"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () -> execute(connection, "DELETE FROM transaction WHERE transaction_id = 200"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO transaction (transaction_id, transaction_type_id, account_id, "
+                          + "reference, quantity, currency_id, created_ts) "
+                          + "VALUES (201, 1, 100, 'ref', 100, 1, now())"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+
+      execute(connection, "INSERT INTO transaction_event VALUES (300, 200, 2, now())");
+      connection.commit();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "UPDATE transaction_event SET event_ts = now() "
+                          + "WHERE transaction_event_id = 300"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(connection, "INSERT INTO transaction_event VALUES (301, 200, 2, now())"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection, "DELETE FROM transaction_event WHERE transaction_event_id = 300"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+    }
+  }
+
+  @Test
+  void accountOnlyAllowsChangingActiveState() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (3, 'PSP')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, parent_account_id, code, name, "
+              + "is_active, created_ts) "
+              + "VALUES (100, 2, NULL, 'merchant', 'Merchant', true, '2026-01-01T00:00:00Z')");
+      execute(connection, "UPDATE account SET is_active = false WHERE account_id = 100");
+      connection.commit();
+      assertThatThrownBy(
+              () ->
+                  execute(connection, "UPDATE account SET account_id = 101 WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection, "UPDATE account SET account_type_id = 3 WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "UPDATE account SET parent_account_id = 100 WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(connection, "UPDATE account SET code = 'changed' WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(connection, "UPDATE account SET name = 'Changed' WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "UPDATE account SET created_ts = '2026-01-02T00:00:00Z' "
+                          + "WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(() -> execute(connection, "DELETE FROM account WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+    }
+  }
+
+  @Test
   void enforcesAppendOnlyBalanceAndRequiredEntryCouplingAtCommit() throws SQLException {
     try (Connection connection = database.createConnection("")) {
       setupJournalFixture(connection);
@@ -186,10 +301,10 @@ class AccountingSchemaIntegrationTest {
       assertThatThrownBy(() -> execute(connection, "DELETE FROM journal_entry_line"))
           .isInstanceOf(SQLException.class);
       connection.rollback();
-      execute(connection, "INSERT INTO transaction_event VALUES (301, 200, 5, now())");
+      execute(connection, "INSERT INTO transaction_event VALUES (301, 200, 6, now())");
       assertThatThrownBy(connection::commit).isInstanceOf(SQLException.class);
       connection.rollback();
-      execute(connection, "INSERT INTO transaction_event VALUES (301, 200, 5, now())");
+      execute(connection, "INSERT INTO transaction_event VALUES (301, 200, 6, now())");
       execute(connection, "INSERT INTO journal_entry VALUES (401, 301, 1, now(), now())");
       execute(
           connection,
@@ -225,7 +340,7 @@ class AccountingSchemaIntegrationTest {
 
       assertThatThrownBy(
               () -> {
-                execute(connection, "INSERT INTO transaction_event VALUES (321, 200, 1, now())");
+                execute(connection, "INSERT INTO transaction_event VALUES (321, 200, 6, now())");
                 connection.commit();
               })
           .isInstanceOf(SQLException.class);
@@ -266,7 +381,7 @@ class AccountingSchemaIntegrationTest {
           .isInstanceOf(SQLException.class);
       connection.rollback();
 
-      execute(connection, "INSERT INTO transaction_event VALUES (303, 200, 5, now())");
+      execute(connection, "INSERT INTO transaction_event VALUES (303, 200, 6, now())");
       execute(connection, "INSERT INTO journal_entry VALUES (403, 303, 1, now(), now())");
       execute(
           connection,
@@ -277,7 +392,7 @@ class AccountingSchemaIntegrationTest {
 
       assertThatThrownBy(
               () -> {
-                execute(connection, "INSERT INTO transaction_event VALUES (304, 200, 2, now())");
+                execute(connection, "INSERT INTO transaction_event VALUES (304, 200, 7, now())");
                 execute(connection, "INSERT INTO journal_entry VALUES (404, 304, 1, now(), now())");
                 connection.commit();
               })
@@ -293,7 +408,8 @@ class AccountingSchemaIntegrationTest {
     execute(
         connection,
         "INSERT INTO transaction_event_type VALUES "
-            + "(1, 'ORDER_CREATED', true), (2, 'AUTHORISED', false), (5, 'CAPTURED', true)");
+            + "(1, 'ORDER_CREATED', true), (2, 'AUTHORISED', false), (5, 'CAPTURED', true), "
+            + "(6, 'SETTLED', true), (7, 'VOIDED', false)");
     execute(connection, "INSERT INTO journal_entry_type VALUES (1, 'CAPTURE')");
     execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT')");
     execute(connection, "INSERT INTO currency VALUES (1, 'EUR', 2)");
