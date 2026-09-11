@@ -138,6 +138,46 @@ class AccountingSchemaIntegrationTest {
   }
 
   @Test
+  void taxAuthorityAccountRequiresTaxAuthorityAndProtectsAccountType() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (5, 'TAX_AUTHORITY')");
+      execute(connection, "INSERT INTO country VALUES (1, 'NL', 'Netherlands')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (100, 2, 'merchant', 'Merchant', true, now()), "
+              + "(101, 5, 'tax-authority', 'Tax Authority', true, now())");
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
+                          + "VALUES (1, 100, 2)"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (5, 'TAX_AUTHORITY')");
+      execute(connection, "INSERT INTO country VALUES (1, 'NL', 'Netherlands')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (100, 2, 'merchant', 'Merchant', true, now()), "
+              + "(101, 5, 'tax-authority', 'Tax Authority', true, now())");
+      execute(
+          connection,
+          "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
+              + "VALUES (1, 101, 5)");
+      connection.commit();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection, "UPDATE account SET account_type_id = 2 WHERE account_id = 101"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+    }
+  }
+
+  @Test
   void enforcesAccountTypeRegisterTypeMappingConstraints() throws SQLException {
     try (Connection connection = database.createConnection("")) {
       assertThat(queryLong(connection, "SELECT COUNT(*) FROM account_type_register_type")).isZero();
