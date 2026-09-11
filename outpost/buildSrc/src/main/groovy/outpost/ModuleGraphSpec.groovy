@@ -106,6 +106,7 @@ class ModuleGraphSpec {
         ],
         ':accounting:persistence': [
             ':accounting:domain',
+            ':account:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],

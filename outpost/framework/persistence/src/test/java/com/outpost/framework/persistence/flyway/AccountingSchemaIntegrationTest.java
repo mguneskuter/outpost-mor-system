@@ -1,5 +1,6 @@
 package com.outpost.framework.persistence.flyway;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
@@ -122,6 +123,50 @@ class AccountingSchemaIntegrationTest {
                       connection,
                       "INSERT INTO register (account_id, register_type_id) VALUES (100, 1)"))
           .isInstanceOf(SQLException.class);
+    }
+  }
+
+  @Test
+  void enforcesAccountTypeRegisterTypeMappingConstraints() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      assertThat(queryLong(connection, "SELECT COUNT(*) FROM account_type_register_type")).isZero();
+      execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT')");
+      execute(
+          connection,
+          "INSERT INTO register_type VALUES " + "(1, 'MERCHANT_PAYABLE'), (8, 'PENDING_FEE')");
+      execute(
+          connection, "INSERT INTO account_type_register_type VALUES " + "(1, 2, 1), (2, 2, 8)");
+
+      assertThatThrownBy(
+              () -> execute(connection, "INSERT INTO account_type_register_type VALUES (3, 2, 1)"))
+          .isInstanceOf(SQLException.class);
+      assertThatThrownBy(
+              () -> execute(connection, "INSERT INTO account_type_register_type VALUES (3, 99, 1)"))
+          .isInstanceOf(SQLException.class);
+      assertThatThrownBy(
+              () -> execute(connection, "INSERT INTO account_type_register_type VALUES (3, 2, 99)"))
+          .isInstanceOf(SQLException.class);
+
+      assertThat(
+              queryLong(
+                  connection,
+                  "SELECT COUNT(*) FROM account_type_register_type WHERE account_type_id = 2"))
+          .isEqualTo(2);
+      assertThat(
+              queryString(
+                  connection,
+                  "SELECT column_default FROM information_schema.columns "
+                      + "WHERE table_schema = 'public' "
+                      + "AND table_name = 'account_type_register_type' "
+                      + "AND column_name = 'account_type_register_type_id'"))
+          .isNull();
+      assertThat(
+              queryString(
+                  connection,
+                  "SELECT pg_get_serial_sequence("
+                      + "'public.account_type_register_type', "
+                      + "'account_type_register_type_id')"))
+          .isNull();
     }
   }
 
@@ -269,6 +314,22 @@ class AccountingSchemaIntegrationTest {
   private static void execute(Connection connection, String sql) throws SQLException {
     try (Statement statement = connection.createStatement()) {
       statement.execute(sql);
+    }
+  }
+
+  private static long queryLong(Connection connection, String sql) throws SQLException {
+    try (Statement statement = connection.createStatement();
+        var resultSet = statement.executeQuery(sql)) {
+      resultSet.next();
+      return resultSet.getLong(1);
+    }
+  }
+
+  private static String queryString(Connection connection, String sql) throws SQLException {
+    try (Statement statement = connection.createStatement();
+        var resultSet = statement.executeQuery(sql)) {
+      resultSet.next();
+      return resultSet.getString(1);
     }
   }
 }
