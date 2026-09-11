@@ -9,6 +9,6 @@ dependencies {
     implementation project(':common-iso:domain')
     implementation project(':account:domain')
     implementation project(':merchant-configuration:domain')
-    implementation project(':payment')
+    implementation project(':payment:domain')
     implementation project(':psp-integration')
 }

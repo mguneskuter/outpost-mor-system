@@ -25,7 +25,7 @@ include(
     ':accounting:persistence',
     ':tax',
     ':fx',
-    ':payment',
+    ':payment:domain',
     ':psp-integration',
     ':gateway-api',
     ':ledger-api',

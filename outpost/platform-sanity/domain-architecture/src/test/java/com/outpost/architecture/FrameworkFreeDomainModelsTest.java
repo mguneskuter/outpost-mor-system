@@ -23,7 +23,8 @@ class FrameworkFreeDomainModelsTest {
           "com.outpost.account",
           "com.outpost.account.configuration",
           "com.outpost.accounting",
-          "com.outpost.tax");
+          "com.outpost.tax",
+          "com.outpost.payment");
 
   private static final List<String> ALLOWED_PACKAGES =
       List.of(

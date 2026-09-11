@@ -21,7 +21,7 @@ class ModuleGraphSpec {
         ':accounting:persistence',
         ':tax',
         ':fx',
-        ':payment',
+        ':payment:domain',
         ':psp-integration',
         ':gateway-api',
         ':ledger-api',
@@ -38,7 +38,8 @@ class ModuleGraphSpec {
             ':account:domain',
             ':merchant-configuration:domain',
             ':accounting:domain',
-            ':tax'
+            ':tax',
+            ':payment:domain'
         ],
         ':platform-sanity:static-data-check': [
             ':platform-sanity:static-data-repository',
@@ -117,7 +118,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-model',
             ':common-iso:domain'
         ],
-        ':payment': [
+        ':payment:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
             ':common-payment:domain',
@@ -140,7 +141,7 @@ class ModuleGraphSpec {
             ':merchant-configuration:domain',
             ':merchant-configuration:repository',
             ':tax',
-            ':payment',
+            ':payment:domain',
             ':psp-integration'
         ],
         ':ledger-api': [
@@ -161,7 +162,7 @@ class ModuleGraphSpec {
             ':framework:persistence',
             ':account:domain',
             ':merchant-configuration:domain',
-            ':payment',
+            ':payment:domain',
             ':psp-integration'
         ],
         ':static-data-job': [
@@ -180,7 +181,7 @@ class ModuleGraphSpec {
             ':accounting:persistence',
             ':tax',
             ':fx',
-            ':payment',
+            ':payment:domain',
             ':psp-integration'
         ]
     ].collectEntries { projectPath, dependencies ->
@@ -195,7 +196,7 @@ class ModuleGraphSpec {
         ':accounting:domain',
         ':tax',
         ':fx',
-        ':payment',
+        ':payment:domain',
         ':psp-integration'
     ] as Set
 

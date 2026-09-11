@@ -62,7 +62,7 @@ class ModuleGraphVerification {
                 if (ModuleGraphSpec.PERSISTENCE_FRAMEWORK_PATHS.contains(dependencyPath)) {
                     errors << "Domain module depends on persistence framework: ${ModuleGraphSpec.edge(domainPath, dependencyPath)}"
                 }
-                if (domainPath != ':payment' && dependencyPath == ':payment') {
+                if (domainPath != ':payment:domain' && dependencyPath == ':payment:domain') {
                     errors << "Domain module other than payment depends on payment: ${ModuleGraphSpec.edge(domainPath, dependencyPath)}"
                 }
             }

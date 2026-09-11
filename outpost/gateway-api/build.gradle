@@ -17,7 +17,7 @@ dependencies {
     implementation project(':merchant-configuration:domain')
     implementation project(':merchant-configuration:repository')
     implementation project(':tax')
-    implementation project(':payment')
+    implementation project(':payment:domain')
     implementation project(':psp-integration')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
