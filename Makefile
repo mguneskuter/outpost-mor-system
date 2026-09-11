@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test precommit setup up down status migrate ensure-static-data seed seed-test lifecycle
+.PHONY: all clean hooks format format-check lint build test precommit setup up down status migrate ensure-static-data seed seed-test generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -65,3 +65,12 @@ seed-test:
 	./local/seed_test.sh
 
 lifecycle: migrate ensure-static-data seed
+generate-fx-seed:
+	java local/fx/GenerateFxSeed.java
+
+generate-fx-seed-test:
+	./local/fx/generate_fx_seed_test.sh
+
+fetch-fx-fixture:
+	mkdir -p local/fixtures/fx/cache
+	curl --fail --location 'https://data-api.ecb.europa.eu/service/data/EXR/D.CZK+DKK+GBP+HUF+PLN+RON+SEK+USD.EUR.SP00.A?format=csvdata' -o local/fixtures/fx/cache/fx.csv
