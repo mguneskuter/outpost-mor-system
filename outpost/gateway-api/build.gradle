@@ -1,23 +1,39 @@
 plugins {
     id 'outpost.java-conventions'
+    id 'org.springframework.boot'
 }
 
 dependencies {
     implementation project(':framework:persistence')
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation project(':platform-sanity:static-data-check')
     implementation project(':common-iso:domain')
+    implementation project(':common-iso:repository')
     implementation project(':common-payment:domain')
+    implementation project(':common-payment:repository')
     implementation project(':account:domain')
+    implementation project(':account:repository')
     implementation project(':merchant-configuration:domain')
+    implementation project(':merchant-configuration:repository')
     implementation project(':tax')
     implementation project(':payment')
     implementation project(':psp-integration')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'com.tngtech.archunit:archunit:1.4.1'
+    testImplementation 'org.flywaydb:flyway-core'
+    testImplementation 'org.flywaydb:flyway-database-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation testFixtures(project(':framework:persistence'))
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+springBoot {
+    mainClass = 'com.outpost.gateway.GatewayApiApplication'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
 }

@@ -131,10 +131,14 @@ class ModuleGraphSpec {
         ':gateway-api': [
             ':platform-sanity:static-data-check',
             ':common-iso:domain',
+            ':common-iso:repository',
             ':common-payment:domain',
+            ':common-payment:repository',
             ':framework:persistence',
             ':account:domain',
+            ':account:repository',
             ':merchant-configuration:domain',
+            ':merchant-configuration:repository',
             ':tax',
             ':payment',
             ':psp-integration'
