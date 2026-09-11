@@ -17,7 +17,8 @@ public enum RegisterTypes {
   TAX_PAYABLE(4L, "TAX_PAYABLE"),
   FEE_REVENUE(5L, "FEE_REVENUE"),
   FX_CLEARING(6L, "FX_CLEARING"),
-  FX_FEE_REVENUE(7L, "FX_FEE_REVENUE");
+  FX_FEE_REVENUE(7L, "FX_FEE_REVENUE"),
+  PENDING_FEE(8L, "PENDING_FEE");
 
   private static final Map<String, RegisterTypes> BY_CODE =
       Arrays.stream(values())

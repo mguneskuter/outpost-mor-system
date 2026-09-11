@@ -11,12 +11,12 @@ import java.util.stream.Collectors;
 /** The event types recorded against a transaction. */
 @StaticData
 public enum TransactionEventTypes {
-  ORDER_CREATED(1L, "ORDER_CREATED", false),
+  ORDER_CREATED(1L, "ORDER_CREATED", true),
   AUTHORISED(2L, "AUTHORISED", false),
-  REFUSED(3L, "REFUSED", false),
-  CANCELLED(4L, "CANCELLED", false),
+  REFUSED(3L, "REFUSED", true),
+  CANCELLED(4L, "CANCELLED", true),
   CAPTURED(5L, "CAPTURED", true),
-  CAPTURE_FAILED(6L, "CAPTURE_FAILED", false),
+  CAPTURE_FAILED(6L, "CAPTURE_FAILED", true),
   REFUND_REQUESTED(7L, "REFUND_REQUESTED", false),
   REFUND_ACCEPTED(8L, "REFUND_ACCEPTED", false),
   REFUNDED(9L, "REFUNDED", true),

@@ -136,6 +136,36 @@ class EnsureStaticDataOperatorIntegrationTest {
         .isEqualTo(1);
   }
 
+  @Test
+  void materialisesThePendingFeeAccountingValues() {
+    jdbcTemplate.update("DELETE FROM register_type WHERE register_type_id = 8");
+    jdbcTemplate.update("DELETE FROM journal_entry_type WHERE journal_entry_type_id IN (3, 4)");
+
+    job.ensure();
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT register_type_code FROM register_type WHERE register_type_id = 8",
+                String.class))
+        .isEqualTo("PENDING_FEE");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT code FROM journal_entry_type WHERE journal_entry_type_id = 3",
+                String.class))
+        .isEqualTo("FEE_PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT code FROM journal_entry_type WHERE journal_entry_type_id = 4",
+                String.class))
+        .isEqualTo("FEE_RELEASE");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT requires_journal_entry FROM transaction_event_type "
+                    + "WHERE transaction_event_type_id = 1",
+                Boolean.class))
+        .isTrue();
+  }
+
   private Map<String, Object> transactionEventRow() {
     return jdbcTemplate.queryForMap(
         "SELECT code, requires_journal_entry FROM transaction_event_type "
