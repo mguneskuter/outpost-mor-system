@@ -3,7 +3,12 @@ package com.outpost.platform.staticdata.job;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.outpost.accounting.AccountTypeRegisterTypes;
+import com.outpost.accounting.AccountTypeRegisterTypes.AccountTypeRegisterType;
+import com.outpost.accounting.repository.AccountTypeRegisterTypeRecord;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
+import com.outpost.platform.staticdata.StaticDataRepository;
+import com.outpost.platform.staticdata.check.SystemSanityCheck;
 import java.util.List;
 import java.util.Map;
 import org.flywaydb.core.Flyway;
@@ -33,11 +38,20 @@ class EnsureStaticDataOperatorIntegrationTest {
 
   private final JdbcTemplate jdbcTemplate;
   private final EnsureStaticDataJob job;
+  private final StaticDataRepository<
+          AccountTypeRegisterTypes, AccountTypeRegisterType, AccountTypeRegisterTypeRecord>
+      accountTypeRegisterTypeRepository;
 
   @Autowired
-  EnsureStaticDataOperatorIntegrationTest(JdbcTemplate jdbcTemplate, EnsureStaticDataJob job) {
+  EnsureStaticDataOperatorIntegrationTest(
+      JdbcTemplate jdbcTemplate,
+      EnsureStaticDataJob job,
+      StaticDataRepository<
+              AccountTypeRegisterTypes, AccountTypeRegisterType, AccountTypeRegisterTypeRecord>
+          accountTypeRegisterTypeRepository) {
     this.jdbcTemplate = jdbcTemplate;
     this.job = job;
+    this.accountTypeRegisterTypeRepository = accountTypeRegisterTypeRepository;
   }
 
   @DynamicPropertySource
@@ -49,6 +63,7 @@ class EnsureStaticDataOperatorIntegrationTest {
 
   @BeforeEach
   void createFixtureTable() {
+    jdbcTemplate.update("DELETE FROM account_type_register_type");
     jdbcTemplate.update("DELETE FROM transaction_event_type WHERE transaction_event_type_id = 500");
     jdbcTemplate.update(
         "INSERT INTO transaction_event_type VALUES (?, ?, ?) "
@@ -61,6 +76,7 @@ class EnsureStaticDataOperatorIntegrationTest {
             + "WHERE transaction_event_type_id = 5",
         "CAPTURED",
         true);
+    job.ensure();
     jdbcTemplate.execute("DROP TABLE IF EXISTS ensure_operator_fixture");
     jdbcTemplate.execute(
         "CREATE TABLE ensure_operator_fixture (fixture_id BIGINT PRIMARY KEY, code TEXT NOT NULL)");
@@ -137,7 +153,123 @@ class EnsureStaticDataOperatorIntegrationTest {
   }
 
   @Test
+  void insertsMissingAccountTypeRegisterTypeRowsAndIsIdempotent() {
+    jdbcTemplate.update("DELETE FROM account_type_register_type");
+
+    job.ensure();
+    job.ensure();
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_type_register_type", Integer.class))
+        .isEqualTo(AccountTypeRegisterTypes.values().length);
+    assertThat(
+            jdbcTemplate.queryForMap(
+                "SELECT account_type_register_type_id, account_type_id, register_type_id "
+                    + "FROM account_type_register_type "
+                    + "WHERE account_type_register_type_id = 9"))
+        .containsEntry("account_type_register_type_id", 9L)
+        .containsEntry("account_type_id", 6L)
+        .containsEntry("register_type_id", 8L);
+  }
+
+  @Test
+  void failsOnDivergentAccountTypeRegisterTypeAccountType() {
+    jdbcTemplate.update(
+        "UPDATE account_type_register_type SET account_type_id = 3 "
+            + "WHERE account_type_register_type_id = 1");
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    assertThatThrownBy(job::ensure).isInstanceOf(IllegalStateException.class);
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
+  void failsOnDivergentAccountTypeRegisterTypeRegisterType() {
+    jdbcTemplate.update(
+        "UPDATE account_type_register_type SET register_type_id = 2 "
+            + "WHERE account_type_register_type_id = 1");
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    assertThatThrownBy(job::ensure).isInstanceOf(IllegalStateException.class);
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
+  void failsOnDivergentAccountTypeRegisterTypeId() {
+    jdbcTemplate.update(
+        "UPDATE account_type_register_type SET account_type_register_type_id = 100 "
+            + "WHERE account_type_register_type_id = 1");
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    assertThatThrownBy(job::ensure).isInstanceOf(IllegalStateException.class);
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
+  void failsOnUnexpectedAccountTypeRegisterTypeRow() {
+    jdbcTemplate.update("INSERT INTO account_type_register_type VALUES (100, 2, 2)");
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    assertThatThrownBy(job::ensure).isInstanceOf(IllegalStateException.class);
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
+  void acceptsExactAccountTypeRegisterTypeRowsWithoutWriting() {
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    new SystemSanityCheck(List.of(accountTypeRegisterTypeRepository)).verify();
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
+  void rejectsMissingAccountTypeRegisterTypeRowWithoutWriting() {
+    jdbcTemplate.update(
+        "DELETE FROM account_type_register_type WHERE account_type_register_type_id = 1");
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    assertThatThrownBy(
+            () -> new SystemSanityCheck(List.of(accountTypeRegisterTypeRepository)).verify())
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
+  void rejectsDivergentAccountTypeRegisterTypeRowWithoutWriting() {
+    jdbcTemplate.update(
+        "UPDATE account_type_register_type SET register_type_id = 2 "
+            + "WHERE account_type_register_type_id = 1");
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    assertThatThrownBy(
+            () -> new SystemSanityCheck(List.of(accountTypeRegisterTypeRepository)).verify())
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
+  void rejectsUnexpectedAccountTypeRegisterTypeRowWithoutWriting() {
+    jdbcTemplate.update("INSERT INTO account_type_register_type VALUES (100, 2, 2)");
+    List<Map<String, Object>> rowsBefore = accountTypeRegisterTypeRows();
+
+    assertThatThrownBy(
+            () -> new SystemSanityCheck(List.of(accountTypeRegisterTypeRepository)).verify())
+        .isInstanceOf(IllegalStateException.class);
+
+    assertThat(accountTypeRegisterTypeRows()).containsExactlyElementsOf(rowsBefore);
+  }
+
+  @Test
   void materialisesThePendingFeeAccountingValues() {
+    jdbcTemplate.update("DELETE FROM account_type_register_type WHERE register_type_id = 8");
     jdbcTemplate.update("DELETE FROM register_type WHERE register_type_id = 8");
     jdbcTemplate.update("DELETE FROM journal_entry_type WHERE journal_entry_type_id IN (3, 4)");
 
@@ -170,6 +302,12 @@ class EnsureStaticDataOperatorIntegrationTest {
     return jdbcTemplate.queryForMap(
         "SELECT code, requires_journal_entry FROM transaction_event_type "
             + "WHERE transaction_event_type_id = 5");
+  }
+
+  private List<Map<String, Object>> accountTypeRegisterTypeRows() {
+    return jdbcTemplate.queryForList(
+        "SELECT account_type_register_type_id, account_type_id, register_type_id "
+            + "FROM account_type_register_type ORDER BY account_type_register_type_id");
   }
 
   private EnsureStaticDataOperator<FixtureValues, FixtureValue, FixtureRecord> fixtureOperator() {

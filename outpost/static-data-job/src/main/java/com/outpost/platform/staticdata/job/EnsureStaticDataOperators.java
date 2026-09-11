@@ -6,6 +6,8 @@ import com.outpost.account.configuration.FeeModes;
 import com.outpost.account.configuration.FeeModes.FeeMode;
 import com.outpost.account.configuration.repository.FeeModeRecord;
 import com.outpost.account.repository.AccountTypeRecord;
+import com.outpost.accounting.AccountTypeRegisterTypes;
+import com.outpost.accounting.AccountTypeRegisterTypes.AccountTypeRegisterType;
 import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.JournalEntryTypes.JournalEntryType;
 import com.outpost.accounting.RegisterTypes;
@@ -14,6 +16,7 @@ import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.TransactionTypes.TransactionType;
+import com.outpost.accounting.repository.AccountTypeRegisterTypeRecord;
 import com.outpost.accounting.repository.JournalEntryTypeRecord;
 import com.outpost.accounting.repository.RegisterTypeRecord;
 import com.outpost.accounting.repository.TransactionEventTypeRecord;
@@ -31,6 +34,7 @@ import com.outpost.payment.common.ProductTypes;
 import com.outpost.payment.common.ProductTypes.ProductType;
 import com.outpost.payment.common.repository.ProductTypeRecord;
 import com.outpost.platform.staticdata.StaticDataRepository;
+import com.outpost.platform.staticdata.job.accounting.AccountTypeRegisterTypeWriteMapper;
 import com.outpost.platform.staticdata.job.accounting.JournalEntryTypeWriteMapper;
 import com.outpost.platform.staticdata.job.accounting.RegisterTypeWriteMapper;
 import com.outpost.platform.staticdata.job.accounting.TransactionEventTypeWriteMapper;
@@ -96,6 +100,17 @@ public class EnsureStaticDataOperators {
       registerTypeEnsureOperator(
           StaticDataRepository<RegisterTypes, RegisterType, RegisterTypeRecord> repository,
           RegisterTypeWriteMapper mapper) {
+    return new EnsureStaticDataOperator<>(repository, mapper::insert);
+  }
+
+  @Bean
+  EnsureStaticDataOperator<
+          AccountTypeRegisterTypes, AccountTypeRegisterType, AccountTypeRegisterTypeRecord>
+      accountTypeRegisterTypeEnsureOperator(
+          StaticDataRepository<
+                  AccountTypeRegisterTypes, AccountTypeRegisterType, AccountTypeRegisterTypeRecord>
+              repository,
+          AccountTypeRegisterTypeWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
   }
 

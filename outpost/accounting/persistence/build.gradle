@@ -10,6 +10,7 @@ base {
 
 dependencies {
     implementation project(':accounting:domain')
+    implementation project(':account:domain')
     implementation project(':platform-sanity:static-data-repository')
     implementation project(':framework:persistence')
 }
