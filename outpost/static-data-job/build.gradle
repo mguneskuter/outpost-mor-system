@@ -20,7 +20,7 @@ dependencies {
     implementation project(':tax')
     implementation project(':fx')
     implementation project(':payment:domain')
-    implementation project(':psp-integration')
+    implementation project(':psp-integration:domain')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'com.tngtech.archunit:archunit:1.4.1'

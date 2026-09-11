@@ -13,7 +13,7 @@ dependencies {
     implementation project(':common-iso:domain')
     implementation project(':common-payment:domain')
     implementation project(':tax')
-    implementation project(':psp-integration')
+    implementation project(':psp-integration:domain')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

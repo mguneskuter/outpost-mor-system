@@ -24,7 +24,8 @@ class FrameworkFreeDomainModelsTest {
           "com.outpost.account.configuration",
           "com.outpost.accounting",
           "com.outpost.tax",
-          "com.outpost.payment");
+          "com.outpost.payment",
+          "com.outpost.integration.psp");
 
   private static final List<String> ALLOWED_PACKAGES =
       List.of(
@@ -40,7 +41,8 @@ class FrameworkFreeDomainModelsTest {
           "com.outpost.tax",
           "com.outpost.fx",
           "com.outpost.payment",
-          "com.outpost.psp");
+          "com.outpost.psp",
+          "com.outpost.integration.psp");
 
   @Test
   void domainModelsDoNotDependOnFrameworkOrPersistenceTypes() {

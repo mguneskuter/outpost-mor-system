@@ -10,5 +10,6 @@ dependencies {
     implementation project(':account:domain')
     implementation project(':merchant-configuration:domain')
     implementation project(':payment:domain')
-    implementation project(':psp-integration')
+    implementation project(':psp-integration:domain')
+    implementation project(':psp-integration:client')
 }

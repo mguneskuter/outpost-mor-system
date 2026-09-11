@@ -58,8 +58,11 @@ ensure-static-data:
 		./local/run-static-data-job.sh
 
 seed:
-	@test -n "$(OUTPOST_DB_PASSWORD)" || { echo "OUTPOST_DB_PASSWORD must be set in .env (see .env.example)"; exit 1; }
-	./local/seed.sh
+	@test -n "$(OUTPOST_DB_PASSWORD)$(OUTPOST_PSP_SIMULATOR_BASE_URL)$(OUTPOST_PSP_SIMULATOR_API_KEY)$(OUTPOST_PSP_SIMULATOR_HMAC_SECRET)" || { echo "Required seed variables must be set in .env (see .env.example)"; exit 1; }
+	OUTPOST_DB_PASSWORD="$(OUTPOST_DB_PASSWORD)" OUTPOST_DB_USER="$(OUTPOST_DB_USER)" OUTPOST_DB_PORT="$(OUTPOST_DB_PORT)" \
+		OUTPOST_PSP_SIMULATOR_BASE_URL="$(OUTPOST_PSP_SIMULATOR_BASE_URL)" \
+		OUTPOST_PSP_SIMULATOR_API_KEY="$(OUTPOST_PSP_SIMULATOR_API_KEY)" \
+		OUTPOST_PSP_SIMULATOR_HMAC_SECRET="$(OUTPOST_PSP_SIMULATOR_HMAC_SECRET)" ./local/seed.sh
 
 seed-test:
 	./local/seed_test.sh
