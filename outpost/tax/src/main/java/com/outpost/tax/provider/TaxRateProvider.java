@@ -22,7 +22,7 @@ public interface TaxRateProvider {
    * @param asOf the requested day for the rate
    * @return the applicable tax rate
    */
-  TaxRate resolve(
+  TaxRate getRate(
       Country country,
       @Nullable CountrySubdivision subdivision,
       ProductType productType,

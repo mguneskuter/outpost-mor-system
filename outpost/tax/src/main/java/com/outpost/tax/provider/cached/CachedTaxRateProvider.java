@@ -6,8 +6,8 @@ import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.payment.common.ProductTypes.ProductType;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
+import com.outpost.tax.repository.TaxRateRepository;
 import java.time.LocalDate;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -19,10 +19,10 @@ public final class CachedTaxRateProvider implements TaxRateProvider {
   private final Map<RateKey, TaxRate> rates;
 
   /** Creates a provider from the rates supplied by a repository. */
-  public CachedTaxRateProvider(Collection<TaxRate> taxRates) {
-    Objects.requireNonNull(taxRates, "taxRates");
+  public CachedTaxRateProvider(TaxRateRepository repository) {
+    Objects.requireNonNull(repository, "repository");
     Map<RateKey, TaxRate> indexed = new HashMap<>();
-    for (TaxRate taxRate : taxRates) {
+    for (TaxRate taxRate : repository.findAll()) {
       Objects.requireNonNull(taxRate, "taxRate");
       RateKey key = new RateKey(taxRate.country(), taxRate.subdivision());
       if (indexed.putIfAbsent(key, taxRate) != null) {
@@ -33,7 +33,7 @@ public final class CachedTaxRateProvider implements TaxRateProvider {
   }
 
   @Override
-  public TaxRate resolve(
+  public TaxRate getRate(
       Country country,
       @Nullable CountrySubdivision subdivision,
       ProductType productType,

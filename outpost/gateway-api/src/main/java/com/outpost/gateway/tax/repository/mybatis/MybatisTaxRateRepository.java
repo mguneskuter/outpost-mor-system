@@ -4,7 +4,7 @@ import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.CountrySubdivisions;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.tax.TaxRate;
-import com.outpost.tax.TaxRateRepository;
+import com.outpost.tax.repository.TaxRateRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;

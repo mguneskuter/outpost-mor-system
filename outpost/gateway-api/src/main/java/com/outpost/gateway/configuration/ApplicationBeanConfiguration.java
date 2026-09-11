@@ -2,9 +2,9 @@ package com.outpost.gateway.configuration;
 
 import com.outpost.gateway.tax.repository.mybatis.MybatisTaxRateRepository;
 import com.outpost.gateway.tax.repository.mybatis.TaxRateProviderRepositoryMapper;
-import com.outpost.tax.TaxRateRepository;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
+import com.outpost.tax.repository.TaxRateRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -20,6 +20,6 @@ public class ApplicationBeanConfiguration {
   /** Creates the tax-rate provider. */
   @Bean
   TaxRateProvider taxRateProvider(TaxRateRepository repository) {
-    return new CachedTaxRateProvider(repository.findAll());
+    return new CachedTaxRateProvider(repository);
   }
 }
