@@ -115,7 +115,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('outpost/gradle/wrapper/gradle-wrapper.properties', 'outpost/**/*.gradle', 'outpost/**/*.groovy') }}
-      - run: ./outpost/gradlew -p outpost :framework:persistence:test --tests com.outpost.framework.persistence.flyway.FlywayMigrationSmokeTest --tests com.outpost.framework.persistence.flyway.AccountingSchemaIntegrationTest
+      - run: ./outpost/gradlew -p outpost :framework:persistence:test --tests 'com.outpost.framework.persistence.flyway.*'
 
   static_data:
     name: Static-data and seed tests
