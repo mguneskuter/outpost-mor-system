@@ -248,12 +248,17 @@ class GatewayApiIntegrationTest {
       JdbcTemplate jdbcTemplate, long order, String paymentReference, long pspAccount) {
     jdbcTemplate.update(
         "INSERT INTO order_payment (order_id, payment_reference, psp_account_id, "
-            + "psp_account_type_id, created_ts) "
-            + "VALUES (?, ?, ?, (SELECT account_type_id FROM account_type WHERE code = 'PSP'), "
-            + "now())",
+            + "psp_account_type_id, shopper_country_id, shopper_country_subdivision_id, "
+            + "created_ts) "
+            + "SELECT ?, ?, ?, (SELECT account_type_id FROM account_type WHERE code = 'PSP'), "
+            + "shopper.country_id, shopper.country_subdivision_id, now() "
+            + "FROM merchant_order orders "
+            + "JOIN shopper_detail shopper ON shopper.shopper_id = orders.shopper_id "
+            + "WHERE orders.order_id = ?",
         order,
         paymentReference,
-        pspAccount);
+        pspAccount,
+        order);
   }
 
   private int queueCount() {

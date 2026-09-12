@@ -1,0 +1,59 @@
+package com.outpost.gateway.order.api;
+
+import com.outpost.gateway.order.service.OrderCreationException;
+import com.outpost.gateway.order.service.OrderService;
+import com.outpost.gateway.security.GatewayPrincipal;
+import com.outpost.gateway.security.MerchantAuthenticationFilter;
+import jakarta.servlet.http.HttpServletRequest;
+import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/** Creates merchant payment orders. */
+@RestController
+@RequestMapping("/v1/order")
+public final class OrderController {
+  private final OrderService service;
+
+  /** Creates a controller backed by the order service. */
+  public OrderController(OrderService service) {
+    this.service = service;
+  }
+
+  /** Creates an order for the authenticated merchant. */
+  @PostMapping
+  public ResponseEntity<CreateOrderResponse> create(
+      @RequestBody CreateOrderRequest request, HttpServletRequest httpRequest) {
+    GatewayPrincipal principal =
+        (GatewayPrincipal)
+            httpRequest.getAttribute(MerchantAuthenticationFilter.PRINCIPAL_ATTRIBUTE);
+    if (principal == null || principal.type() != GatewayPrincipal.Type.MERCHANT) {
+      throw new OrderCreationException(HttpStatus.FORBIDDEN.value(), "MERCHANT_REQUIRED");
+    }
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(CreateOrderResponse.from(service.create(principal.accountId(), request.toCommand())));
+  }
+
+  @ExceptionHandler(OrderCreationException.class)
+  ResponseEntity<ErrorResponse> controlled(OrderCreationException exception) {
+    return ResponseEntity.status(exception.status()).body(new ErrorResponse(exception.code()));
+  }
+
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  ResponseEntity<ErrorResponse> malformed(HttpMessageNotReadableException ignored) {
+    return ResponseEntity.badRequest().body(new ErrorResponse("INVALID_REQUEST"));
+  }
+
+  @ExceptionHandler(RuntimeException.class)
+  ResponseEntity<ErrorResponse> unexpected(@Nullable RuntimeException ignored) {
+    return ResponseEntity.internalServerError().body(new ErrorResponse("INTERNAL_ERROR"));
+  }
+
+  record ErrorResponse(String code) {}
+}
