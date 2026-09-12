@@ -13,6 +13,7 @@ dependencies {
     testImplementation project(':account:repository')
     testImplementation project(':merchant-configuration:repository')
     testImplementation project(':accounting:persistence')
+    testImplementation project(':payment:repository')
     testImplementation project(':common-iso:domain')
     testImplementation project(':common-payment:domain')
     testImplementation project(':account:domain')
