@@ -166,6 +166,7 @@ class ModuleGraphSpec {
             ':merchant-configuration:repository',
             ':tax',
             ':payment:domain',
+            ':payment:repository',
             ':psp-integration:domain',
             ':psp-integration:client'
         ],

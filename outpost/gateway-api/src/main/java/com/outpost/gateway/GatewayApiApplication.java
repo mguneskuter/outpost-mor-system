@@ -23,7 +23,9 @@ import org.springframework.context.annotation.Import;
       "com.outpost.common.iso.repository.sanity",
       "com.outpost.payment.common.repository.sanity",
       "com.outpost.account.repository.sanity",
-      "com.outpost.account.configuration.repository.sanity"
+      "com.outpost.account.configuration.repository.sanity",
+      "com.outpost.integration.psp.simulator.repository.mybatis",
+      "com.outpost.payment.repository.mybatis"
     })
 @EnableSystemSanityCheck
 @Import({
