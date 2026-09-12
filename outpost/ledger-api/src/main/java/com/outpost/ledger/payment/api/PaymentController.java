@@ -1,5 +1,7 @@
 package com.outpost.ledger.payment.api;
 
+import com.outpost.ledger.payment.service.CaptureException;
+import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationException;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventCommand;
@@ -21,11 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
 public final class PaymentController {
   private final PaymentCreationService service;
   private final PaymentEventService eventService;
+  private final CaptureService captureService;
 
   /** Creates the controller. */
-  public PaymentController(PaymentCreationService service, PaymentEventService eventService) {
+  public PaymentController(
+      PaymentCreationService service,
+      PaymentEventService eventService,
+      CaptureService captureService) {
     this.service = service;
     this.eventService = eventService;
+    this.captureService = captureService;
   }
 
   /** Creates a payment. */
@@ -45,6 +52,12 @@ public final class PaymentController {
     return ResponseEntity.noContent().build();
   }
 
+  /** Records a Worker-observed capture outcome. */
+  @PostMapping("/capture")
+  public ResponseEntity<CaptureResponse> capture(@RequestBody CaptureRequest request) {
+    return ResponseEntity.status(HttpStatus.CREATED).body(captureService.capture(request));
+  }
+
   @ExceptionHandler(PaymentCreationException.class)
   ResponseEntity<PaymentError> controlled(PaymentCreationException exception) {
     return ResponseEntity.status(exception.status()).body(new PaymentError(exception.code()));
@@ -52,6 +65,11 @@ public final class PaymentController {
 
   @ExceptionHandler(PaymentEventException.class)
   ResponseEntity<PaymentError> controlled(PaymentEventException exception) {
+    return ResponseEntity.status(exception.status()).body(new PaymentError(exception.code()));
+  }
+
+  @ExceptionHandler(CaptureException.class)
+  ResponseEntity<PaymentError> controlled(CaptureException exception) {
     return ResponseEntity.status(exception.status()).body(new PaymentError(exception.code()));
   }
 

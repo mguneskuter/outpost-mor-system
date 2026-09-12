@@ -153,7 +153,7 @@ class PaymentCreationIntegrationTest {
   @Test
   void retriesExactlyAndRejectsDifferentFingerprint() throws Exception {
     String body = body("retryable");
-    int transactions = count("transaction", "true");
+    int transactions = count("transaction", "transaction_type_id = 1");
     int writes =
         count("transaction", "true")
             + count("payment_detail", "true")
@@ -177,7 +177,7 @@ class PaymentCreationIntegrationTest {
     perform(changed, signature(changed))
         .andExpect(status().isConflict())
         .andExpect(content().json("{\"code\":\"REFERENCE_CONFLICT\"}"));
-    assertThat(count("transaction", "true")).isEqualTo(transactions + 1);
+    assertThat(count("transaction", "transaction_type_id = 1")).isEqualTo(transactions + 1);
     assertThat(
             count("transaction", "true")
                 + count("payment_detail", "true")
@@ -230,7 +230,7 @@ class PaymentCreationIntegrationTest {
   @Test
   void concurrentIdenticalRequestsCreateOnePayment() throws Exception {
     String body = body("concurrent");
-    int transactions = count("transaction", "true");
+    int transactions = count("transaction", "transaction_type_id = 1");
     CountDownLatch ready = new CountDownLatch(2);
     CountDownLatch start = new CountDownLatch(1);
     ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -252,7 +252,7 @@ class PaymentCreationIntegrationTest {
     } finally {
       executor.shutdownNow();
     }
-    assertThat(count("transaction", "true")).isEqualTo(transactions + 1);
+    assertThat(count("transaction", "transaction_type_id = 1")).isEqualTo(transactions + 1);
     assertThat(count("payment_detail", "true")).isEqualTo(transactions + 1);
   }
 
@@ -389,6 +389,181 @@ class PaymentCreationIntegrationTest {
     assertThat(countForTransaction("transaction_event", transactionId(reference))).isEqualTo(2);
   }
 
+  @Test
+  void capturesSuccessfullyWithSixBalancedLinesAndClearsPendingFee() throws Exception {
+    String paymentReference = "capture-success";
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+
+    String capture = captureBody(paymentReference, "capture-success-ref", true, 12000, "EUR");
+    performCapture(capture, workerSignature(capture)).andExpect(status().isCreated());
+
+    long paymentId = transactionId(paymentReference);
+    long captureId = transactionId("capture-success-ref");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT parent_transaction_id FROM transaction WHERE transaction_id = ?",
+                Long.class,
+                captureId))
+        .isEqualTo(paymentId);
+    assertThat(countForTransaction("transaction_event", captureId)).isEqualTo(1);
+    assertThat(countForTransaction("journal_entry", captureId)).isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM journal_entry_line jel "
+                    + "JOIN journal_entry je USING (journal_entry_id) "
+                    + "JOIN transaction_event te USING (transaction_event_id) "
+                    + "WHERE te.transaction_id = ?",
+                Integer.class,
+                captureId))
+        .isEqualTo(6);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT SUM(jel.quantity) FROM journal_entry_line jel "
+                    + "JOIN journal_entry je USING (journal_entry_id) "
+                    + "JOIN transaction_event te USING (transaction_event_id) "
+                    + "WHERE te.transaction_id = ?",
+                Long.class,
+                captureId))
+        .isZero();
+    assertThat(pendingFeeBalance(paymentId, 200L)).isZero();
+    assertThat(pendingFeeBalance(paymentId, 100L)).isZero();
+  }
+
+  @Test
+  void failedCaptureCreatesChildAndReleasesPendingFee() throws Exception {
+    String paymentReference = "capture-failed";
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+
+    String capture = captureBody(paymentReference, "capture-failed-ref", false, 12000, "EUR");
+    performCapture(capture, workerSignature(capture)).andExpect(status().isCreated());
+
+    long captureId = transactionId("capture-failed-ref");
+    assertThat(countForTransaction("transaction_event", captureId)).isEqualTo(1);
+    assertThat(countForTransaction("journal_entry", captureId)).isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT jet.code FROM journal_entry je "
+                    + "JOIN journal_entry_type jet USING (journal_entry_type_id) "
+                    + "JOIN transaction_event te USING (transaction_event_id) "
+                    + "WHERE te.transaction_id = ?",
+                String.class,
+                captureId))
+        .isEqualTo("FEE_RELEASE");
+    long paymentId = transactionId(paymentReference);
+    assertThat(pendingFeeBalance(paymentId, 200L)).isZero();
+    assertThat(pendingFeeBalance(paymentId, 100L)).isZero();
+  }
+
+  @Test
+  void captureReplayIsExactAndDifferentDataConflictsWithoutWrites() throws Exception {
+    String paymentReference = "capture-replay";
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+    String capture = captureBody(paymentReference, "capture-replay-ref", true, 12000, "EUR");
+    String original =
+        performCapture(capture, workerSignature(capture))
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    int transactions = count("transaction", "true");
+    int events = count("transaction_event", "true");
+    int entries = count("journal_entry", "true");
+    int lines = count("journal_entry_line", "true");
+
+    performCapture(capture, workerSignature(capture))
+        .andExpect(status().isCreated())
+        .andExpect(content().string(original));
+    String changed = captureBody(paymentReference, "capture-replay-ref", true, 12001, "EUR");
+    performCapture(changed, workerSignature(changed))
+        .andExpect(status().isConflict())
+        .andExpect(content().json("{\"code\":\"REFERENCE_CONFLICT\"}"));
+    assertThat(count("transaction", "true")).isEqualTo(transactions);
+    assertThat(count("transaction_event", "true")).isEqualTo(events);
+    assertThat(count("journal_entry", "true")).isEqualTo(entries);
+    assertThat(count("journal_entry_line", "true")).isEqualTo(lines);
+  }
+
+  @Test
+  void captureGuardsRejectOutOfOrderMismatchSecondCaptureAndCancellation() throws Exception {
+    String paymentReference = "capture-guards";
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String beforeAuth = captureBody(paymentReference, "capture-before-auth", true, 12000, "EUR");
+    performCapture(beforeAuth, workerSignature(beforeAuth))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_CAPTURE\"}"));
+
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+    String wrongAmount = captureBody(paymentReference, "wrong-amount", true, 12001, "EUR");
+    performCapture(wrongAmount, workerSignature(wrongAmount))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_CAPTURE\"}"));
+    String wrongCurrency = captureBody(paymentReference, "wrong-currency", true, 12000, "USD");
+    performCapture(wrongCurrency, workerSignature(wrongCurrency))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_CAPTURE\"}"));
+
+    String first = captureBody(paymentReference, "first-capture", true, 12000, "EUR");
+    performCapture(first, workerSignature(first)).andExpect(status().isCreated());
+    String second = captureBody(paymentReference, "second-capture", true, 12000, "EUR");
+    performCapture(second, workerSignature(second))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_CAPTURE\"}"));
+    String cancelled = eventBody(paymentReference, "CANCELLED");
+    performEvent(cancelled, workerSignature(cancelled))
+        .andExpect(status().isConflict())
+        .andExpect(content().json("{\"code\":\"INVALID_TRANSITION\"}"));
+  }
+
+  @Test
+  void captureAfterCancellationIsRejectedWithoutWrites() throws Exception {
+    String paymentReference = "capture-after-cancellation";
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+    String cancelled = eventBody(paymentReference, "CANCELLED");
+    performEvent(cancelled, workerSignature(cancelled)).andExpect(status().isNoContent());
+
+    int transactions = count("transaction", "true");
+    int events = count("transaction_event", "true");
+    int entries = count("journal_entry", "true");
+    int lines = count("journal_entry_line", "true");
+    String capture =
+        captureBody(paymentReference, "capture-after-cancellation-ref", true, 12000, "EUR");
+
+    performCapture(capture, workerSignature(capture))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_CAPTURE\"}"));
+
+    assertThat(count("transaction", "true")).isEqualTo(transactions);
+    assertThat(count("transaction_event", "true")).isEqualTo(events);
+    assertThat(count("journal_entry", "true")).isEqualTo(entries);
+    assertThat(count("journal_entry_line", "true")).isEqualTo(lines);
+  }
+
+  @Test
+  void captureRouteRequiresTheWorkerKey() throws Exception {
+    String paymentReference = "capture-worker-auth";
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+    String capture = captureBody(paymentReference, "capture-worker-auth-ref", true, 12000, "EUR");
+    performCapture(capture, signature(capture))
+        .andExpect(status().isUnauthorized())
+        .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
+  }
+
   private Future<Integer> eventRequest(
       ExecutorService executor, CountDownLatch ready, CountDownLatch start, String body)
       throws Exception {
@@ -456,10 +631,38 @@ class PaymentCreationIntegrationTest {
     return "{\"payment_reference\":\"" + reference + "\",\"event\":\"" + event + "\"}";
   }
 
+  private static String captureBody(
+      String paymentReference,
+      String captureReference,
+      boolean success,
+      long amount,
+      String currency) {
+    return "{\"payment_reference\":\""
+        + paymentReference
+        + "\",\"capture_reference\":\""
+        + captureReference
+        + "\",\"success\":"
+        + success
+        + ",\"amount\":"
+        + amount
+        + ",\"currency\":\""
+        + currency
+        + "\"}";
+  }
+
   private org.springframework.test.web.servlet.ResultActions performEvent(String body, String sig)
       throws Exception {
     return mockMvc.perform(
         post("/v1/payment/event")
+            .contentType("application/json")
+            .content(body)
+            .header("X-Outpost-Signature", sig));
+  }
+
+  private org.springframework.test.web.servlet.ResultActions performCapture(String body, String sig)
+      throws Exception {
+    return mockMvc.perform(
+        post("/v1/payment/capture")
             .contentType("application/json")
             .content(body)
             .header("X-Outpost-Signature", sig));
@@ -519,9 +722,11 @@ class PaymentCreationIntegrationTest {
                 + "JOIN journal_entry_line jel USING (journal_entry_id) "
                 + "JOIN register r USING (register_id) "
                 + "JOIN register_type rt USING (register_type_id) "
-                + "WHERE t.transaction_id = ? AND r.account_id = ? "
+                + "WHERE (t.transaction_id = ? OR t.parent_transaction_id = ?) "
+                + "AND r.account_id = ? "
                 + "AND rt.register_type_code = 'PENDING_FEE'",
             Long.class,
+            transactionId,
             transactionId,
             accountId));
   }

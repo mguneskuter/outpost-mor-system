@@ -44,7 +44,8 @@ public class PaymentEventService {
     }
 
     TransactionEventType current = fold(recorded);
-    if (!lifecycle.canFollow(current, candidate)) {
+    if (!lifecycle.canFollow(
+        current, candidate, repository.findCaptureChild(payment.transactionId()) != null)) {
       throw new PaymentEventException(409, "INVALID_TRANSITION");
     }
 

@@ -3,6 +3,7 @@ package com.outpost.ledger.payment.repository;
 import com.outpost.ledger.payment.repository.mybatis.AccountRow;
 import com.outpost.ledger.payment.repository.mybatis.ExistingPaymentRow;
 import com.outpost.ledger.payment.repository.mybatis.FeeRow;
+import com.outpost.ledger.payment.repository.mybatis.RegisterRow;
 import java.time.Instant;
 import java.util.List;
 
@@ -51,6 +52,24 @@ public interface PaymentRepository {
 
   /** Reads payment events in their append order. */
   List<PaymentEvent> findPaymentEvents(long transactionId);
+
+  /** Reads the payment's capture child and its outcome, if one exists. */
+  CaptureChild findCaptureChild(long paymentTransactionId);
+
+  /** Reads a capture by its unique reference. */
+  CaptureChild findCaptureByReference(String reference);
+
+  /** Finds a register for an account and accounting purpose. */
+  RegisterRow findRegister(long accountId, long registerTypeId);
+
+  /** Inserts a CAPTURE child transaction, or null for a duplicate reference. */
+  Long insertCaptureTransaction(
+      long paymentTransactionId,
+      long merchantAccountId,
+      String reference,
+      long amount,
+      long currencyId,
+      Instant createdAt);
 
   /** Inserts a lifecycle event and returns its id, or null when it already exists. */
   Long insertPaymentEvent(long transactionId, long eventTypeId, Instant occurredAt);

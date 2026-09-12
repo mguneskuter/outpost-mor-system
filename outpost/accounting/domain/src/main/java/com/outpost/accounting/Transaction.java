@@ -42,6 +42,18 @@ public final class Transaction {
     this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
   }
 
+  /** Creates a transaction using the supplied values. */
+  public static Transaction of(
+      long transactionId,
+      TransactionType transactionType,
+      Account merchantAccount,
+      String reference,
+      Amount amount,
+      Instant createdAt) {
+    return new Transaction(
+        transactionId, transactionType, merchantAccount, reference, amount, createdAt);
+  }
+
   /** Returns the transaction identity. */
   public long getTransactionId() {
     return transactionId;

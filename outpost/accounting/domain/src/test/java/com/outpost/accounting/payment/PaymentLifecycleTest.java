@@ -129,6 +129,61 @@ class PaymentLifecycleTest {
   }
 
   @Test
+  void captureOutcomeMayFollowAnAuthorisedPaymentOnlyWhenThereIsNoCaptureChild() {
+    assertTrue(
+        lifecycle.canFollowCapture(
+            TransactionEventTypes.AUTHORISED.getValue(),
+            false,
+            TransactionEventTypes.CAPTURED.getValue()));
+    assertTrue(
+        lifecycle.canFollowCapture(
+            TransactionEventTypes.AUTHORISED.getValue(),
+            false,
+            TransactionEventTypes.CAPTURE_FAILED.getValue()));
+    assertFalse(
+        lifecycle.canFollowCapture(
+            TransactionEventTypes.ORDER_CREATED.getValue(),
+            false,
+            TransactionEventTypes.CAPTURED.getValue()));
+    assertFalse(
+        lifecycle.canFollowCapture(
+            TransactionEventTypes.AUTHORISED.getValue(),
+            true,
+            TransactionEventTypes.CAPTURED.getValue()));
+  }
+
+  @Test
+  void cancellationIsRejectedAfterCaptureChildExists() {
+    assertFalse(
+        lifecycle.canFollow(
+            TransactionEventTypes.AUTHORISED.getValue(),
+            TransactionEventTypes.CANCELLED.getValue(),
+            true));
+    assertTrue(
+        lifecycle.canFollow(
+            TransactionEventTypes.AUTHORISED.getValue(),
+            TransactionEventTypes.CANCELLED.getValue(),
+            false));
+  }
+
+  @Test
+  void foldAcceptsCaptureOutcomeOnlyAfterAuthorisation() {
+    assertEquals(
+        TransactionEventTypes.CAPTURED.getValue(),
+        lifecycle.fold(
+            List.of(
+                TransactionEventTypes.ORDER_CREATED.getValue(),
+                TransactionEventTypes.AUTHORISED.getValue()),
+            TransactionEventTypes.CAPTURED.getValue()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            lifecycle.fold(
+                List.of(TransactionEventTypes.ORDER_CREATED.getValue()),
+                TransactionEventTypes.CAPTURE_FAILED.getValue()));
+  }
+
+  @Test
   void foldsPersistedEventTypesInStoredOrder() {
     assertEquals(
         TransactionEventTypes.CANCELLED.getValue(),

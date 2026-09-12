@@ -79,6 +79,20 @@ public final class PaymentLifecycle {
     return Objects.requireNonNull(state);
   }
 
+  /** Folds payment events and validates an optional CAPTURE child outcome. */
+  public TransactionEventType fold(
+      List<TransactionEventType> paymentEvents, @Nullable TransactionEventType captureOutcome) {
+    TransactionEventType paymentState = fold(paymentEvents);
+    if (captureOutcome == null) {
+      return paymentState;
+    }
+    if (!canFollowCapture(paymentState, false, captureOutcome)) {
+      throw new IllegalArgumentException(
+          "capture outcome cannot follow payment state: " + paymentState.getCode());
+    }
+    return captureOutcome;
+  }
+
   /**
    * Returns whether {@code candidate} may follow {@code state}.
    *
@@ -87,6 +101,31 @@ public final class PaymentLifecycle {
   public boolean canFollow(@Nullable TransactionEventType state, TransactionEventType candidate) {
     Objects.requireNonNull(candidate, "candidate");
     return allowedNextEvents(state).contains(candidate);
+  }
+
+  /** Returns whether a root event may follow when a capture child exists. */
+  public boolean canFollow(
+      @Nullable TransactionEventType state,
+      TransactionEventType candidate,
+      boolean captureChildExists) {
+    Objects.requireNonNull(candidate, "candidate");
+    if (captureChildExists && candidate.equals(TransactionEventTypes.CANCELLED.getValue())) {
+      return false;
+    }
+    return canFollow(state, candidate);
+  }
+
+  /** Returns whether a CAPTURE child may record its single outcome. */
+  public boolean canFollowCapture(
+      @Nullable TransactionEventType paymentState,
+      boolean captureChildExists,
+      TransactionEventType candidate) {
+    Objects.requireNonNull(candidate, "candidate");
+    return !captureChildExists
+        && paymentState != null
+        && paymentState.equals(TransactionEventTypes.AUTHORISED.getValue())
+        && (candidate.equals(TransactionEventTypes.CAPTURED.getValue())
+            || candidate.equals(TransactionEventTypes.CAPTURE_FAILED.getValue()));
   }
 
   private static TransactionEventType transition(
