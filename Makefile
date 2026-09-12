@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test precommit setup up down status migrate ensure-static-data seed seed-test generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle
+.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -29,6 +29,9 @@ build:
 
 test:
 	./outpost/gradlew -p outpost test
+
+psp-simulator:
+	./outpost/gradlew -p psp-simulator bootRun
 
 precommit:
 	SKIP=$(PRECOMMIT_SKIP) pre-commit run --all-files
