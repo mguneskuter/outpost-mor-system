@@ -17,6 +17,7 @@ dependencies {
     implementation project(':merchant-configuration:domain')
     implementation project(':accounting:domain')
     implementation project(':accounting:persistence')
+    implementation project(':accounting:queue-api')
     implementation project(':tax')
     implementation project(':fx')
     implementation project(':payment:domain')

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.accounting.queue.repository.mybatis.AccountingRequestQueueMapper">
+  <resultMap id="request" type="com.outpost.accounting.queue.repository.mybatis.AccountingRequestRow">
+    <constructor>
+      <idArg column="queue_id" javaType="java.lang.Long" />
+      <arg column="created_ts" javaType="java.time.Instant" />
+      <arg column="done_ts" javaType="java.time.Instant" />
+      <arg column="done" javaType="java.lang.Boolean" />
+      <arg column="status_id" javaType="java.lang.Long" />
+      <arg column="result_id" javaType="java.lang.Long" />
+      <arg column="type_id" javaType="java.lang.Long" />
+      <arg column="reference" javaType="java.lang.String" />
+      <arg column="original_reference" javaType="java.lang.String" />
+      <arg column="account_id" javaType="java.lang.Long" />
+      <arg column="psp_event_queue_id" javaType="java.lang.Long" />
+      <arg column="idempotency_key" javaType="java.lang.String" />
+      <arg column="merchant_reference" javaType="java.lang.String" />
+      <arg column="success" javaType="java.lang.Boolean" />
+      <arg column="amount" javaType="java.lang.Long" />
+      <arg column="currency_id" javaType="java.lang.Long" />
+      <arg column="psp_reference" javaType="java.lang.String" />
+      <arg column="transaction_id" javaType="java.lang.Long" />
+    </constructor>
+  </resultMap>
+
+  <select id="findExisting" resultMap="request">
+    SELECT queue_id, created_ts, done_ts, done, status_id, result_id, type_id, reference,
+           original_reference, account_id, psp_event_queue_id, idempotency_key,
+           merchant_reference, success, amount, currency_id, psp_reference,
+           NULL::BIGINT AS transaction_id
+    FROM accounting_request_queue
+    WHERE (type_id = #{typeId} AND reference = #{reference})
+       OR (account_id = #{accountId} AND idempotency_key = #{idempotencyKey})
+    <if test="pspEventQueueId != null">
+       OR psp_event_queue_id = #{pspEventQueueId}
+    </if>
+    ORDER BY queue_id
+    LIMIT 1
+  </select>
+
+  <select id="insertRequest" resultType="long">
+    INSERT INTO accounting_request_queue (
+      status_id, type_id, reference, original_reference, account_id, account_type_id, created_ts,
+      psp_event_queue_id, idempotency_key, merchant_reference, success,
+      amount, currency_id, psp_reference
+    ) VALUES (
+      (SELECT accounting_request_status_id
+       FROM accounting_request_status
+       WHERE accounting_request_status_code = 'RECEIVED'),
+      #{typeId}, #{reference}, #{originalReference}, #{accountId},
+      (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), #{createdTs},
+      #{pspEventQueueId}, #{idempotencyKey}, #{merchantReference}, #{success},
+      #{amount}, #{currencyId}, #{pspReference}
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING queue_id
+  </select>
+
+  <insert id="insertLine">
+    INSERT INTO accounting_request_queue_line (queue_id, order_line_reference, amount)
+    VALUES (#{queueId}, #{orderLineReference}, #{amount})
+  </insert>
+
+  <select id="findById" resultMap="request">
+    SELECT q.queue_id, q.created_ts, q.done_ts, q.done, q.status_id, q.result_id,
+           q.type_id, q.reference, q.original_reference, q.account_id,
+           q.psp_event_queue_id, q.idempotency_key, q.merchant_reference, q.success,
+           q.amount, q.currency_id, q.psp_reference, t.transaction_id
+    FROM accounting_request_queue q
+    LEFT JOIN transaction t ON t.reference = q.original_reference
+    WHERE q.queue_id = #{queueId}
+  </select>
+
+  <select id="findLines" resultType="com.outpost.accounting.queue.repository.mybatis.AccountingRequestLineRow">
+    SELECT queue_id, order_line_reference, amount
+    FROM accounting_request_queue_line
+    WHERE queue_id = #{queueId}
+    ORDER BY order_line_reference
+  </select>
+
+  <select id="claimCandidate" resultMap="request">
+    SELECT q.queue_id, q.created_ts, q.done_ts, q.done, q.status_id, q.result_id,
+           q.type_id, q.reference, q.original_reference, q.account_id,
+           q.psp_event_queue_id, q.idempotency_key, q.merchant_reference, q.success,
+           q.amount, q.currency_id, q.psp_reference, t.transaction_id
+    FROM accounting_request_queue q
+    LEFT JOIN transaction t ON t.reference = q.original_reference
+    WHERE NOT q.done
+      AND NOT EXISTS (
+        SELECT 1
+        FROM accounting_request_queue older
+        WHERE older.original_reference = q.original_reference
+          AND NOT older.done
+          AND (older.created_ts, older.queue_id) &lt; (q.created_ts, q.queue_id)
+      )
+      AND (
+        t.transaction_id IS NULL
+        OR NOT EXISTS (
+          SELECT 1
+          FROM payment_lock live_lock
+          WHERE live_lock.transaction_id = t.transaction_id
+            AND live_lock.lease_until_ts &gt; #{now}
+        )
+      )
+    ORDER BY q.created_ts, q.queue_id
+    LIMIT 1
+    FOR UPDATE OF q SKIP LOCKED
+  </select>
+
+  <update id="markInProgress">
+    UPDATE accounting_request_queue
+    SET status_id = 2
+    WHERE queue_id = #{queueId} AND NOT done
+  </update>
+
+  <insert id="takePaymentLock">
+    INSERT INTO payment_lock (transaction_id, queue_id, locked_ts, lease_until_ts)
+    VALUES (#{transactionId}, #{queueId}, #{lockedTs}, #{leaseUntilTs})
+    ON CONFLICT (transaction_id) DO UPDATE
+      SET queue_id = EXCLUDED.queue_id,
+          locked_ts = EXCLUDED.locked_ts,
+          lease_until_ts = EXCLUDED.lease_until_ts
+      WHERE payment_lock.lease_until_ts &lt;= EXCLUDED.locked_ts
+  </insert>
+
+  <update id="markMissingPaymentFailed">
+    UPDATE accounting_request_queue
+    SET done = TRUE, done_ts = #{doneTs}, status_id = 3, result_id = 2
+    WHERE queue_id = #{queueId} AND NOT done
+  </update>
+
+  <update id="markDone">
+    UPDATE accounting_request_queue
+    SET done = TRUE, done_ts = #{doneTs}, status_id = 3, result_id = #{resultId}
+    WHERE queue_id = #{queueId} AND NOT done AND status_id = 2
+  </update>
+
+  <delete id="deletePaymentLock">
+    DELETE FROM payment_lock WHERE queue_id = #{queueId}
+  </delete>
+</mapper>

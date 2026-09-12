@@ -41,6 +41,23 @@ class OutpostMapperRegistrar implements ImportBeanDefinitionRegistrar {
     Set<String> packages = new LinkedHashSet<>();
     packages.add(basePackage);
     packages.addAll(Arrays.asList(mapperPackages));
+    String scannerBeanName = MapperScannerConfigurer.class.getName();
+    if (registry.containsBeanDefinition(scannerBeanName)) {
+      BeanDefinition scanner = registry.getBeanDefinition(scannerBeanName);
+      Set<String> mergedPackages = new LinkedHashSet<>();
+      Object existingPackages = scanner.getPropertyValues().get("basePackage");
+      if (existingPackages instanceof String packageList) {
+        for (String packageName : StringUtils.commaDelimitedListToStringArray(packageList)) {
+          if (StringUtils.hasText(packageName)) {
+            mergedPackages.add(packageName.trim());
+          }
+        }
+      }
+      mergedPackages.addAll(packages);
+      scanner.getPropertyValues().add("basePackage", String.join(",", mergedPackages));
+      return;
+    }
+
     BeanDefinitionBuilder builder =
         BeanDefinitionBuilder.genericBeanDefinition(MapperScannerConfigurer.class);
     builder.addPropertyValue("processPropertyPlaceHolders", true);
@@ -48,7 +65,6 @@ class OutpostMapperRegistrar implements ImportBeanDefinitionRegistrar {
     builder.addPropertyValue("basePackage", String.join(",", packages));
     builder.addPropertyValue("sqlSessionFactoryBeanName", "sqlSessionFactory");
     builder.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
-    registry.registerBeanDefinition(
-        MapperScannerConfigurer.class.getName(), builder.getBeanDefinition());
+    registry.registerBeanDefinition(scannerBeanName, builder.getBeanDefinition());
   }
 }

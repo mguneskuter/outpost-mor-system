@@ -23,6 +23,7 @@ include(
     ':framework:security',
     ':accounting:domain',
     ':accounting:persistence',
+    ':accounting:queue-api',
     ':tax',
     ':fx',
     ':payment:domain',
