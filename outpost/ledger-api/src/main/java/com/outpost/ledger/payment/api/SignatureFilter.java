@@ -27,18 +27,15 @@ import org.springframework.stereotype.Component;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public final class SignatureFilter implements Filter {
-  private final HmacKey key;
+  private final HmacKey gatewayKey;
+  private final HmacKey workerKey;
 
-  /** Creates a filter with the externally configured Gateway key. */
-  public SignatureFilter(@Value("${outpost.ledger.gateway-hmac-secret}") String secret) {
-    if (secret == null || secret.isBlank()) {
-      throw new IllegalStateException("Gateway HMAC key is required");
-    }
-    try {
-      key = HmacKey.fromUtf8(secret);
-    } catch (RuntimeException e) {
-      throw new IllegalStateException("Gateway HMAC key is invalid", e);
-    }
+  /** Creates a filter with the externally configured Gateway and Worker keys. */
+  public SignatureFilter(
+      @Value("${outpost.ledger.gateway-hmac-secret}") String gatewaySecret,
+      @Value("${outpost.ledger.worker-hmac-secret}") String workerSecret) {
+    gatewayKey = key(gatewaySecret, "Gateway");
+    workerKey = key(workerSecret, "Worker");
   }
 
   /** Authenticates payment requests before dispatch. */
@@ -48,12 +45,14 @@ public final class SignatureFilter implements Filter {
     if (!(request instanceof HttpServletRequest http)
         || !(response instanceof HttpServletResponse httpResponse)
         || !"POST".equals(http.getMethod())
-        || !"/v1/payment".equals(http.getRequestURI())) {
+        || (!"/v1/payment".equals(http.getRequestURI())
+            && !"/v1/payment/event".equals(http.getRequestURI()))) {
       chain.doFilter(request, response);
       return;
     }
     byte[] body = http.getInputStream().readAllBytes();
     String encoded = http.getHeader("X-Outpost-Signature");
+    HmacKey key = "/v1/payment/event".equals(http.getRequestURI()) ? workerKey : gatewayKey;
     boolean valid;
     try {
       valid = encoded != null && HmacSha256.verify(key, body, HmacSignature.fromBase64(encoded));
@@ -67,6 +66,17 @@ public final class SignatureFilter implements Filter {
       return;
     }
     chain.doFilter(new CachedBodyRequest(http, body), response);
+  }
+
+  private static HmacKey key(String secret, String name) {
+    if (secret == null || secret.isBlank()) {
+      throw new IllegalStateException(name + " HMAC key is required");
+    }
+    try {
+      return HmacKey.fromUtf8(secret);
+    } catch (RuntimeException e) {
+      throw new IllegalStateException(name + " HMAC key is invalid", e);
+    }
   }
 
   private static final class CachedBodyRequest extends HttpServletRequestWrapper {

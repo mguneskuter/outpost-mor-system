@@ -128,6 +128,28 @@ class PaymentLifecycleTest {
             TransactionEventTypes.REFUSED.getValue(), TransactionEventTypes.AUTHORISED.getValue()));
   }
 
+  @Test
+  void foldsPersistedEventTypesInStoredOrder() {
+    assertEquals(
+        TransactionEventTypes.CANCELLED.getValue(),
+        lifecycle.fold(
+            List.of(
+                TransactionEventTypes.ORDER_CREATED.getValue(),
+                TransactionEventTypes.AUTHORISED.getValue(),
+                TransactionEventTypes.CANCELLED.getValue())));
+  }
+
+  @Test
+  void rejectsAnInvalidPersistedEventTypeSequence() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            lifecycle.fold(
+                List.of(
+                    TransactionEventTypes.ORDER_CREATED.getValue(),
+                    TransactionEventTypes.CANCELLED.getValue())));
+  }
+
   @ParameterizedTest
   @MethodSource("rejectedHistories")
   void rejectsHistoryNoValidEventSequenceCouldHaveProduced(List<TransactionEventTypes> eventTypes) {

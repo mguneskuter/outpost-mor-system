@@ -2,6 +2,7 @@ package com.outpost.ledger.payment.repository.mybatis;
 
 import com.outpost.framework.persistence.RegisteredMapper;
 import java.time.Instant;
+import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -128,4 +129,91 @@ public interface PaymentMapper {
       @Param("registerId") long registerId,
       @Param("currencyId") long currencyId,
       @Param("quantity") long quantity);
+
+  /** Locks the payment family root before reading or appending lifecycle evidence. */
+  @Select(
+      """
+      SELECT root.transaction_id, root.currency_id
+        FROM transaction target
+        JOIN transaction root
+          ON root.transaction_id = COALESCE(target.parent_transaction_id, target.transaction_id)
+       WHERE target.reference = #{reference}
+         AND target.transaction_type_id = 1
+         AND root.transaction_type_id = 1
+       FOR UPDATE OF root
+      """)
+  PaymentFamilyRow findPaymentFamilyForUpdate(@Param("reference") String reference);
+
+  /** Reads payment events in append order for the lifecycle fold. */
+  @Select(
+      """
+      SELECT transaction_event_id, transaction_event_type_id, event_ts
+        FROM transaction_event
+       WHERE transaction_id = #{transactionId}
+       ORDER BY transaction_event_id
+      """)
+  List<PaymentEventRow> findPaymentEvents(@Param("transactionId") long transactionId);
+
+  /** Appends a payment lifecycle event while retaining the database idempotency guard. */
+  @Select(
+      """
+      INSERT INTO transaction_event (transaction_id, transaction_event_type_id, event_ts)
+      VALUES (#{transactionId},#{eventTypeId},#{occurredAt})
+      ON CONFLICT (transaction_id, transaction_event_type_id) DO NOTHING
+      RETURNING transaction_event_id
+      """)
+  Long insertPaymentEvent(
+      @Param("transactionId") long transactionId,
+      @Param("eventTypeId") long eventTypeId,
+      @Param("occurredAt") Instant occurredAt);
+
+  /** Reads the merchant and platform pending-fee lines for the payment. */
+  @Select(
+      """
+      SELECT ABS(merchant_line.quantity) fee, merchant_line.currency_id,
+             merchant_line.register_id merchant_register_id,
+             platform_line.register_id platform_register_id
+        FROM transaction t
+        JOIN transaction_event te ON te.transaction_id = t.transaction_id
+        JOIN transaction_event_type tet
+          ON tet.transaction_event_type_id = te.transaction_event_type_id
+        JOIN journal_entry je ON je.transaction_event_id = te.transaction_event_id
+        JOIN journal_entry_type jet
+          ON jet.journal_entry_type_id = je.journal_entry_type_id
+        JOIN journal_entry_line merchant_line ON merchant_line.journal_entry_id = je.journal_entry_id
+        JOIN register merchant_register ON merchant_register.register_id = merchant_line.register_id
+        JOIN account merchant_account ON merchant_account.account_id = merchant_register.account_id
+        JOIN account_type merchant_type ON merchant_type.account_type_id = merchant_account.account_type_id
+        JOIN register_type merchant_register_type
+          ON merchant_register_type.register_type_id = merchant_register.register_type_id
+        JOIN journal_entry_line platform_line
+          ON platform_line.journal_entry_id = je.journal_entry_id
+         AND platform_line.currency_id = merchant_line.currency_id
+        JOIN register platform_register ON platform_register.register_id = platform_line.register_id
+        JOIN account platform_account ON platform_account.account_id = platform_register.account_id
+        JOIN account_type platform_type ON platform_type.account_type_id = platform_account.account_type_id
+        JOIN register_type platform_register_type
+          ON platform_register_type.register_type_id = platform_register.register_type_id
+       WHERE t.transaction_id = #{transactionId}
+         AND tet.code = 'ORDER_CREATED'
+         AND jet.code = 'FEE_PENDING'
+         AND merchant_account.account_id = t.account_id
+         AND merchant_type.code = 'MERCHANT'
+         AND merchant_register_type.register_type_code = 'PENDING_FEE'
+         AND platform_type.code = 'PLATFORM'
+         AND platform_register_type.register_type_code = 'PENDING_FEE'
+         AND merchant_line.quantity >= 0
+      """)
+  PendingFeeRow findPendingFee(@Param("transactionId") long transactionId);
+
+  /** Inserts the reversal entry whose lines are appended in the same transaction. */
+  @Select(
+      """
+      INSERT INTO journal_entry (transaction_event_id, journal_entry_type_id, booked, posted)
+      VALUES (#{eventId},#{entryTypeId},#{at},#{at}) RETURNING journal_entry_id
+      """)
+  long insertFeeReleaseEntry(
+      @Param("eventId") long eventId,
+      @Param("entryTypeId") long entryTypeId,
+      @Param("at") Instant at);
 }

@@ -47,7 +47,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 class PaymentCreationIntegrationTest {
 
   private static final String SECRET = "test-gateway-secret";
+  private static final String WORKER_SECRET = "test-worker-secret";
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8(SECRET);
+  private static final HmacKey WORKER_KEY = HmacKey.fromUtf8(WORKER_SECRET);
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer("outpost_payment_creation", "outpost", "outpost");
   private static final String VALID_BODY =
@@ -105,6 +107,7 @@ class PaymentCreationIntegrationTest {
   void createsPaymentAndBalancedPendingFeeEntry() throws Exception {
     String body = body("valid-creation");
     int transactions = count("transaction", "transaction_type_id = 1");
+    int lines = count("journal_entry_line", "true");
     perform(body, signature(body)).andExpect(status().isCreated());
 
     assertThat(count("transaction", "transaction_type_id = 1")).isEqualTo(transactions + 1);
@@ -112,7 +115,7 @@ class PaymentCreationIntegrationTest {
     assertThat(count("transaction_event", "transaction_event_type_id = 1"))
         .isEqualTo(transactions + 1);
     assertThat(count("journal_entry", "journal_entry_type_id = 3")).isEqualTo(transactions + 1);
-    assertThat(count("journal_entry_line", "true")).isEqualTo(2 * (transactions + 1));
+    assertThat(count("journal_entry_line", "true")).isEqualTo(lines + 2);
     assertThat(
             jdbcTemplate.queryForObject("SELECT SUM(quantity) FROM journal_entry_line", Long.class))
         .isZero();
@@ -253,6 +256,150 @@ class PaymentCreationIntegrationTest {
     assertThat(count("payment_detail", "true")).isEqualTo(transactions + 1);
   }
 
+  @Test
+  void recordsRefusalOnceAndReleasesThePendingFee() throws Exception {
+    String reference = "event-refused";
+    String body = body(reference);
+    perform(body, signature(body)).andExpect(status().isCreated());
+    long transactionId = transactionId(reference);
+
+    performEvent(eventBody(reference, "REFUSED"), workerSignature(eventBody(reference, "REFUSED")))
+        .andExpect(status().isNoContent());
+
+    assertThat(countForTransaction("transaction_event", transactionId)).isEqualTo(2);
+    assertThat(countForTransaction("journal_entry", transactionId)).isEqualTo(2);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transaction_event WHERE transaction_id = ? "
+                    + "AND transaction_event_type_id = 3",
+                Integer.class,
+                transactionId))
+        .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT SUM(jel.quantity) FROM journal_entry je "
+                    + "JOIN transaction_event te USING (transaction_event_id) "
+                    + "JOIN journal_entry_line jel USING (journal_entry_id) "
+                    + "WHERE te.transaction_id = ?",
+                Long.class,
+                transactionId))
+        .isZero();
+    assertFeeRelease(
+        transactionId, TransactionEventTypes.REFUSED.getValue().getTransactionEventTypeId());
+
+    int events = countForTransaction("transaction_event", transactionId);
+    int entries = countForTransaction("journal_entry", transactionId);
+    performEvent(eventBody(reference, "REFUSED"), workerSignature(eventBody(reference, "REFUSED")))
+        .andExpect(status().isNoContent());
+    assertThat(countForTransaction("transaction_event", transactionId)).isEqualTo(events);
+    assertThat(countForTransaction("journal_entry", transactionId)).isEqualTo(entries);
+  }
+
+  @Test
+  void recordsCancellationAfterAuthorisationAndReleasesThePendingFee() throws Exception {
+    String reference = "event-cancelled";
+    String payment = body(reference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    long transactionId = transactionId(reference);
+
+    String authorised = eventBody(reference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+    String cancelled = eventBody(reference, "CANCELLED");
+    performEvent(cancelled, workerSignature(cancelled)).andExpect(status().isNoContent());
+
+    assertThat(countForTransaction("transaction_event", transactionId)).isEqualTo(3);
+    assertThat(countForTransaction("journal_entry", transactionId)).isEqualTo(2);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT SUM(jel.quantity) FROM journal_entry je "
+                    + "JOIN transaction_event te USING (transaction_event_id) "
+                    + "JOIN journal_entry_line jel USING (journal_entry_id) "
+                    + "WHERE te.transaction_id = ?",
+                Long.class,
+                transactionId))
+        .isZero();
+    assertFeeRelease(
+        transactionId, TransactionEventTypes.CANCELLED.getValue().getTransactionEventTypeId());
+  }
+
+  @Test
+  void authorisationRecordsNoFeeReleaseAndInvalidEventsDoNotWrite() throws Exception {
+    String authorisedReference = "event-authorised";
+    String authorisedBody = eventBody(authorisedReference, "AUTHORISED");
+    String payment = body(authorisedReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    long authorisedId = transactionId(authorisedReference);
+
+    performEvent(authorisedBody, workerSignature(authorisedBody)).andExpect(status().isNoContent());
+    assertThat(countForTransaction("transaction_event", authorisedId)).isEqualTo(2);
+    assertThat(countForTransaction("journal_entry", authorisedId)).isEqualTo(1);
+
+    String invalidReference = "event-invalid";
+    String invalidPayment = body(invalidReference);
+    perform(invalidPayment, signature(invalidPayment)).andExpect(status().isCreated());
+    long invalidId = transactionId(invalidReference);
+    int events = countForTransaction("transaction_event", invalidId);
+    int entries = countForTransaction("journal_entry", invalidId);
+
+    String unsupported = eventBody(invalidReference, "ORDER_CREATED");
+    performEvent(unsupported, workerSignature(unsupported))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().json("{\"code\":\"INVALID_REQUEST\"}"));
+    String invalidTransition = eventBody(invalidReference, "CANCELLED");
+    performEvent(invalidTransition, workerSignature(invalidTransition))
+        .andExpect(status().isConflict())
+        .andExpect(content().json("{\"code\":\"INVALID_TRANSITION\"}"));
+    String unknown = eventBody("event-unknown", "REFUSED");
+    performEvent(unknown, workerSignature(unknown))
+        .andExpect(status().isNotFound())
+        .andExpect(content().json("{\"code\":\"PAYMENT_NOT_FOUND\"}"));
+    assertThat(countForTransaction("transaction_event", invalidId)).isEqualTo(events);
+    assertThat(countForTransaction("journal_entry", invalidId)).isEqualTo(entries);
+  }
+
+  @Test
+  void eventRouteRequiresTheWorkerKey() throws Exception {
+    String reference = "event-worker-auth";
+    String body = eventBody(reference, "AUTHORISED");
+    String gatewaySignature = signature(body);
+    performEvent(body, gatewaySignature)
+        .andExpect(status().isUnauthorized())
+        .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
+  }
+
+  @Test
+  void concurrentAuthorisationAndRefusalAllowOnlyOneTransition() throws Exception {
+    String reference = "event-concurrent";
+    String payment = body(reference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String authorised = eventBody(reference, "AUTHORISED");
+    String refused = eventBody(reference, "REFUSED");
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch start = new CountDownLatch(1);
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      Future<Integer> first = eventRequest(executor, ready, start, authorised);
+      Future<Integer> second = eventRequest(executor, ready, start, refused);
+      assertThat(ready.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+      assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(204, 409);
+    } finally {
+      executor.shutdownNow();
+    }
+    assertThat(countForTransaction("transaction_event", transactionId(reference))).isEqualTo(2);
+  }
+
+  private Future<Integer> eventRequest(
+      ExecutorService executor, CountDownLatch ready, CountDownLatch start, String body)
+      throws Exception {
+    return executor.submit(
+        () -> {
+          ready.countDown();
+          start.await();
+          return performEvent(body, workerSignature(body)).andReturn().getResponse().getStatus();
+        });
+  }
+
   private void assertFailure(String body, String code, int status) throws Exception {
     int transactions = count("transaction", "true");
     int details = count("payment_detail", "true");
@@ -299,6 +446,84 @@ class PaymentCreationIntegrationTest {
 
   private static String signature(String body) {
     return HmacSha256.sign(GATEWAY_KEY, body.getBytes(StandardCharsets.UTF_8)).toBase64();
+  }
+
+  private static String workerSignature(String body) {
+    return HmacSha256.sign(WORKER_KEY, body.getBytes(StandardCharsets.UTF_8)).toBase64();
+  }
+
+  private static String eventBody(String reference, String event) {
+    return "{\"payment_reference\":\"" + reference + "\",\"event\":\"" + event + "\"}";
+  }
+
+  private org.springframework.test.web.servlet.ResultActions performEvent(String body, String sig)
+      throws Exception {
+    return mockMvc.perform(
+        post("/v1/payment/event")
+            .contentType("application/json")
+            .content(body)
+            .header("X-Outpost-Signature", sig));
+  }
+
+  private long transactionId(String reference) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT transaction_id FROM transaction WHERE reference = ?", Long.class, reference));
+  }
+
+  private int countForTransaction(String table, long transactionId) {
+    String column = table.equals("transaction_event") ? "transaction_id" : "te.transaction_id";
+    String from =
+        table.equals("transaction_event")
+            ? "transaction_event"
+            : table + " x JOIN transaction_event te USING (transaction_event_id)";
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM " + from + " WHERE " + column + " = ?",
+            Integer.class,
+            transactionId));
+  }
+
+  private void assertFeeRelease(long transactionId, long eventTypeId) {
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transaction_event te "
+                    + "JOIN journal_entry je USING (transaction_event_id) "
+                    + "JOIN journal_entry_type jet USING (journal_entry_type_id) "
+                    + "WHERE te.transaction_id = ? AND te.transaction_event_type_id = ? "
+                    + "AND jet.code = 'FEE_RELEASE'",
+                Integer.class,
+                transactionId,
+                eventTypeId))
+        .isEqualTo(1);
+    long merchantAccountId =
+        Objects.requireNonNull(
+            jdbcTemplate.queryForObject(
+                "SELECT account_id FROM transaction WHERE transaction_id = ?",
+                Long.class,
+                transactionId));
+    long platformAccountId =
+        Objects.requireNonNull(
+            jdbcTemplate.queryForObject(
+                "SELECT account_id FROM account WHERE code = 'OUTPOST'", Long.class));
+    assertThat(pendingFeeBalance(transactionId, merchantAccountId)).isZero();
+    assertThat(pendingFeeBalance(transactionId, platformAccountId)).isZero();
+  }
+
+  private long pendingFeeBalance(long transactionId, long accountId) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT COALESCE(SUM(jel.quantity), 0) FROM transaction t "
+                + "JOIN transaction_event te USING (transaction_id) "
+                + "JOIN journal_entry je USING (transaction_event_id) "
+                + "JOIN journal_entry_line jel USING (journal_entry_id) "
+                + "JOIN register r USING (register_id) "
+                + "JOIN register_type rt USING (register_type_id) "
+                + "WHERE t.transaction_id = ? AND r.account_id = ? "
+                + "AND rt.register_type_code = 'PENDING_FEE'",
+            Long.class,
+            transactionId,
+            accountId));
   }
 
   private int count(String table, String predicate) {
