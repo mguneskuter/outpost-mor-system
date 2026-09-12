@@ -71,6 +71,7 @@ class GatewayApiStartupFailureIntegrationTest {
     env.setProperty("spring.datasource.url", DATABASE.getJdbcUrl());
     env.setProperty("spring.datasource.username", DATABASE.getUsername());
     env.setProperty("spring.datasource.password", DATABASE.getPassword());
+    env.setProperty("OUTPOST_HMAC_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
     new SpringApplicationBuilder(GatewayApiApplication.class)
         .web(WebApplicationType.NONE)
         .environment(env)

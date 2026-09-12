@@ -148,6 +148,7 @@ class ModuleGraphSpec {
             ':common-payment:domain',
             ':common-payment:repository',
             ':framework:persistence',
+            ':framework:security',
             ':account:domain',
             ':account:repository',
             ':merchant-configuration:domain',

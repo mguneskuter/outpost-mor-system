@@ -31,7 +31,8 @@ VALUES
     211, 'BANK_ACCOUNT', 210, 'DEMO_MERCHANT_2_PAYOUT',
     'Demo Merchant 2 Payout Account', '2026-01-01 00:00:00+00'
 ),
-(300, 'PSP', 1, 'DEMO_PSP', 'Demo PSP', '2026-01-01 00:00:00+00');
+(300, 'PSP', 1, 'DEMO_PSP', 'Demo PSP', '2026-01-01 00:00:00+00'),
+(310, 'PSP', 1, 'DEMO_PSP_2', 'Demo PSP 2', '2026-01-01 00:00:00+00');
 
 INSERT INTO seed_account (
     account_id, account_type_code, parent_account_id, code, name, created_ts

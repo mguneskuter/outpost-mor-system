@@ -31,7 +31,8 @@ WHERE (
         (201, 'DEMO_MERCHANT_PAYOUT'),
         (210, 'DEMO_MERCHANT_2'),
         (211, 'DEMO_MERCHANT_2_PAYOUT'),
-        (300, 'DEMO_PSP')
+        (300, 'DEMO_PSP'),
+        (310, 'DEMO_PSP_2')
     )
     OR EXISTS (
         SELECT 1

@@ -64,6 +64,9 @@ class GatewayApiIntegrationTest {
     registry.add("spring.datasource.url", DATABASE::getJdbcUrl);
     registry.add("spring.datasource.username", DATABASE::getUsername);
     registry.add("spring.datasource.password", DATABASE::getPassword);
+    registry.add(
+        "OUTPOST_HMAC_ENCRYPTION_KEY", () -> "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    registry.add("OUTPOST_OPERATOR_API_KEY", () -> "fake-operator-key");
   }
 
   @Test
@@ -77,7 +80,7 @@ class GatewayApiIntegrationTest {
     assertThat(get("/actuator/health").getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(get("/actuator/metrics").getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(get("/actuator/env").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-    assertThat(get("/orders/123").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    assertThat(get("/orders/123").getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 
   @Test
