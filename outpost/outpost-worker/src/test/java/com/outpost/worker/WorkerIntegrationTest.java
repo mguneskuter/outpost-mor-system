@@ -36,7 +36,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 @SpringBootTest(
     classes = OutpostWorkerApplication.class,
-    properties = "outpost.worker.psp.enabled=false")
+    properties = {
+      "outpost.worker.psp.enabled=false",
+      "outpost.worker.ledger.base-url=http://localhost:8081",
+      "outpost.worker.ledger.hmac-secret=test-worker-key"
+    })
 class WorkerIntegrationTest {
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer("outpost_worker", "outpost_worker", "outpost_worker");

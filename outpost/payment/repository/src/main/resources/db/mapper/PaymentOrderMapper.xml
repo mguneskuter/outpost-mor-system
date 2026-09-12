@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.payment.repository.mybatis.PaymentOrderMapper">
+  <select id="findOrder" resultType="com.outpost.payment.repository.mybatis.OrderRow">
+    SELECT mo.order_id AS "orderId", mo.order_reference AS "orderReference",
+           mo.merchant_reference AS "merchantReference", mo.account_id AS "accountId",
+           mo.shopper_id AS "shopperId", mo.currency_id AS "currencyId",
+           mo.net_amount AS "netAmount", mo.tax_amount AS "taxAmount",
+           mo.gross_amount AS "grossAmount", mo.idempotency_key AS "idempotencyKey",
+           mo.created_ts AS "createdAt"
+    FROM merchant_order mo
+    JOIN order_payment op ON op.order_id = mo.order_id
+    WHERE op.payment_reference = #{paymentReference}
+  </select>
+
+  <select id="findOrderItems" resultType="com.outpost.payment.repository.mybatis.OrderItemRow">
+    SELECT order_item_id AS "orderItemId", sequence, product_type_id AS "productTypeId",
+           order_line_reference AS "orderLineReference",
+           merchant_line_reference AS "merchantLineReference",
+           net_amount AS "netAmount", tax_amount AS "taxAmount", tax_rate AS "taxRate"
+    FROM order_item
+    WHERE order_id = #{orderId}
+    ORDER BY sequence
+  </select>
+
+  <select id="findPspRouting" resultType="com.outpost.payment.repository.mybatis.PspRoutingRow">
+    SELECT psp.code AS "pspCode", op.psp_reference AS "pspReference"
+    FROM order_payment op
+    JOIN account psp ON psp.account_id = op.psp_account_id
+    WHERE op.payment_reference = #{paymentReference}
+  </select>
+</mapper>

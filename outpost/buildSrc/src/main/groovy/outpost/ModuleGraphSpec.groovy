@@ -138,7 +138,11 @@ class ModuleGraphSpec {
             ':psp-integration:domain'
         ],
         ':payment:repository': [
-            ':payment:domain', ':platform-sanity:static-data-repository', ':framework:persistence'
+            ':payment:domain',
+            ':common-iso:domain',
+            ':common-payment:domain',
+            ':platform-sanity:static-data-repository',
+            ':framework:persistence'
         ],
         ':psp-integration:domain': [
             ':platform-sanity:static-data-model',
@@ -187,7 +191,9 @@ class ModuleGraphSpec {
         ':outpost-worker': [
             ':platform-sanity:static-data-check',
             ':common-iso:domain',
+            ':common-payment:domain',
             ':framework:persistence',
+            ':framework:security',
             ':account:domain',
             ':merchant-configuration:domain',
             ':payment:domain',
