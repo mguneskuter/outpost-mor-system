@@ -9,10 +9,12 @@ springBoot {
 
 dependencies {
     implementation project(':framework:persistence')
+    implementation project(':framework:security')
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation project(':platform-sanity:static-data-check')
     implementation project(':common-iso:domain')
+    implementation project(':common-payment:domain')
     implementation project(':account:domain')
     implementation project(':merchant-configuration:domain')
     implementation project(':payment:domain')

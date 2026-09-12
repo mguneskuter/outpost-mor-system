@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.payment.repository.mybatis.RefundItemMapper">
+  <insert id="insert">
+    INSERT INTO refund_item (refund_id, order_item_id, net_amount, tax_amount)
+    VALUES (#{refundId}, #{orderItemId}, #{netAmount}, #{taxAmount})
+    ON CONFLICT (refund_id, order_item_id) DO NOTHING
+  </insert>
+</mapper>

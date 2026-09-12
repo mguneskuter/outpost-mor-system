@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.worker.accounting.repository.mybatis.LedgerTransactionMapper">
+  <select id="isCaptured" resultType="boolean">
+    SELECT EXISTS (
+      SELECT 1
+      FROM transaction payment
+      JOIN transaction capture ON capture.parent_transaction_id = payment.transaction_id
+      JOIN transaction_type tt ON tt.transaction_type_id = capture.transaction_type_id
+      JOIN transaction_event te ON te.transaction_id = capture.transaction_id
+      JOIN transaction_event_type tet
+        ON tet.transaction_event_type_id = te.transaction_event_type_id
+      WHERE payment.reference = #{paymentReference}
+        AND tt.code = 'CAPTURE'
+        AND tet.code = 'CAPTURED'
+    )
+  </select>
+
+  <select id="activeRefundedTotal"
+    resultType="com.outpost.worker.accounting.repository.mybatis.RefundedTotalRow">
+    SELECT
+      COALESCE(SUM(ri.net_amount), 0) AS net,
+      COALESCE(SUM(ri.tax_amount), 0) AS tax
+    FROM refund_item ri
+    JOIN transaction t ON t.transaction_id = ri.refund_id
+    WHERE ri.order_item_id = #{orderItemId}
+      AND t.reference != #{excludingRefundReference}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM transaction_event te
+        JOIN transaction_event_type tet
+          ON tet.transaction_event_type_id = te.transaction_event_type_id
+        WHERE te.transaction_id = t.transaction_id AND tet.code = 'REFUND_FAILED'
+      )
+  </select>
+
+  <select id="findTransactionId" resultType="long">
+    SELECT transaction_id FROM transaction WHERE reference = #{reference}
+  </select>
+</mapper>
