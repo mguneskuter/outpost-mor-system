@@ -19,6 +19,7 @@ class ModuleGraphSpec {
         ':merchant-configuration:domain',
         ':accounting:domain',
         ':accounting:persistence',
+        ':accounting:queue-api',
         ':tax',
         ':fx',
         ':payment:domain',
@@ -115,6 +116,11 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
+        ':accounting:queue-api': [
+            ':platform-sanity:static-data-model',
+            ':platform-sanity:static-data-repository',
+            ':framework:persistence'
+        ],
         ':tax': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
@@ -200,6 +206,7 @@ class ModuleGraphSpec {
             ':merchant-configuration:domain',
             ':accounting:domain',
             ':accounting:persistence',
+            ':accounting:queue-api',
             ':tax',
             ':fx',
             ':payment:domain',

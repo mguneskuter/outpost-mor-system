@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.platform.staticdata.job.accounting.AccountingRequestResultWriteMapper">
+  <select id="findAll" resultType="com.outpost.accounting.queue.repository.AccountingRequestResultRecord">
+    SELECT accounting_request_result_id, accounting_request_result_code
+    FROM accounting_request_result ORDER BY accounting_request_result_id
+  </select>
+  <insert id="insert">
+    INSERT INTO accounting_request_result (accounting_request_result_id, accounting_request_result_code)
+    VALUES (#{accountingRequestResultId}, #{code})
+  </insert>
+</mapper>

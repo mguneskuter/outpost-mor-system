@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
       "com.outpost.account.repository",
       "com.outpost.account.configuration.repository",
       "com.outpost.accounting.repository",
+      "com.outpost.accounting.queue.repository.sanity",
+      "com.outpost.accounting.queue.repository.mybatis",
       "com.outpost.payment.repository.sanity",
       "com.outpost.platform.staticdata.job.repository",
       "com.outpost.platform.staticdata.job.accounting"
