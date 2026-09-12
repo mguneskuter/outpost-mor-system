@@ -9,11 +9,11 @@ import java.util.Arrays;
 import java.util.Optional;
 
 /** MyBatis-backed PSP event queue. */
-public final class MybatisPspEventQueue implements PspEventQueue {
+public final class MyBatisPspEventQueue implements PspEventQueue {
   private final PspEventQueueMapper mapper;
 
   /** Creates a queue backed by the supplied mapper. */
-  public MybatisPspEventQueue(PspEventQueueMapper mapper) {
+  public MyBatisPspEventQueue(PspEventQueueMapper mapper) {
     this.mapper = mapper;
   }
 

@@ -29,7 +29,7 @@ public class RefundReservationService {
 
   /** Reserves a refund, or returns the existing result for an exact replay. */
   @Transactional
-  public RefundReservationResult reserve(RefundReservationCommand command) {
+  public ReserveRefundResult reserve(ReserveRefundCommand command) {
     validate(command);
     Currency currency =
         Currencies.fromCurrencyCode(command.currency()).orElseThrow(RefundReservationService::bad);
@@ -48,7 +48,7 @@ public class RefundReservationService {
       if (!sameFingerprint(existing, payment, command, currency, gross)) {
         throw conflict();
       }
-      return new RefundReservationResult(existing.reference(), existing.createdTs());
+      return new ReserveRefundResult(existing.reference(), existing.createdTs());
     }
     if (repository.findByReference(command.refundReference()) != null) {
       throw conflict();
@@ -112,12 +112,12 @@ public class RefundReservationService {
     if (eventId == null) {
       throw internal();
     }
-    return new RefundReservationResult(command.refundReference(), createdAt);
+    return new ReserveRefundResult(command.refundReference(), createdAt);
   }
 
   private void createDomainDetail(
       PaymentFamily payment,
-      RefundReservationCommand command,
+      ReserveRefundCommand command,
       Currency currency,
       long gross,
       long refundId,
@@ -156,7 +156,7 @@ public class RefundReservationService {
   private static boolean sameFingerprint(
       RefundChild existing,
       PaymentFamily payment,
-      RefundReservationCommand command,
+      ReserveRefundCommand command,
       Currency currency,
       long gross) {
     return existing.paymentTransactionId() == payment.transactionId()
@@ -184,7 +184,7 @@ public class RefundReservationService {
     }
   }
 
-  private static void validate(RefundReservationCommand command) {
+  private static void validate(ReserveRefundCommand command) {
     if (command == null
         || command.paymentReference() == null
         || command.paymentReference().isBlank()
@@ -208,23 +208,23 @@ public class RefundReservationService {
     }
   }
 
-  private static RefundReservationException bad() {
-    return new RefundReservationException(400, "INVALID_REQUEST");
+  private static ReserveRefundException bad() {
+    return new ReserveRefundException(400, "INVALID_REQUEST");
   }
 
-  private static RefundReservationException notFound() {
-    return new RefundReservationException(404, "PAYMENT_NOT_FOUND");
+  private static ReserveRefundException notFound() {
+    return new ReserveRefundException(404, "PAYMENT_NOT_FOUND");
   }
 
-  private static RefundReservationException conflict() {
-    return new RefundReservationException(409, "REFERENCE_CONFLICT");
+  private static ReserveRefundException conflict() {
+    return new ReserveRefundException(409, "REFERENCE_CONFLICT");
   }
 
-  private static RefundReservationException invalidRefund() {
-    return new RefundReservationException(422, "INVALID_REFUND");
+  private static ReserveRefundException invalidRefund() {
+    return new ReserveRefundException(422, "INVALID_REFUND");
   }
 
-  private static RefundReservationException internal() {
-    return new RefundReservationException(500, "INTERNAL_ERROR");
+  private static ReserveRefundException internal() {
+    return new ReserveRefundException(500, "INTERNAL_ERROR");
   }
 }

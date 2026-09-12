@@ -6,14 +6,14 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** MyBatis implementation of the PSP configuration repository. */
-public final class MybatisPspConfigurationRepository implements PspConfigurationRepository {
-  private final PspConfigurationRepositoryMapper mapper;
+public final class MyBatisPspConfigurationRepository implements PspConfigurationRepository {
+  private final PspConfigurationMapper mapper;
   private final int connectTimeoutMillis;
   private final int readTimeoutMillis;
 
   /** Creates a repository with transport timeouts applied to returned configurations. */
-  public MybatisPspConfigurationRepository(
-      PspConfigurationRepositoryMapper mapper, int connectTimeoutMillis, int readTimeoutMillis) {
+  public MyBatisPspConfigurationRepository(
+      PspConfigurationMapper mapper, int connectTimeoutMillis, int readTimeoutMillis) {
     this.mapper = Objects.requireNonNull(mapper, "mapper");
     this.connectTimeoutMillis = connectTimeoutMillis;
     this.readTimeoutMillis = readTimeoutMillis;
@@ -24,7 +24,7 @@ public final class MybatisPspConfigurationRepository implements PspConfiguration
     return Optional.ofNullable(mapper.findByCode(code)).map(this::toConfiguration);
   }
 
-  private PspConfiguration toConfiguration(PspConfigurationData data) {
+  private PspConfiguration toConfiguration(PspConfigurationRow data) {
     return new PspConfiguration(
         data.accountId(),
         data.code(),

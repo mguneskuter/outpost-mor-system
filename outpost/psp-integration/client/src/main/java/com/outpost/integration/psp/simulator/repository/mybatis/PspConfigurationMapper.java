@@ -6,7 +6,7 @@ import org.jspecify.annotations.Nullable;
 
 /** Maps PSP configuration rows. */
 @RegisteredMapper
-public interface PspConfigurationRepositoryMapper {
+public interface PspConfigurationMapper {
   /** Returns the configuration for a PSP account code. */
-  @Nullable PspConfigurationData findByCode(@Param("code") String code);
+  @Nullable PspConfigurationRow findByCode(@Param("code") String code);
 }

@@ -1,12 +1,12 @@
 package com.outpost.ledger.payment.service;
 
 /** Controlled failure that is safe to expose when reserving a refund. */
-public final class RefundReservationException extends RuntimeException {
+public final class ReserveRefundException extends RuntimeException {
   private final int status;
   private final String code;
 
   /** Creates a controlled failure. */
-  public RefundReservationException(int status, String code) {
+  public ReserveRefundException(int status, String code) {
     super(code);
     this.status = status;
     this.code = code;

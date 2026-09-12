@@ -11,26 +11,26 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** MyBatis implementation of the tax-rate repository. */
-public final class MybatisTaxRateRepository implements TaxRateRepository {
+public final class MyBatisTaxRateRepository implements TaxRateRepository {
 
-  private final TaxRateProviderRepositoryMapper mapper;
+  private final TaxRateMapper mapper;
 
   /** Creates a repository backed by the tax-rate mapper. */
-  public MybatisTaxRateRepository(TaxRateProviderRepositoryMapper mapper) {
+  public MyBatisTaxRateRepository(TaxRateMapper mapper) {
     this.mapper = Objects.requireNonNull(mapper, "mapper");
   }
 
   @Override
   public List<TaxRate> findAll() {
-    List<TaxRateEntity> rows = Objects.requireNonNull(mapper.findAll(), "tax-rate rows");
+    List<TaxRateRow> rows = Objects.requireNonNull(mapper.findAll(), "tax-rate rows");
     List<TaxRate> taxRates = new ArrayList<>(rows.size());
-    for (TaxRateEntity row : rows) {
+    for (TaxRateRow row : rows) {
       taxRates.add(toTaxRate(Objects.requireNonNull(row, "tax-rate row")));
     }
     return taxRates;
   }
 
-  private static TaxRate toTaxRate(TaxRateEntity row) {
+  private static TaxRate toTaxRate(TaxRateRow row) {
     var country =
         Countries.fromIsoCode(row.countryCode())
             .orElseThrow(
@@ -40,7 +40,7 @@ public final class MybatisTaxRateRepository implements TaxRateRepository {
   }
 
   private static @Nullable CountrySubdivision subdivision(
-      TaxRateEntity row, com.outpost.common.iso.Countries.Country country) {
+      TaxRateRow row, com.outpost.common.iso.Countries.Country country) {
     if (row.subdivisionCode() == null) {
       return null;
     }

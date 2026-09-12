@@ -43,7 +43,7 @@ public class PaymentEventService {
 
   /** Records one valid lifecycle event, or returns without writing for an exact duplicate. */
   @Transactional
-  public void record(PaymentEventCommand request) {
+  public void record(RecordPaymentEventCommand request) {
     validateRequest(request);
     if (request.refundReference() != null) {
       recordRefund(request);
@@ -52,7 +52,7 @@ public class PaymentEventService {
     recordPayment(request);
   }
 
-  private void recordPayment(PaymentEventCommand request) {
+  private void recordPayment(RecordPaymentEventCommand request) {
     TransactionEventType candidate = paymentCandidate(request.event());
     PaymentFamily payment = repository.findPaymentFamilyForUpdate(request.paymentReference());
     if (payment == null) {
@@ -82,7 +82,7 @@ public class PaymentEventService {
     }
   }
 
-  private void recordRefund(PaymentEventCommand request) {
+  private void recordRefund(RecordPaymentEventCommand request) {
     TransactionEventType candidate = refundCandidate(request.event());
     PaymentFamily payment = repository.findPaymentFamilyForUpdate(request.paymentReference());
     if (payment == null) {
@@ -266,7 +266,7 @@ public class PaymentEventService {
     return candidate;
   }
 
-  private static void validateRequest(PaymentEventCommand request) {
+  private static void validateRequest(RecordPaymentEventCommand request) {
     if (request == null
         || request.paymentReference() == null
         || request.paymentReference().isBlank()

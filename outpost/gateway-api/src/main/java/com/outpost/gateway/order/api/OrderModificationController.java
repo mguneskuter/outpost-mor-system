@@ -1,6 +1,6 @@
 package com.outpost.gateway.order.api;
 
-import com.outpost.gateway.order.service.OrderModificationException;
+import com.outpost.gateway.order.service.ModifyOrderException;
 import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.gateway.security.GatewayPrincipal;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
@@ -34,7 +34,7 @@ public final class OrderModificationController {
         (GatewayPrincipal)
             httpRequest.getAttribute(MerchantAuthenticationFilter.PRINCIPAL_ATTRIBUTE);
     if (principal == null || principal.type() != GatewayPrincipal.Type.MERCHANT) {
-      throw new OrderModificationException(HttpStatus.FORBIDDEN.value(), "MERCHANT_REQUIRED");
+      throw new ModifyOrderException(HttpStatus.FORBIDDEN.value(), "MERCHANT_REQUIRED");
     }
     return ResponseEntity.status(HttpStatus.ACCEPTED)
         .body(
@@ -42,8 +42,8 @@ public final class OrderModificationController {
                 service.request(principal.accountId(), request.toCommand())));
   }
 
-  @ExceptionHandler(OrderModificationException.class)
-  ResponseEntity<ErrorResponse> controlled(OrderModificationException exception) {
+  @ExceptionHandler(ModifyOrderException.class)
+  ResponseEntity<ErrorResponse> controlled(ModifyOrderException exception) {
     return ResponseEntity.status(exception.status()).body(new ErrorResponse(exception.code()));
   }
 

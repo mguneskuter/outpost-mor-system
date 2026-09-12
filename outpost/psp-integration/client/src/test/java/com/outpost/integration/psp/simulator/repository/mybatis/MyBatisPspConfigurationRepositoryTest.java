@@ -16,10 +16,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-@SpringBootTest(classes = MybatisPspConfigurationRepositoryTest.TestApplication.class)
-class MybatisPspConfigurationRepositoryTest {
+@SpringBootTest(classes = MyBatisPspConfigurationRepositoryTest.TestApplication.class)
+class MyBatisPspConfigurationRepositoryTest {
   @Autowired private JdbcTemplate jdbcTemplate;
-  @Autowired private PspConfigurationRepositoryMapper mapper;
+  @Autowired private PspConfigurationMapper mapper;
 
   @DynamicPropertySource
   static void datasource(DynamicPropertyRegistry registry) {
@@ -60,7 +60,7 @@ class MybatisPspConfigurationRepositoryTest {
 
   @Test
   void findsPspByCodeAndReturnsEmptyForUnknownCode() {
-    var repository = new MybatisPspConfigurationRepository(mapper, 12, 34);
+    var repository = new MyBatisPspConfigurationRepository(mapper, 12, 34);
 
     assertThat(repository.findByCode("DEMO_PSP"))
         .get()
