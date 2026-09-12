@@ -13,4 +13,30 @@
     WHERE merchant.account_id = #{merchantAccountId} AND psp.account_id = #{pspAccountId}
     ON CONFLICT (psp_account_id, reference, type_id) DO NOTHING
   </insert>
+  <select id="claimCandidate" resultType="com.outpost.payment.repository.mybatis.PspEventRow">
+    SELECT queue_id, account_id AS merchantAccountId, reference, original_reference,
+           type_id AS eventCodeId, payload::TEXT AS payload
+    FROM psp_event_queue candidate
+    WHERE NOT done
+      AND NOT EXISTS (
+        SELECT 1
+        FROM psp_event_queue older
+        WHERE older.original_reference = candidate.original_reference
+          AND NOT older.done
+          AND (older.created_ts, older.queue_id) &lt; (candidate.created_ts, candidate.queue_id)
+      )
+    ORDER BY created_ts, queue_id
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED
+  </select>
+  <update id="markInProgress">
+    UPDATE psp_event_queue
+    SET status_id = 2
+    WHERE queue_id = #{queueId} AND NOT done
+  </update>
+  <update id="markDone">
+    UPDATE psp_event_queue
+    SET done = TRUE, done_ts = #{doneTs}, status_id = 3, result_id = #{resultId}
+    WHERE queue_id = #{queueId} AND NOT done AND status_id = 2
+  </update>
 </mapper>

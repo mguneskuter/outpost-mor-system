@@ -1,6 +1,7 @@
 package com.outpost.payment.repository.mybatis;
 
 import com.outpost.framework.persistence.RegisteredMapper;
+import java.time.Instant;
 import org.apache.ibatis.annotations.Param;
 import org.jspecify.annotations.Nullable;
 
@@ -13,4 +14,16 @@ public interface PspEventQueueMapper {
 
   /** Inserts a received PSP event. */
   int insertReceived(ReceivedPspEventRow event);
+
+  /** Locks the oldest event that may be processed. */
+  @Nullable PspEventRow claimCandidate();
+
+  /** Marks a claimed event as being processed. */
+  int markInProgress(@Param("queueId") long queueId);
+
+  /** Records a terminal processing result. */
+  int markDone(
+      @Param("queueId") long queueId,
+      @Param("resultId") long resultId,
+      @Param("doneTs") Instant doneTs);
 }
