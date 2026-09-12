@@ -61,8 +61,9 @@ class PaymentSchemaIntegrationTest {
       execute(
           connection,
           "INSERT INTO order_payment (order_payment_id, order_id, payment_reference, "
-              + "psp_account_id, psp_account_type_id, created_ts) "
-              + "VALUES (1, 1, 'payment-ref', 101, 4, now())");
+              + "psp_account_id, psp_account_type_id, shopper_country_id, "
+              + "shopper_country_subdivision_id, created_ts) "
+              + "VALUES (1, 1, 'payment-ref', 101, 4, 1, NULL, now())");
       connection.commit();
 
       assertThatThrownBy(
@@ -84,8 +85,8 @@ class PaymentSchemaIntegrationTest {
                       connection,
                       "INSERT INTO order_payment (order_payment_id, order_id, "
                           + "payment_reference, psp_account_id, psp_account_type_id, "
-                          + "created_ts) "
-                          + "VALUES (2, 1, 'payment-ref-2', 100, 2, now())"))
+                          + "shopper_country_id, shopper_country_subdivision_id, created_ts) "
+                          + "VALUES (2, 1, 'payment-ref-2', 100, 2, 1, NULL, now())"))
           .isInstanceOf(SQLException.class);
       connection.rollback();
     }

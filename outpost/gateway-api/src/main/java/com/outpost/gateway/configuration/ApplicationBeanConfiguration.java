@@ -1,5 +1,11 @@
 package com.outpost.gateway.configuration;
 
+import com.outpost.gateway.order.client.LedgerClient;
+import com.outpost.gateway.order.client.ledger.LedgerHttpClient;
+import com.outpost.gateway.order.repository.OrderRepository;
+import com.outpost.gateway.order.repository.mybatis.MyBatisOrderRepository;
+import com.outpost.gateway.order.repository.mybatis.OrderMapper;
+import com.outpost.gateway.order.service.OrderService;
 import com.outpost.gateway.psp.service.PspWebhookService;
 import com.outpost.gateway.security.AesGcmSecretAdapter;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
@@ -8,6 +14,8 @@ import com.outpost.gateway.security.repository.mybatis.MerchantApiKeyRepositoryM
 import com.outpost.gateway.security.repository.mybatis.MybatisMerchantApiKeyRepository;
 import com.outpost.gateway.tax.repository.mybatis.MybatisTaxRateRepository;
 import com.outpost.gateway.tax.repository.mybatis.TaxRateProviderRepositoryMapper;
+import com.outpost.integration.psp.service.PspClient;
+import com.outpost.integration.psp.simulator.SimulatorPspClient;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.MybatisPspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationRepositoryMapper;
@@ -17,10 +25,17 @@ import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Duration;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import tools.jackson.databind.ObjectMapper;
 
 /** Application bean definitions. */
@@ -74,5 +89,78 @@ public class ApplicationBeanConfiguration {
   @Bean
   TaxRateProvider taxRateProvider(TaxRateRepository repository) {
     return new CachedTaxRateProvider(repository);
+  }
+
+  @Bean
+  Clock gatewayClock() {
+    return Clock.systemUTC();
+  }
+
+  @Bean
+  DataSource orderPhaseOwnershipDataSource(
+      @Value("${spring.datasource.url}") String url,
+      @Value("${spring.datasource.username}") String username,
+      @Value("${spring.datasource.password}") String password,
+      @Value("${outpost.gateway.order.phase-ownership.tcp-keepalives-idle:10}")
+          int tcpKeepalivesIdle,
+      @Value("${outpost.gateway.order.phase-ownership.tcp-keepalives-interval:5}")
+          int tcpKeepalivesInterval,
+      @Value("${outpost.gateway.order.phase-ownership.tcp-keepalives-count:3}")
+          int tcpKeepalivesCount) {
+    DriverManagerDataSource dataSource = new DriverManagerDataSource();
+    dataSource.setDriverClassName("org.postgresql.Driver");
+    dataSource.setUrl(
+        withPhaseOwnershipOptions(
+            url, tcpKeepalivesIdle, tcpKeepalivesInterval, tcpKeepalivesCount));
+    dataSource.setUsername(username);
+    dataSource.setPassword(password);
+    return dataSource;
+  }
+
+  private static String withPhaseOwnershipOptions(
+      String url, int tcpKeepalivesIdle, int tcpKeepalivesInterval, int tcpKeepalivesCount) {
+    String options =
+        "-c tcp_keepalives_idle="
+            + tcpKeepalivesIdle
+            + " -c tcp_keepalives_interval="
+            + tcpKeepalivesInterval
+            + " -c tcp_keepalives_count="
+            + tcpKeepalivesCount;
+    String separator = url.contains("?") ? "&" : "?";
+    return url
+        + separator
+        + "tcpKeepAlive=true&ApplicationName=outpost-gateway-order-phase&options="
+        + URLEncoder.encode(options, StandardCharsets.UTF_8);
+  }
+
+  @Bean
+  OrderRepository orderRepository(
+      OrderMapper mapper, @Qualifier("orderPhaseOwnershipDataSource") DataSource dataSource) {
+    return new MyBatisOrderRepository(mapper, dataSource);
+  }
+
+  @Bean
+  PspClient pspClient(PspConfigurationRepository configurations) {
+    return new SimulatorPspClient(configurations);
+  }
+
+  @Bean
+  LedgerClient ledgerClient(
+      ObjectMapper objectMapper,
+      @Value("${outpost.gateway.ledger.base-url:http://localhost:8081}") String baseUrl,
+      @Value("${outpost.gateway.ledger.hmac-secret:gateway-key}") String hmacSecret,
+      @Value("${outpost.gateway.ledger.connect-timeout:PT1S}") Duration connectTimeout,
+      @Value("${outpost.gateway.ledger.read-timeout:PT5S}") Duration readTimeout) {
+    return new LedgerHttpClient(baseUrl, hmacSecret, connectTimeout, readTimeout, objectMapper);
+  }
+
+  @Bean
+  OrderService orderService(
+      OrderRepository repository,
+      LedgerClient ledgerClient,
+      PspClient pspClient,
+      TaxRateProvider taxRateProvider,
+      Clock clock) {
+    return new OrderService(repository, ledgerClient, pspClient, taxRateProvider, clock);
   }
 }
