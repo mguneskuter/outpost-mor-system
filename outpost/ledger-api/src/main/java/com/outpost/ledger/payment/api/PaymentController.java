@@ -7,6 +7,10 @@ import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventCommand;
 import com.outpost.ledger.payment.service.PaymentEventException;
 import com.outpost.ledger.payment.service.PaymentEventService;
+import com.outpost.ledger.payment.service.RefundReservationCommand;
+import com.outpost.ledger.payment.service.RefundReservationException;
+import com.outpost.ledger.payment.service.RefundReservationResult;
+import com.outpost.ledger.payment.service.RefundReservationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,15 +28,18 @@ public final class PaymentController {
   private final PaymentCreationService service;
   private final PaymentEventService eventService;
   private final CaptureService captureService;
+  private final RefundReservationService refundReservationService;
 
   /** Creates the controller. */
   public PaymentController(
       PaymentCreationService service,
       PaymentEventService eventService,
-      CaptureService captureService) {
+      CaptureService captureService,
+      RefundReservationService refundReservationService) {
     this.service = service;
     this.eventService = eventService;
     this.captureService = captureService;
+    this.refundReservationService = refundReservationService;
   }
 
   /** Creates a payment. */
@@ -58,6 +65,23 @@ public final class PaymentController {
     return ResponseEntity.status(HttpStatus.CREATED).body(captureService.capture(request));
   }
 
+  /** Reserves a refund amount observed by the Worker. */
+  @PostMapping("/refund")
+  public ResponseEntity<RefundResponse> refund(@RequestBody RefundRequest request) {
+    RefundReservationCommand command =
+        request == null
+            ? null
+            : new RefundReservationCommand(
+                request.paymentReference(),
+                request.refundReference(),
+                request.netAmount(),
+                request.taxAmount(),
+                request.currency());
+    RefundReservationResult result = refundReservationService.reserve(command);
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(new RefundResponse(result.refundReference(), result.createdAt()));
+  }
+
   @ExceptionHandler(PaymentCreationException.class)
   ResponseEntity<PaymentError> controlled(PaymentCreationException exception) {
     return ResponseEntity.status(exception.status()).body(new PaymentError(exception.code()));
@@ -70,6 +94,11 @@ public final class PaymentController {
 
   @ExceptionHandler(CaptureException.class)
   ResponseEntity<PaymentError> controlled(CaptureException exception) {
+    return ResponseEntity.status(exception.status()).body(new PaymentError(exception.code()));
+  }
+
+  @ExceptionHandler(RefundReservationException.class)
+  ResponseEntity<PaymentError> controlled(RefundReservationException exception) {
     return ResponseEntity.status(exception.status()).body(new PaymentError(exception.code()));
   }
 

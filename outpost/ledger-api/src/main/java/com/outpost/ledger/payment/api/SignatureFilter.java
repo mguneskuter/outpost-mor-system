@@ -47,7 +47,8 @@ public final class SignatureFilter implements Filter {
         || !"POST".equals(http.getMethod())
         || (!"/v1/payment".equals(http.getRequestURI())
             && !"/v1/payment/event".equals(http.getRequestURI())
-            && !"/v1/payment/capture".equals(http.getRequestURI()))) {
+            && !"/v1/payment/capture".equals(http.getRequestURI())
+            && !"/v1/payment/refund".equals(http.getRequestURI()))) {
       chain.doFilter(request, response);
       return;
     }

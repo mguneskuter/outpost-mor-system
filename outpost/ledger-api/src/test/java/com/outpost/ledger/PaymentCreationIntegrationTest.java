@@ -1,6 +1,7 @@
 package com.outpost.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -564,6 +565,184 @@ class PaymentCreationIntegrationTest {
         .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
   }
 
+  @Test
+  void refundReservationWritesChildDetailAndRequestWithoutBooking() throws Exception {
+    String paymentReference = "refund-valid-payment";
+    createCapturedPayment(paymentReference);
+    int transactions = count("transaction", "true");
+    int details = count("refund_detail", "true");
+    int events = count("transaction_event", "true");
+    int entries = count("journal_entry", "true");
+    String refund = refundBody(paymentReference, "refund-valid", 8000, 2000, "EUR");
+
+    performRefund(refund, workerSignature(refund))
+        .andExpect(status().isCreated())
+        .andExpect(content().json("{\"refund_reference\":\"refund-valid\"}"));
+
+    long paymentId = transactionId(paymentReference);
+    long refundId = transactionId("refund-valid");
+    assertThat(count("transaction", "true")).isEqualTo(transactions + 1);
+    assertThat(count("refund_detail", "true")).isEqualTo(details + 1);
+    assertThat(count("transaction_event", "true")).isEqualTo(events + 1);
+    assertThat(count("journal_entry", "true")).isEqualTo(entries);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT parent_transaction_id FROM transaction WHERE transaction_id = ?",
+                Long.class,
+                refundId))
+        .isEqualTo(paymentId);
+    assertThat(
+            jdbcTemplate.queryForMap(
+                "SELECT net_quantity, tax_quantity FROM refund_detail WHERE transaction_id = ?",
+                refundId))
+        .containsEntry("net_quantity", 8000L)
+        .containsEntry("tax_quantity", 2000L);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT transaction_event_type_id FROM transaction_event WHERE transaction_id = ?",
+                Long.class,
+                refundId))
+        .isEqualTo(TransactionEventTypes.REFUND_REQUESTED.getValue().getTransactionEventTypeId());
+  }
+
+  @Test
+  void refundReservationRejectsWhenNoSuccessfulFullCaptureExists() throws Exception {
+    String paymentReference = "refund-no-capture";
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String refund = refundBody(paymentReference, "refund-no-capture-ref", 8000, 2000, "EUR");
+
+    performRefund(refund, workerSignature(refund))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_REFUND\"}"));
+  }
+
+  @Test
+  void refundReservationReplayIsExactAndDifferentDataConflicts() throws Exception {
+    String paymentReference = "refund-replay-payment";
+    createCapturedPayment(paymentReference);
+    String refund = refundBody(paymentReference, "refund-replay-ref", 8000, 2000, "EUR");
+    String original =
+        performRefund(refund, workerSignature(refund))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    int transactions = count("transaction", "true");
+    int details = count("refund_detail", "true");
+    int events = count("transaction_event", "true");
+
+    performRefund(refund, workerSignature(refund))
+        .andExpect(status().isCreated())
+        .andExpect(content().string(original));
+    String changed = refundBody(paymentReference, "refund-replay-ref", 7000, 2000, "EUR");
+    performRefund(changed, workerSignature(changed))
+        .andExpect(status().isConflict())
+        .andExpect(content().json("{\"code\":\"REFERENCE_CONFLICT\"}"));
+    assertThat(count("transaction", "true")).isEqualTo(transactions);
+    assertThat(count("refund_detail", "true")).isEqualTo(details);
+    assertThat(count("transaction_event", "true")).isEqualTo(events);
+  }
+
+  @Test
+  void refundReservationRejectsCurrencyMismatch() throws Exception {
+    String paymentReference = "refund-wrong-currency";
+    createCapturedPayment(paymentReference);
+    String refund = refundBody(paymentReference, "refund-wrong-currency-ref", 8000, 2000, "USD");
+
+    performRefund(refund, workerSignature(refund))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_REFUND\"}"));
+  }
+
+  @Test
+  void refundReservationRejectsNonPositiveGross() throws Exception {
+    String paymentReference = "refund-zero-gross";
+    createCapturedPayment(paymentReference);
+    String refund = refundBody(paymentReference, "refund-zero-gross-ref", 0, 0, "EUR");
+
+    performRefund(refund, workerSignature(refund))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_REFUND\"}"));
+  }
+
+  @Test
+  void refundReservationRejectsAnotherUnresolvedRefund() throws Exception {
+    String paymentReference = "refund-unresolved";
+    createCapturedPayment(paymentReference);
+    String first = refundBody(paymentReference, "refund-unresolved-first", 4000, 1000, "EUR");
+    performRefund(first, workerSignature(first)).andExpect(status().isCreated());
+    String second = refundBody(paymentReference, "refund-unresolved-second", 4000, 1000, "EUR");
+
+    performRefund(second, workerSignature(second))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_REFUND\"}"));
+  }
+
+  @Test
+  void refundReservationRejectsWhenCumulativeNetExceedsPaymentNet() throws Exception {
+    String paymentReference = "refund-net-limit";
+    createCapturedPayment(paymentReference);
+    insertRefundHistory(paymentReference, "refund-net-history", 8000, 1000, 9L);
+    String refund = refundBody(paymentReference, "refund-net-limit-ref", 2001, 0, "EUR");
+
+    performRefund(refund, workerSignature(refund))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_REFUND\"}"));
+  }
+
+  @Test
+  void refundReservationRejectsWhenCumulativeTaxExceedsPaymentTax() throws Exception {
+    String paymentReference = "refund-tax-limit";
+    createCapturedPayment(paymentReference);
+    insertRefundHistory(paymentReference, "refund-tax-history", 1000, 1500, 9L);
+    String refund = refundBody(paymentReference, "refund-tax-limit-ref", 8999, 501, "EUR");
+
+    performRefund(refund, workerSignature(refund))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(content().json("{\"code\":\"INVALID_REFUND\"}"));
+  }
+
+  @Test
+  void failedRefundDoesNotConsumeRefundableAmount() throws Exception {
+    String paymentReference = "refund-failed-releases";
+    createCapturedPayment(paymentReference);
+    insertRefundHistory(paymentReference, "refund-failed-history", 10000, 2000, 10L);
+    String refund = refundBody(paymentReference, "refund-after-failure", 10000, 2000, "EUR");
+
+    performRefund(refund, workerSignature(refund)).andExpect(status().isCreated());
+  }
+
+  @Test
+  void refundDetailIsAppendOnly() throws Exception {
+    String paymentReference = "refund-append-only";
+    createCapturedPayment(paymentReference);
+    String refund = refundBody(paymentReference, "refund-append-only-ref", 8000, 2000, "EUR");
+    performRefund(refund, workerSignature(refund)).andExpect(status().isCreated());
+    long refundId = transactionId("refund-append-only-ref");
+
+    assertThatThrownBy(
+            () ->
+                jdbcTemplate.update(
+                    "UPDATE refund_detail SET net_quantity = 1 WHERE transaction_id = ?", refundId))
+        .isInstanceOf(org.springframework.dao.DataAccessException.class);
+    assertThatThrownBy(
+            () ->
+                jdbcTemplate.update("DELETE FROM refund_detail WHERE transaction_id = ?", refundId))
+        .isInstanceOf(org.springframework.dao.DataAccessException.class);
+  }
+
+  @Test
+  void refundRouteRequiresTheWorkerKey() throws Exception {
+    String paymentReference = "refund-worker-auth";
+    createCapturedPayment(paymentReference);
+    String refund = refundBody(paymentReference, "refund-worker-auth-ref", 8000, 2000, "EUR");
+
+    performRefund(refund, signature(refund))
+        .andExpect(status().isUnauthorized())
+        .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
+  }
+
   private Future<Integer> eventRequest(
       ExecutorService executor, CountDownLatch ready, CountDownLatch start, String body)
       throws Exception {
@@ -666,6 +845,86 @@ class PaymentCreationIntegrationTest {
             .contentType("application/json")
             .content(body)
             .header("X-Outpost-Signature", sig));
+  }
+
+  private org.springframework.test.web.servlet.ResultActions performRefund(String body, String sig)
+      throws Exception {
+    return mockMvc.perform(
+        post("/v1/payment/refund")
+            .contentType("application/json")
+            .content(body)
+            .header("X-Outpost-Signature", sig));
+  }
+
+  private void createCapturedPayment(String paymentReference) throws Exception {
+    String payment = body(paymentReference);
+    perform(payment, signature(payment)).andExpect(status().isCreated());
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+    String capture =
+        captureBody(paymentReference, paymentReference + "-capture", true, 12000, "EUR");
+    performCapture(capture, workerSignature(capture)).andExpect(status().isCreated());
+  }
+
+  private static String refundBody(
+      String paymentReference, String refundReference, long net, long tax, String currency) {
+    return "{\"payment_reference\":\""
+        + paymentReference
+        + "\",\"refund_reference\":\""
+        + refundReference
+        + "\",\"net_amount\":"
+        + net
+        + ",\"tax_amount\":"
+        + tax
+        + ",\"currency\":\""
+        + currency
+        + "\"}";
+  }
+
+  private void insertRefundHistory(
+      String paymentReference, String refundReference, long net, long tax, long eventTypeId) {
+    long paymentId = transactionId(paymentReference);
+    long merchantId =
+        Objects.requireNonNull(
+            jdbcTemplate.queryForObject(
+                "SELECT account_id FROM transaction WHERE transaction_id = ?",
+                Long.class,
+                paymentId));
+    jdbcTemplate.update(
+        "INSERT INTO transaction (transaction_type_id, parent_transaction_id, account_id, "
+            + "reference, quantity, currency_id, created_ts) "
+            + "VALUES (3, ?, ?, ?, ?, ?, '2026-09-12T00:00:00Z')",
+        paymentId,
+        merchantId,
+        refundReference,
+        net + tax,
+        Currencies.EUR.getValue().getCurrencyId());
+    long refundId = transactionId(refundReference);
+    jdbcTemplate.update(
+        "INSERT INTO refund_detail (transaction_id, transaction_type_id, net_quantity, "
+            + "tax_quantity) VALUES (?, 3, ?, ?)",
+        refundId,
+        net,
+        tax);
+    if (eventTypeId == TransactionEventTypes.REFUNDED.getValue().getTransactionEventTypeId()) {
+      jdbcTemplate.update(
+          "WITH event AS ("
+              + "  INSERT INTO transaction_event (transaction_id, transaction_event_type_id, "
+              + "event_ts) "
+              + "  VALUES (?, ?, '2026-09-12T00:00:00Z') RETURNING transaction_event_id"
+              + ") INSERT INTO journal_entry (transaction_event_id, journal_entry_type_id, "
+              + "booked, posted) "
+              + "SELECT transaction_event_id, 2, '2026-09-12T00:00:00Z', '2026-09-12T00:00:00Z' "
+              + "FROM event",
+          refundId,
+          eventTypeId);
+    } else {
+      jdbcTemplate.update(
+          "INSERT INTO transaction_event (transaction_id, transaction_event_type_id, event_ts) "
+              + "VALUES (?, ?, '2026-09-12T00:00:00Z')",
+          refundId,
+          eventTypeId);
+    }
   }
 
   private long transactionId(String reference) {

@@ -1,25 +1,24 @@
 package com.outpost.ledger.payment.repository;
 
-import com.outpost.ledger.payment.repository.mybatis.AccountRow;
-import com.outpost.ledger.payment.repository.mybatis.ExistingPaymentRow;
-import com.outpost.ledger.payment.repository.mybatis.FeeRow;
-import com.outpost.ledger.payment.repository.mybatis.RegisterRow;
+import com.outpost.account.Account;
+import com.outpost.account.configuration.MerchantFeeConfiguration;
+import com.outpost.accounting.Register;
 import java.time.Instant;
 import java.util.List;
 
 /** Persistence operations required by payment lifecycle commands. */
 public interface PaymentRepository {
   /** Finds a committed payment by its reference. */
-  ExistingPaymentRow findByReference(String reference);
+  ExistingPayment findByReference(String reference);
 
   /** Finds an account by its stable code. */
-  AccountRow findAccount(String code);
+  Account findAccount(String code);
 
   /** Finds an account by id. */
-  AccountRow findAccountById(long id);
+  Account findAccountById(long id);
 
   /** Finds a merchant fee configuration. */
-  FeeRow findFee(long accountId, long currencyId);
+  MerchantFeeConfiguration findFee(long accountId, long currencyId);
 
   /** Finds the active tax authority account for a country. */
   Long findTaxAuthority(long countryId);
@@ -60,7 +59,7 @@ public interface PaymentRepository {
   CaptureChild findCaptureByReference(String reference);
 
   /** Finds a register for an account and accounting purpose. */
-  RegisterRow findRegister(long accountId, long registerTypeId);
+  Register findRegister(long accountId, long registerTypeId);
 
   /** Inserts a CAPTURE child transaction, or null for a duplicate reference. */
   Long insertCaptureTransaction(
@@ -79,4 +78,26 @@ public interface PaymentRepository {
 
   /** Inserts a fee-release journal entry. */
   long insertFeeReleaseEntry(long eventId, long entryTypeId, Instant at);
+
+  /** Returns whether the payment has exactly one successful capture for its full amount. */
+  boolean hasExactlyOneSuccessfulFullCapture(
+      long paymentTransactionId, long gross, long currencyId);
+
+  /** Reads refund children and their latest lifecycle events. */
+  List<RefundChild> findRefundChildren(long paymentTransactionId);
+
+  /** Reads a refund by its unique reference. */
+  RefundChild findRefundByReference(String reference);
+
+  /** Inserts a REFUND child transaction, or null for a duplicate reference. */
+  Long insertRefundTransaction(
+      long paymentTransactionId,
+      long merchantAccountId,
+      String reference,
+      long gross,
+      long currencyId,
+      Instant createdAt);
+
+  /** Inserts immutable refund detail. */
+  void insertRefundDetail(long transactionId, long net, long tax);
 }

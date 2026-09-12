@@ -1,14 +1,12 @@
 package com.outpost.ledger.payment.service;
 
 import com.outpost.account.Account;
-import com.outpost.account.AccountTypes;
 import com.outpost.accounting.CaptureJournalTemplates;
 import com.outpost.accounting.JournalEntry;
 import com.outpost.accounting.JournalEntryLine;
 import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
-import com.outpost.accounting.RegisterTypes.RegisterType;
 import com.outpost.accounting.Transaction;
 import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
@@ -23,8 +21,6 @@ import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.PendingFee;
-import com.outpost.ledger.payment.repository.mybatis.AccountRow;
-import com.outpost.ledger.payment.repository.mybatis.RegisterRow;
 import com.outpost.payment.common.Amount;
 import java.time.Clock;
 import java.time.Instant;
@@ -147,43 +143,43 @@ public class CaptureService {
       long captureId,
       long eventId,
       Instant occurredAt) {
-    RegisterRow psp =
+    Register psp =
         register(
             payment.pspAccountId(), RegisterTypes.PSP_RECEIVABLE.getValue().getRegisterTypeId());
     Long taxAuthority = repository.findTaxAuthority(payment.shopperCountryId());
     Long platform = repository.findPlatform();
-    RegisterRow tax =
+    Register tax =
         taxAuthority == null
             ? null
             : register(taxAuthority, RegisterTypes.TAX_PAYABLE.getValue().getRegisterTypeId());
-    RegisterRow merchantPayable =
+    Register merchantPayable =
         register(
             payment.merchantAccountId(),
             RegisterTypes.MERCHANT_PAYABLE.getValue().getRegisterTypeId());
-    RegisterRow feeRevenue =
+    Register feeRevenue =
         platform == null
             ? null
             : register(platform, RegisterTypes.FEE_REVENUE.getValue().getRegisterTypeId());
-    RegisterRow merchantPending =
+    Register merchantPending =
         register(
             payment.merchantAccountId(), RegisterTypes.PENDING_FEE.getValue().getRegisterTypeId());
-    RegisterRow platformPending =
+    Register platformPending =
         platform == null
             ? null
             : register(platform, RegisterTypes.PENDING_FEE.getValue().getRegisterTypeId());
     if (tax == null
         || feeRevenue == null
         || platformPending == null
-        || merchantPending.registerId() != pendingFee.merchantRegisterId()
-        || platformPending.registerId() != pendingFee.platformRegisterId()
-        || psp.accountId() != payment.pspAccountId()
-        || tax.accountId() != taxAuthority
-        || merchantPayable.accountId() != payment.merchantAccountId()
-        || feeRevenue.accountId() != platform) {
+        || merchantPending.getRegisterId() != pendingFee.merchantRegisterId()
+        || platformPending.getRegisterId() != pendingFee.platformRegisterId()
+        || psp.getAccount().getAccountId() != payment.pspAccountId()
+        || tax.getAccount().getAccountId() != taxAuthority
+        || merchantPayable.getAccount().getAccountId() != payment.merchantAccountId()
+        || feeRevenue.getAccount().getAccountId() != platform) {
       throw internal();
     }
     try {
-      Account merchantAccount = domainRegister(merchantPayable).getAccount();
+      Account merchantAccount = merchantPayable.getAccount();
       Transaction captureTransaction =
           Transaction.of(
               captureId,
@@ -204,12 +200,12 @@ public class CaptureService {
           5L,
           6L,
           captureEvent,
-          domainRegister(psp),
-          domainRegister(tax),
-          domainRegister(merchantPayable),
-          domainRegister(feeRevenue),
-          domainRegister(merchantPending),
-          domainRegister(platformPending),
+          psp,
+          tax,
+          merchantPayable,
+          feeRevenue,
+          merchantPending,
+          platformPending,
           new Amount(currency, payment.grossQuantity()),
           new Amount(currency, payment.netQuantity()),
           new Amount(currency, payment.taxQuantity()),
@@ -232,51 +228,12 @@ public class CaptureService {
     }
   }
 
-  private Register domainRegister(RegisterRow row) {
-    Account account = account(row.accountId());
-    if (account.getAccountType().getAccountTypeId() != row.accountTypeId()) {
-      throw internal();
-    }
-    RegisterType registerType =
-        Arrays.stream(RegisterTypes.values())
-            .map(RegisterTypes::getValue)
-            .filter(type -> type.getRegisterTypeId() == row.registerTypeId())
-            .findFirst()
-            .orElseThrow(CaptureService::internal);
-    return new Register(row.registerId(), account, registerType);
-  }
-
-  private Account account(long accountId) {
-    AccountRow row = repository.findAccountById(accountId);
-    if (row == null) {
-      throw internal();
-    }
-    Account parent = row.parentAccountId() == null ? null : account(row.parentAccountId());
-    AccountTypes accountType =
-        Arrays.stream(AccountTypes.values())
-            .filter(type -> type.getValue().getAccountTypeId() == row.accountTypeId())
-            .findFirst()
-            .orElseThrow(CaptureService::internal);
-    try {
-      return Account.of(
-          row.accountId(),
-          accountType.getValue(),
-          row.code(),
-          row.name(),
-          row.isActive(),
-          row.createdTs(),
-          parent);
-    } catch (IllegalArgumentException exception) {
-      throw internal();
-    }
-  }
-
-  private RegisterRow register(long accountId, long registerTypeId) {
-    RegisterRow row = repository.findRegister(accountId, registerTypeId);
-    if (row == null) {
+  private Register register(long accountId, long registerTypeId) {
+    Register register = repository.findRegister(accountId, registerTypeId);
+    if (register == null) {
       throw missingRegister();
     }
-    return row;
+    return register;
   }
 
   private static boolean validPendingFee(PaymentFamily payment, PendingFee fee) {

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.ledger.payment.repository.mybatis.PaymentMapper">
+  <select id="hasExactlyOneSuccessfulFullCapture" resultType="boolean">
+    SELECT COUNT(*) = 1
+       AND COALESCE(BOOL_AND(child.quantity = #{gross} AND child.currency_id = #{currencyId}), false)
+      FROM transaction child
+      JOIN transaction_event outcome ON outcome.transaction_id = child.transaction_id
+     WHERE child.parent_transaction_id = #{paymentTransactionId}
+       AND child.transaction_type_id = 2
+       AND outcome.transaction_event_type_id = 5
+  </select>
+
+  <select id="findRefundChildren"
+      resultType="com.outpost.ledger.payment.repository.mybatis.RefundChildRow">
+    SELECT child.transaction_id AS "transactionId",
+           child.parent_transaction_id AS "paymentTransactionId",
+           child.reference AS "reference",
+           child.quantity AS "quantity",
+           child.currency_id AS "currencyId",
+           detail.net_quantity AS "netQuantity",
+           detail.tax_quantity AS "taxQuantity",
+           child.created_ts AS "createdTs",
+           outcome.transaction_event_type_id AS "eventTypeId"
+      FROM transaction child
+      JOIN refund_detail detail ON detail.transaction_id = child.transaction_id
+      LEFT JOIN LATERAL (
+          SELECT transaction_event_type_id
+            FROM transaction_event
+           WHERE transaction_id = child.transaction_id
+           ORDER BY transaction_event_id DESC
+           LIMIT 1
+      ) outcome ON true
+     WHERE child.parent_transaction_id = #{paymentTransactionId}
+       AND child.transaction_type_id = 3
+     ORDER BY child.transaction_id
+  </select>
+
+  <select id="findRefundByReference"
+      resultType="com.outpost.ledger.payment.repository.mybatis.RefundChildRow">
+    SELECT child.transaction_id AS "transactionId",
+           child.parent_transaction_id AS "paymentTransactionId",
+           child.reference AS "reference",
+           child.quantity AS "quantity",
+           child.currency_id AS "currencyId",
+           detail.net_quantity AS "netQuantity",
+           detail.tax_quantity AS "taxQuantity",
+           child.created_ts AS "createdTs",
+           outcome.transaction_event_type_id AS "eventTypeId"
+      FROM transaction child
+      JOIN refund_detail detail ON detail.transaction_id = child.transaction_id
+      LEFT JOIN LATERAL (
+          SELECT transaction_event_type_id
+            FROM transaction_event
+           WHERE transaction_id = child.transaction_id
+           ORDER BY transaction_event_id DESC
+           LIMIT 1
+      ) outcome ON true
+     WHERE child.reference = #{reference}
+       AND child.transaction_type_id = 3
+  </select>
+
+  <select id="insertRefundTransaction" resultType="java.lang.Long">
+    INSERT INTO transaction (transaction_type_id, parent_transaction_id, account_id, reference,
+                             quantity, currency_id, created_ts)
+    VALUES (3,#{paymentTransactionId},#{merchantAccountId},#{reference},#{gross},#{currencyId},
+            #{createdAt})
+    ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
+  </select>
+
+  <insert id="insertRefundDetail">
+    INSERT INTO refund_detail (transaction_id, transaction_type_id, net_quantity, tax_quantity)
+    VALUES (#{transactionId},3,#{net},#{tax})
+  </insert>
+</mapper>

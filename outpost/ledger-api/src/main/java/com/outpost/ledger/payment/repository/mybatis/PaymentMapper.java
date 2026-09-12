@@ -272,4 +272,29 @@ public interface PaymentMapper {
       @Param("eventId") long eventId,
       @Param("entryTypeId") long entryTypeId,
       @Param("at") Instant at);
+
+  /** Checks the full successful-capture precondition for a refund reservation. */
+  boolean hasExactlyOneSuccessfulFullCapture(
+      @Param("paymentTransactionId") long paymentTransactionId,
+      @Param("gross") long gross,
+      @Param("currencyId") long currencyId);
+
+  /** Reads refund children and their latest lifecycle events. */
+  List<RefundChildRow> findRefundChildren(@Param("paymentTransactionId") long paymentTransactionId);
+
+  /** Reads a refund child by its unique reference. */
+  RefundChildRow findRefundByReference(@Param("reference") String reference);
+
+  /** Inserts a REFUND child transaction, atomically guarding its reference. */
+  Long insertRefundTransaction(
+      @Param("paymentTransactionId") long paymentTransactionId,
+      @Param("merchantAccountId") long merchantAccountId,
+      @Param("reference") String reference,
+      @Param("gross") long gross,
+      @Param("currencyId") long currencyId,
+      @Param("createdAt") Instant createdAt);
+
+  /** Inserts refund detail. */
+  void insertRefundDetail(
+      @Param("transactionId") long transactionId, @Param("net") long net, @Param("tax") long tax);
 }
