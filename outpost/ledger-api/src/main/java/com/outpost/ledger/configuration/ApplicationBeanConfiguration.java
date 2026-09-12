@@ -1,5 +1,6 @@
 package com.outpost.ledger.configuration;
 
+import com.outpost.accounting.payment.PaymentFeeCalculator;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.fx.FxFee;
@@ -12,6 +13,9 @@ import com.outpost.ledger.fx.repository.mybatis.FxFeeMapper;
 import com.outpost.ledger.fx.repository.mybatis.FxRateMapper;
 import com.outpost.ledger.fx.repository.mybatis.MyBatisFxFeeRepository;
 import com.outpost.ledger.fx.repository.mybatis.MyBatisFxRateRepository;
+import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.service.PaymentCreationService;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,6 +29,22 @@ import org.springframework.context.annotation.DependsOn;
 /** Wires FX persistence and validates all loaded data before exposing the provider. */
 @Configuration(proxyBeanMethods = false)
 public class ApplicationBeanConfiguration {
+
+  @Bean
+  Clock ledgerClock() {
+    return Clock.systemUTC();
+  }
+
+  @Bean
+  PaymentFeeCalculator paymentFeeCalculator() {
+    return new PaymentFeeCalculator();
+  }
+
+  @Bean
+  PaymentCreationService paymentCreationService(
+      PaymentRepository repository, PaymentFeeCalculator calculator, Clock clock) {
+    return new PaymentCreationService(repository, calculator, clock);
+  }
 
   /** Creates the repository that converts persisted rate rows to domain rates. */
   @Bean

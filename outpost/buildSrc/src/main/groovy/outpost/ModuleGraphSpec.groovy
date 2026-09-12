@@ -163,6 +163,7 @@ class ModuleGraphSpec {
             ':common-iso:domain',
             ':common-payment:domain',
             ':framework:persistence',
+            ':framework:security',
             ':account:domain',
             ':merchant-configuration:domain',
             ':accounting:domain',

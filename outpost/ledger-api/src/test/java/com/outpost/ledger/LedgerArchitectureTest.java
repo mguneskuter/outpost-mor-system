@@ -51,4 +51,14 @@ class LedgerArchitectureTest {
         .resideOutsideOfPackages("com.outpost.gateway..", "com.outpost.worker..")
         .check(LEDGER_CLASSES);
   }
+
+  @Test
+  void myBatisRowsStayInTheirRepositoryPackage() {
+    classes()
+        .that()
+        .haveSimpleNameEndingWith("Row")
+        .should()
+        .resideInAnyPackage("com.outpost.ledger.payment.repository.mybatis")
+        .check(LEDGER_CLASSES);
+  }
 }

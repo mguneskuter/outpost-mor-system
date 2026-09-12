@@ -104,7 +104,8 @@ LANGUAGE plpgsql AS $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM account
-        WHERE account_id = NEW.psp_account_id AND account_type_id = 3
+        WHERE account_id = NEW.psp_account_id
+          AND account_type_id IN (SELECT account_type_id FROM account_type WHERE code = 'PSP')
     ) THEN
         RAISE EXCEPTION 'payment detail PSP account must have PSP type';
     END IF;
@@ -119,7 +120,7 @@ FOR EACH ROW EXECUTE FUNCTION validate_payment_detail_psp_account();
 CREATE FUNCTION protect_referenced_psp_account_type() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
-    IF NEW.account_type_id <> 3
+    IF NEW.account_type_id NOT IN (SELECT account_type_id FROM account_type WHERE code = 'PSP')
        AND EXISTS (SELECT 1 FROM payment_detail WHERE psp_account_id = OLD.account_id) THEN
         RAISE EXCEPTION 'a referenced PSP account cannot change account type';
     END IF;
