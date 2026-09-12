@@ -1,5 +1,6 @@
 package com.outpost.ledger.payment.repository.mybatis;
 
+import com.outpost.ledger.payment.repository.CaptureChild;
 import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
@@ -81,7 +82,17 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   @Override
   public PaymentFamily findPaymentFamilyForUpdate(String r) {
     PaymentFamilyRow row = mapper.findPaymentFamilyForUpdate(r);
-    return row == null ? null : new PaymentFamily(row.transactionId(), row.currencyId());
+    return row == null
+        ? null
+        : new PaymentFamily(
+            row.transactionId(),
+            row.currencyId(),
+            row.merchantAccountId(),
+            row.pspAccountId(),
+            row.shopperCountryId(),
+            row.grossQuantity(),
+            row.netQuantity(),
+            row.taxQuantity());
   }
 
   @Override
@@ -92,6 +103,26 @@ public class MyBatisPaymentRepository implements PaymentRepository {
                 new PaymentEvent(
                     row.transactionEventId(), row.transactionEventTypeId(), row.occurredAt()))
         .toList();
+  }
+
+  @Override
+  public CaptureChild findCaptureChild(long i) {
+    return capture(mapper.findCaptureChild(i));
+  }
+
+  @Override
+  public CaptureChild findCaptureByReference(String r) {
+    return capture(mapper.findCaptureByReference(r));
+  }
+
+  @Override
+  public RegisterRow findRegister(long a, long t) {
+    return mapper.findRegister(a, t);
+  }
+
+  @Override
+  public Long insertCaptureTransaction(long p, long m, String r, long a, long c, Instant t) {
+    return mapper.insertCaptureTransaction(p, m, r, a, c, t);
   }
 
   @Override
@@ -111,5 +142,17 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   @Override
   public long insertFeeReleaseEntry(long i, long t, Instant at) {
     return mapper.insertFeeReleaseEntry(i, t, at);
+  }
+
+  private static CaptureChild capture(CaptureChildRow row) {
+    return row == null
+        ? null
+        : new CaptureChild(
+            row.transactionId(),
+            row.reference(),
+            row.quantity(),
+            row.currencyId(),
+            row.createdTs(),
+            row.eventTypeId());
   }
 }

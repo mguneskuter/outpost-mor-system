@@ -133,10 +133,13 @@ public interface PaymentMapper {
   /** Locks the payment family root before reading or appending lifecycle evidence. */
   @Select(
       """
-      SELECT root.transaction_id, root.currency_id
+      SELECT root.transaction_id, root.currency_id, root.account_id merchant_account_id,
+             pd.psp_account_id, pd.shopper_country_id, root.quantity gross_quantity,
+             pd.net_quantity, pd.tax_quantity
         FROM transaction target
         JOIN transaction root
           ON root.transaction_id = COALESCE(target.parent_transaction_id, target.transaction_id)
+        JOIN payment_detail pd ON pd.transaction_id = root.transaction_id
        WHERE target.reference = #{reference}
          AND target.transaction_type_id = 1
          AND root.transaction_type_id = 1
@@ -153,6 +156,59 @@ public interface PaymentMapper {
        ORDER BY transaction_event_id
       """)
   List<PaymentEventRow> findPaymentEvents(@Param("transactionId") long transactionId);
+
+  /** Reads the single capture child and its outcome. */
+  @Select(
+      """
+      SELECT child.transaction_id, child.reference, child.quantity, child.currency_id,
+             child.created_ts, outcome.transaction_event_type_id event_type_id
+        FROM transaction child
+        LEFT JOIN transaction_event outcome ON outcome.transaction_id = child.transaction_id
+       WHERE child.parent_transaction_id = #{paymentTransactionId}
+         AND child.transaction_type_id = 2
+       ORDER BY child.transaction_id
+       LIMIT 1
+      """)
+  CaptureChildRow findCaptureChild(@Param("paymentTransactionId") long paymentTransactionId);
+
+  /** Reads a CAPTURE child by its unique reference. */
+  @Select(
+      """
+      SELECT child.transaction_id, child.reference, child.quantity, child.currency_id,
+             child.created_ts, outcome.transaction_event_type_id event_type_id
+        FROM transaction child
+        LEFT JOIN transaction_event outcome ON outcome.transaction_id = child.transaction_id
+       WHERE child.reference = #{reference}
+         AND child.transaction_type_id = 2
+      """)
+  CaptureChildRow findCaptureByReference(@Param("reference") String reference);
+
+  /** Reads a register and its owning account type. */
+  @Select(
+      """
+      SELECT r.register_id, r.account_id, a.account_type_id, r.register_type_id
+        FROM register r JOIN account a USING (account_id)
+       WHERE r.account_id = #{accountId} AND r.register_type_id = #{registerTypeId}
+      """)
+  RegisterRow findRegister(
+      @Param("accountId") long accountId, @Param("registerTypeId") long registerTypeId);
+
+  /** Inserts a CAPTURE child transaction, atomically guarding its reference. */
+  @Select(
+      """
+      INSERT INTO transaction (transaction_type_id, parent_transaction_id, account_id, reference,
+                               quantity, currency_id, created_ts)
+      VALUES (2,#{paymentTransactionId},#{merchantAccountId},#{reference},#{amount},#{currencyId},
+              #{createdAt})
+      ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
+      """)
+  Long insertCaptureTransaction(
+      @Param("paymentTransactionId") long paymentTransactionId,
+      @Param("merchantAccountId") long merchantAccountId,
+      @Param("reference") String reference,
+      @Param("amount") long amount,
+      @Param("currencyId") long currencyId,
+      @Param("createdAt") Instant createdAt);
 
   /** Appends a payment lifecycle event while retaining the database idempotency guard. */
   @Select(

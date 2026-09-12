@@ -46,13 +46,14 @@ public final class SignatureFilter implements Filter {
         || !(response instanceof HttpServletResponse httpResponse)
         || !"POST".equals(http.getMethod())
         || (!"/v1/payment".equals(http.getRequestURI())
-            && !"/v1/payment/event".equals(http.getRequestURI()))) {
+            && !"/v1/payment/event".equals(http.getRequestURI())
+            && !"/v1/payment/capture".equals(http.getRequestURI()))) {
       chain.doFilter(request, response);
       return;
     }
     byte[] body = http.getInputStream().readAllBytes();
     String encoded = http.getHeader("X-Outpost-Signature");
-    HmacKey key = "/v1/payment/event".equals(http.getRequestURI()) ? workerKey : gatewayKey;
+    HmacKey key = "/v1/payment".equals(http.getRequestURI()) ? gatewayKey : workerKey;
     boolean valid;
     try {
       valid = encoded != null && HmacSha256.verify(key, body, HmacSignature.fromBase64(encoded));

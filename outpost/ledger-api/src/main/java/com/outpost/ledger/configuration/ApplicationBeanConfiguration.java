@@ -14,6 +14,7 @@ import com.outpost.ledger.fx.repository.mybatis.FxRateMapper;
 import com.outpost.ledger.fx.repository.mybatis.MyBatisFxFeeRepository;
 import com.outpost.ledger.fx.repository.mybatis.MyBatisFxRateRepository;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventService;
 import java.time.Clock;
@@ -50,6 +51,11 @@ public class ApplicationBeanConfiguration {
   @Bean
   PaymentEventService paymentEventService(PaymentRepository repository, Clock clock) {
     return new PaymentEventService(repository, clock);
+  }
+
+  @Bean
+  CaptureService captureService(PaymentRepository repository, Clock clock) {
+    return new CaptureService(repository, clock);
   }
 
   /** Creates the repository that converts persisted rate rows to domain rates. */
