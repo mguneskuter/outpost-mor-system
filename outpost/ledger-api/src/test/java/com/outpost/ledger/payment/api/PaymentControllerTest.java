@@ -8,9 +8,9 @@ import static org.mockito.Mockito.when;
 import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventService;
-import com.outpost.ledger.payment.service.RefundReservationCommand;
-import com.outpost.ledger.payment.service.RefundReservationResult;
 import com.outpost.ledger.payment.service.RefundReservationService;
+import com.outpost.ledger.payment.service.ReserveRefundCommand;
+import com.outpost.ledger.payment.service.ReserveRefundResult;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -28,10 +28,10 @@ class PaymentControllerTest {
             paymentCreationService, paymentEventService, captureService, refundReservationService);
     RefundRequest request = new RefundRequest("payment-1", "refund-1", 8000L, 2000L, "EUR");
     Instant createdAt = Instant.parse("2026-09-12T00:00:00Z");
-    RefundReservationCommand command =
-        new RefundReservationCommand("payment-1", "refund-1", 8000L, 2000L, "EUR");
+    ReserveRefundCommand command =
+        new ReserveRefundCommand("payment-1", "refund-1", 8000L, 2000L, "EUR");
     when(refundReservationService.reserve(command))
-        .thenReturn(new RefundReservationResult("refund-1", createdAt));
+        .thenReturn(new ReserveRefundResult("refund-1", createdAt));
 
     ResponseEntity<RefundResponse> response = controller.refund(request);
 

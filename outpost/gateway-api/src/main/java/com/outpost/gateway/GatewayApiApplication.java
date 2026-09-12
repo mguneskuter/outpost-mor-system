@@ -16,8 +16,7 @@ import org.springframework.context.annotation.Import;
  * Gateway API is Outpost's front-facing API.
  *
  * <p>Gateway authenticates callers and orchestrates orders, PSP webhooks, refunds, and balance
- * reports. This bootstrap currently wires shared persistence and read-only static-data verification
- * while those business capabilities are added.
+ * reports.
  */
 @SpringBootApplication
 @EnableOutpostPersistence(

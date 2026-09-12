@@ -5,8 +5,8 @@ import java.util.List;
 
 /** Maps tax-rate database rows. */
 @RegisteredMapper
-public interface TaxRateProviderRepositoryMapper {
+public interface TaxRateMapper {
 
-  /** Returns tax-rate database entities. */
-  List<TaxRateEntity> findAll();
+  /** Returns tax-rate database rows. */
+  List<TaxRateRow> findAll();
 }

@@ -6,12 +6,12 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** MyBatis implementation of the merchant API-key repository. */
-public final class MybatisMerchantApiKeyRepository implements MerchantApiKeyRepository {
+public final class MyBatisMerchantApiKeyRepository implements MerchantApiKeyRepository {
 
-  private final MerchantApiKeyRepositoryMapper mapper;
+  private final MerchantApiKeyMapper mapper;
 
   /** Creates a repository backed by the merchant API-key mapper. */
-  public MybatisMerchantApiKeyRepository(MerchantApiKeyRepositoryMapper mapper) {
+  public MyBatisMerchantApiKeyRepository(MerchantApiKeyMapper mapper) {
     this.mapper = Objects.requireNonNull(mapper, "merchant API-key mapper");
   }
 

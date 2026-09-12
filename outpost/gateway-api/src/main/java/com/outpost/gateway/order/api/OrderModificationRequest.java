@@ -1,7 +1,7 @@
 package com.outpost.gateway.order.api;
 
-import com.outpost.gateway.order.service.OrderModificationCommand;
-import com.outpost.gateway.order.service.OrderModificationCommand.RefundLineCommand;
+import com.outpost.gateway.order.service.ModifyOrderCommand;
+import com.outpost.gateway.order.service.ModifyOrderCommand.RefundLineCommand;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.PropertyNamingStrategies;
@@ -16,8 +16,8 @@ public record OrderModificationRequest(
     @Nullable String type,
     @Nullable List<@Nullable RefundLine> refundLines) {
   /** Converts the transport payload to an application command. */
-  public OrderModificationCommand toCommand() {
-    return new OrderModificationCommand(
+  public ModifyOrderCommand toCommand() {
+    return new ModifyOrderCommand(
         orderReference,
         idempotencyKey,
         merchantReference,

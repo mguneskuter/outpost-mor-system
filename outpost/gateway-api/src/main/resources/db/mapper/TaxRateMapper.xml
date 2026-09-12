@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.outpost.gateway.tax.repository.mybatis.TaxRateProviderRepositoryMapper">
-  <select id="findAll" resultType="com.outpost.gateway.tax.repository.mybatis.TaxRateEntity">
+<mapper namespace="com.outpost.gateway.tax.repository.mybatis.TaxRateMapper">
+  <select id="findAll" resultType="com.outpost.gateway.tax.repository.mybatis.TaxRateRow">
     SELECT c.iso_code AS country_code,
            cs.code AS subdivision_code,
            tr.rate

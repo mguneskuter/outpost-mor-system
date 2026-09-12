@@ -4,14 +4,14 @@ import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.simulator.SimulatorPspClient;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
-import com.outpost.integration.psp.simulator.repository.mybatis.MybatisPspConfigurationRepository;
-import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationRepositoryMapper;
+import com.outpost.integration.psp.simulator.repository.mybatis.MyBatisPspConfigurationRepository;
+import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationMapper;
 import com.outpost.payment.repository.PaymentOrderRepository;
 import com.outpost.payment.repository.PspEventQueue;
 import com.outpost.payment.repository.RefundItemRepository;
 import com.outpost.payment.repository.mybatis.MyBatisPaymentOrderRepository;
+import com.outpost.payment.repository.mybatis.MyBatisPspEventQueue;
 import com.outpost.payment.repository.mybatis.MyBatisRefundItemRepository;
-import com.outpost.payment.repository.mybatis.MybatisPspEventQueue;
 import com.outpost.payment.repository.mybatis.PaymentOrderMapper;
 import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
 import com.outpost.payment.repository.mybatis.RefundItemMapper;
@@ -49,7 +49,7 @@ public class WorkerConfiguration {
 
   @Bean
   PspEventQueue pspEventQueue(PspEventQueueMapper mapper) {
-    return new MybatisPspEventQueue(mapper);
+    return new MyBatisPspEventQueue(mapper);
   }
 
   @Bean
@@ -73,8 +73,8 @@ public class WorkerConfiguration {
   }
 
   @Bean
-  PspConfigurationRepository pspConfigurationRepository(PspConfigurationRepositoryMapper mapper) {
-    return new MybatisPspConfigurationRepository(mapper, 10_000, 30_000);
+  PspConfigurationRepository pspConfigurationRepository(PspConfigurationMapper mapper) {
+    return new MyBatisPspConfigurationRepository(mapper, 10_000, 30_000);
   }
 
   @Bean

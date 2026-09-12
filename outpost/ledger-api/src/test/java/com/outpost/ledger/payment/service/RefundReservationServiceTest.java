@@ -22,8 +22,8 @@ class RefundReservationServiceTest {
   @Test
   void reservesUsingTheAccountReturnedByTheRepositoryContract() {
     PaymentRepository repository = mock(PaymentRepository.class);
-    RefundReservationCommand command =
-        new RefundReservationCommand("payment-1", "refund-1", 8000L, 2000L, "EUR");
+    ReserveRefundCommand command =
+        new ReserveRefundCommand("payment-1", "refund-1", 8000L, 2000L, "EUR");
     PaymentFamily payment =
         new PaymentFamily(
             1L, Currencies.EUR.getValue().getCurrencyId(), 200L, 300L, 1L, 12000L, 10000L, 2000L);
@@ -46,19 +46,19 @@ class RefundReservationServiceTest {
         .thenReturn(2L);
     when(repository.insertPaymentEvent(2L, requestedEventTypeId, createdAt)).thenReturn(3L);
 
-    RefundReservationResult result =
+    ReserveRefundResult result =
         new RefundReservationService(repository, Clock.fixed(createdAt, ZoneOffset.UTC))
             .reserve(command);
 
-    assertThat(result).isEqualTo(new RefundReservationResult("refund-1", createdAt));
+    assertThat(result).isEqualTo(new ReserveRefundResult("refund-1", createdAt));
     verify(repository).findAccountById(200L);
   }
 
   @Test
   void returnsApplicationResultForExactReplay() {
     PaymentRepository repository = mock(PaymentRepository.class);
-    RefundReservationCommand command =
-        new RefundReservationCommand("payment-1", "refund-1", 8000L, 2000L, "EUR");
+    ReserveRefundCommand command =
+        new ReserveRefundCommand("payment-1", "refund-1", 8000L, 2000L, "EUR");
     PaymentFamily payment =
         new PaymentFamily(
             1L, Currencies.EUR.getValue().getCurrencyId(), 200L, 300L, 1L, 12000L, 10000L, 2000L);
@@ -77,9 +77,9 @@ class RefundReservationServiceTest {
     when(repository.findPaymentFamilyForUpdate("payment-1")).thenReturn(payment);
     when(repository.findRefundByReference("refund-1")).thenReturn(existing);
 
-    RefundReservationResult result =
+    ReserveRefundResult result =
         new RefundReservationService(repository, Clock.systemUTC()).reserve(command);
 
-    assertThat(result).isEqualTo(new RefundReservationResult("refund-1", createdAt));
+    assertThat(result).isEqualTo(new ReserveRefundResult("refund-1", createdAt));
   }
 }

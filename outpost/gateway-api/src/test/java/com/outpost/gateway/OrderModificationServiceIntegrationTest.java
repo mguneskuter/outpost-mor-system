@@ -10,10 +10,10 @@ import com.outpost.gateway.order.repository.OrderRepository;
 import com.outpost.gateway.order.repository.OrderRepository.Line;
 import com.outpost.gateway.order.repository.OrderRepository.NewOrder;
 import com.outpost.gateway.order.repository.OrderRepository.PersistedOrder;
-import com.outpost.gateway.order.service.OrderModificationCommand;
-import com.outpost.gateway.order.service.OrderModificationCommand.RefundLineCommand;
-import com.outpost.gateway.order.service.OrderModificationException;
-import com.outpost.gateway.order.service.OrderModificationResult;
+import com.outpost.gateway.order.service.ModifyOrderCommand;
+import com.outpost.gateway.order.service.ModifyOrderCommand.RefundLineCommand;
+import com.outpost.gateway.order.service.ModifyOrderException;
+import com.outpost.gateway.order.service.ModifyOrderResult;
 import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.payment.common.ProductTypes;
 import java.sql.Connection;
@@ -92,10 +92,10 @@ class OrderModificationServiceIntegrationTest {
     PersistedOrder order =
         insertOrder(MERCHANT_ACCOUNT_ID, "order-valid", "payment-valid", "idem-valid");
 
-    OrderModificationResult result =
+    ModifyOrderResult result =
         service.request(
             MERCHANT_ACCOUNT_ID,
-            new OrderModificationCommand(
+            new ModifyOrderCommand(
                 "order-valid",
                 "refund-idem-valid",
                 "merchant-ref-valid",
@@ -131,12 +131,12 @@ class OrderModificationServiceIntegrationTest {
   @Test
   void replayWithSameIdempotencyKeyReturnsOriginalReferenceAndStoresNothingNew() {
     insertOrder(MERCHANT_ACCOUNT_ID, "order-replay", "payment-replay", "idem-replay");
-    OrderModificationCommand command =
-        new OrderModificationCommand(
+    ModifyOrderCommand command =
+        new ModifyOrderCommand(
             "order-replay", "refund-idem-replay", "merchant-ref-replay", "REFUND", List.of());
 
-    OrderModificationResult first = service.request(MERCHANT_ACCOUNT_ID, command);
-    OrderModificationResult replay = service.request(MERCHANT_ACCOUNT_ID, command);
+    ModifyOrderResult first = service.request(MERCHANT_ACCOUNT_ID, command);
+    ModifyOrderResult replay = service.request(MERCHANT_ACCOUNT_ID, command);
 
     assertThat(replay.refundReference()).isEqualTo(first.refundReference());
     Integer count =
@@ -157,14 +157,14 @@ class OrderModificationServiceIntegrationTest {
             () ->
                 service.request(
                     MERCHANT_ACCOUNT_ID,
-                    new OrderModificationCommand(
+                    new ModifyOrderCommand(
                         "order-foreign",
                         "refund-idem-foreign",
                         "merchant-ref-foreign",
                         "REFUND",
                         List.of())))
-        .isInstanceOf(OrderModificationException.class)
-        .extracting(exception -> ((OrderModificationException) exception).code())
+        .isInstanceOf(ModifyOrderException.class)
+        .extracting(exception -> ((ModifyOrderException) exception).code())
         .isEqualTo("ORDER_NOT_FOUND");
   }
 
@@ -177,14 +177,14 @@ class OrderModificationServiceIntegrationTest {
             () ->
                 service.request(
                     MERCHANT_ACCOUNT_ID,
-                    new OrderModificationCommand(
+                    new ModifyOrderCommand(
                         "order-unknown-line",
                         "refund-idem-unknown-line",
                         "merchant-ref-unknown-line",
                         "REFUND",
                         List.of(new RefundLineCommand("does-not-exist", null, null)))))
-        .isInstanceOf(OrderModificationException.class)
-        .extracting(exception -> ((OrderModificationException) exception).code())
+        .isInstanceOf(ModifyOrderException.class)
+        .extracting(exception -> ((ModifyOrderException) exception).code())
         .isEqualTo("UNKNOWN_ORDER_LINE");
   }
 
@@ -197,7 +197,7 @@ class OrderModificationServiceIntegrationTest {
             () ->
                 service.request(
                     MERCHANT_ACCOUNT_ID,
-                    new OrderModificationCommand(
+                    new ModifyOrderCommand(
                         "order-ambiguous",
                         "refund-idem-ambiguous",
                         "merchant-ref-ambiguous",
@@ -207,8 +207,8 @@ class OrderModificationServiceIntegrationTest {
                                 order.lines().get(0).orderLineReference(),
                                 order.lines().get(0).merchantLineReference(),
                                 null)))))
-        .isInstanceOf(OrderModificationException.class)
-        .extracting(exception -> ((OrderModificationException) exception).code())
+        .isInstanceOf(ModifyOrderException.class)
+        .extracting(exception -> ((ModifyOrderException) exception).code())
         .isEqualTo("AMBIGUOUS_LINE_REFERENCE");
   }
 

@@ -33,7 +33,7 @@ public final class OrderModificationService {
   }
 
   /** Submits one modification request for an order owned by the caller. */
-  public OrderModificationResult request(long merchantAccountId, OrderModificationCommand command) {
+  public ModifyOrderResult request(long merchantAccountId, ModifyOrderCommand command) {
     String type = required(command.type(), "type");
     if (!REFUND_TYPE.equals(type)) {
       throw failure(HttpStatus.BAD_REQUEST.value(), "UNSUPPORTED_MODIFICATION_TYPE");
@@ -64,11 +64,11 @@ public final class OrderModificationService {
                 null,
                 null,
                 lines));
-    return new OrderModificationResult(stored.getReference(), stored.getStatus().name());
+    return new ModifyOrderResult(stored.getReference(), stored.getStatus().name());
   }
 
   private static List<AccountingRequestLine> resolveLines(
-      PersistedOrder order, @Nullable List<OrderModificationCommand.RefundLineCommand> requested) {
+      PersistedOrder order, @Nullable List<ModifyOrderCommand.RefundLineCommand> requested) {
     if (requested == null || requested.isEmpty()) {
       return List.of();
     }
@@ -80,7 +80,7 @@ public final class OrderModificationService {
             .collect(Collectors.toMap(Line::merchantLineReference, Function.identity()));
     List<AccountingRequestLine> resolved = new ArrayList<>();
     Set<String> seen = new HashSet<>();
-    for (OrderModificationCommand.RefundLineCommand line : requested) {
+    for (ModifyOrderCommand.RefundLineCommand line : requested) {
       if (line == null) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "INVALID_REFUND_LINE");
       }
@@ -121,7 +121,7 @@ public final class OrderModificationService {
     return value;
   }
 
-  private static OrderModificationException failure(int status, String code) {
-    return new OrderModificationException(status, code);
+  private static ModifyOrderException failure(int status, String code) {
+    return new ModifyOrderException(status, code);
   }
 }

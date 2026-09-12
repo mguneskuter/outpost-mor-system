@@ -4,7 +4,7 @@ import java.util.List;
 import org.jspecify.annotations.Nullable;
 
 /** Application input for modifying an existing order. */
-public record OrderModificationCommand(
+public record ModifyOrderCommand(
     @Nullable String orderReference,
     @Nullable String idempotencyKey,
     @Nullable String merchantReference,
