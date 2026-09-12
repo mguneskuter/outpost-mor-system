@@ -59,6 +59,12 @@ public class MyBatisOrderRepository implements OrderRepository {
   }
 
   @Override
+  public @Nullable PersistedOrder findByReference(long merchantAccountId, String orderReference) {
+    OrderRow row = mapper.findByReference(merchantAccountId, orderReference);
+    return row == null ? null : load(row);
+  }
+
+  @Override
   @Transactional
   public @Nullable PersistedOrder insert(NewOrder order) {
     Long shopperId = mapper.insertShopper(order);

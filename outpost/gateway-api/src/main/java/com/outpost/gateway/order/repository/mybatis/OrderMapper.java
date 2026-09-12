@@ -27,6 +27,11 @@ public interface OrderMapper {
       @Param("merchantAccountId") long merchantAccountId,
       @Param("idempotencyKey") String idempotencyKey);
 
+  /** Finds an order by its reference, scoped to the merchant that owns it. */
+  @Nullable OrderRow findByReference(
+      @Param("merchantAccountId") long merchantAccountId,
+      @Param("orderReference") String orderReference);
+
   /** Upserts shopper details and returns the shopper id. */
   @Nullable Long insertShopper(@Param("order") NewOrder order);
 

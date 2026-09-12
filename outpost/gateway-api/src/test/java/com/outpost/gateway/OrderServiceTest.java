@@ -523,6 +523,17 @@ class OrderServiceTest {
     }
 
     @Override
+    public synchronized @Nullable PersistedOrder findByReference(
+        long merchantAccountId, String orderReference) {
+      if (persisted == null
+          || persisted.merchantAccountId() != merchantAccountId
+          || !persisted.orderReference().equals(orderReference)) {
+        return null;
+      }
+      return withCurrentShopper(persisted);
+    }
+
+    @Override
     public synchronized @Nullable PersistedOrder insert(NewOrder order) {
       if (persisted != null) {
         return null;

@@ -1,12 +1,23 @@
 package com.outpost.gateway.configuration;
 
+import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.gateway.order.client.LedgerClient;
 import com.outpost.gateway.order.client.ledger.LedgerHttpClient;
 import com.outpost.gateway.order.repository.OrderRepository;
 import com.outpost.gateway.order.repository.mybatis.MyBatisOrderRepository;
 import com.outpost.gateway.order.repository.mybatis.OrderMapper;
+import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.gateway.order.service.OrderService;
+import com.outpost.gateway.paymentmethod.repository.PaymentMethodRepository;
+import com.outpost.gateway.paymentmethod.repository.mybatis.MyBatisPaymentMethodRepository;
+import com.outpost.gateway.paymentmethod.repository.mybatis.PaymentMethodMapper;
 import com.outpost.gateway.psp.service.PspWebhookService;
+import com.outpost.gateway.report.client.LedgerReportClient;
+import com.outpost.gateway.report.client.ledger.LedgerReportHttpClient;
+import com.outpost.gateway.report.repository.ReportRepository;
+import com.outpost.gateway.report.repository.mybatis.MyBatisReportRepository;
+import com.outpost.gateway.report.repository.mybatis.ReportMapper;
+import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.AesGcmSecretAdapter;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
 import com.outpost.gateway.security.repository.MerchantApiKeyRepository;
@@ -162,5 +173,37 @@ public class ApplicationBeanConfiguration {
       TaxRateProvider taxRateProvider,
       Clock clock) {
     return new OrderService(repository, ledgerClient, pspClient, taxRateProvider, clock);
+  }
+
+  @Bean
+  OrderModificationService orderModificationService(
+      OrderRepository repository, AccountingRequestQueue queue) {
+    return new OrderModificationService(repository, queue);
+  }
+
+  @Bean
+  LedgerReportClient ledgerReportClient(
+      ObjectMapper objectMapper,
+      @Value("${outpost.gateway.ledger.base-url:http://localhost:8081}") String baseUrl,
+      @Value("${outpost.gateway.ledger.hmac-secret:gateway-key}") String hmacSecret,
+      @Value("${outpost.gateway.ledger.connect-timeout:PT1S}") Duration connectTimeout,
+      @Value("${outpost.gateway.ledger.read-timeout:PT5S}") Duration readTimeout) {
+    return new LedgerReportHttpClient(
+        baseUrl, hmacSecret, connectTimeout, readTimeout, objectMapper);
+  }
+
+  @Bean
+  ReportRepository reportRepository(ReportMapper mapper) {
+    return new MyBatisReportRepository(mapper);
+  }
+
+  @Bean
+  ReportService reportService(LedgerReportClient ledgerReportClient, ReportRepository repository) {
+    return new ReportService(ledgerReportClient, repository);
+  }
+
+  @Bean
+  PaymentMethodRepository paymentMethodRepository(PaymentMethodMapper mapper) {
+    return new MyBatisPaymentMethodRepository(mapper);
   }
 }

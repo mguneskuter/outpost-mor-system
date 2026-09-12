@@ -168,7 +168,8 @@ class ModuleGraphSpec {
             ':payment:domain',
             ':payment:repository',
             ':psp-integration:domain',
-            ':psp-integration:client'
+            ':psp-integration:client',
+            ':accounting:queue-api'
         ],
         ':ledger-api': [
             ':platform-sanity:static-data-check',

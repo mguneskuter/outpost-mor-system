@@ -101,6 +101,12 @@
        AND o.idempotency_key = #{idempotencyKey}
   </select>
 
+  <select id="findByReference" resultMap="orderRow">
+    <include refid="orderSelect"/>
+     WHERE o.account_id = #{merchantAccountId}
+       AND o.order_reference = #{orderReference}
+  </select>
+
   <select id="insertShopper" resultType="long">
     INSERT INTO shopper_detail (email, full_name, country_id, country_subdivision_id, postal_code)
     VALUES (#{order.shopper.email}, #{order.shopper.fullName}, #{order.shopper.countryId},

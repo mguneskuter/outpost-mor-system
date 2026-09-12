@@ -2,6 +2,9 @@ package com.outpost.gateway;
 
 import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.FeeModes;
+import com.outpost.accounting.queue.AccountingRequestResults;
+import com.outpost.accounting.queue.AccountingRequestStatuses;
+import com.outpost.accounting.queue.AccountingRequestTypes;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.CountrySubdivisions;
 import com.outpost.common.iso.Currencies;
@@ -65,6 +68,27 @@ final class GatewayStaticDataFixtures {
           "INSERT INTO fee_mode (fee_mode_id, code) VALUES (?, ?)",
           value.getFeeModeId(),
           value.getCode());
+    }
+    for (AccountingRequestTypes type : AccountingRequestTypes.values()) {
+      jdbcTemplate.update(
+          "INSERT INTO accounting_request_type "
+              + "(accounting_request_type_id, accounting_request_type_code) VALUES (?, ?)",
+          type.getValue().accountingRequestTypeId(),
+          type.getValue().code());
+    }
+    for (AccountingRequestStatuses status : AccountingRequestStatuses.values()) {
+      jdbcTemplate.update(
+          "INSERT INTO accounting_request_status "
+              + "(accounting_request_status_id, accounting_request_status_code) VALUES (?, ?)",
+          status.getValue().accountingRequestStatusId(),
+          status.getValue().code());
+    }
+    for (AccountingRequestResults result : AccountingRequestResults.values()) {
+      jdbcTemplate.update(
+          "INSERT INTO accounting_request_result "
+              + "(accounting_request_result_id, accounting_request_result_code) VALUES (?, ?)",
+          result.getValue().accountingRequestResultId(),
+          result.getValue().code());
     }
   }
 }
