@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** HTTP endpoint for payment creation. */
+/** HTTP endpoints for payment lifecycle commands. */
 @RestController
 @RequestMapping("/v1/payment")
 public final class PaymentController {
@@ -55,7 +55,8 @@ public final class PaymentController {
     eventService.record(
         request == null
             ? null
-            : new PaymentEventCommand(request.paymentReference(), request.event()));
+            : new PaymentEventCommand(
+                request.paymentReference(), request.refundReference(), request.event()));
     return ResponseEntity.noContent().build();
   }
 

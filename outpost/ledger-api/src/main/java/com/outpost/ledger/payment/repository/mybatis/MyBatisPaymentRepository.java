@@ -9,6 +9,7 @@ import com.outpost.accounting.RegisterTypes;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.ledger.payment.repository.CaptureChild;
+import com.outpost.ledger.payment.repository.CapturePosting;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
@@ -208,8 +209,28 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
+  public long insertRefundEntry(long i, long t, Instant at) {
+    return mapper.insertRefundEntry(i, t, at);
+  }
+
+  @Override
   public boolean hasExactlyOneSuccessfulFullCapture(long i, long g, long c) {
     return mapper.hasExactlyOneSuccessfulFullCapture(i, g, c);
+  }
+
+  @Override
+  public CapturePosting findCapturePosting(long i) {
+    CapturePostingRow row = mapper.findCapturePosting(i);
+    return row == null
+        ? null
+        : new CapturePosting(
+            row.pspAccountId(),
+            row.pspRegisterId(),
+            row.taxAuthorityAccountId(),
+            row.taxRegisterId(),
+            row.merchantAccountId(),
+            row.merchantRegisterId(),
+            row.currencyId());
   }
 
   @Override

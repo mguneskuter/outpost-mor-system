@@ -11,6 +11,43 @@
        AND outcome.transaction_event_type_id = 5
   </select>
 
+  <select id="findCapturePosting"
+      resultType="com.outpost.ledger.payment.repository.mybatis.CapturePostingRow">
+    SELECT psp_register.account_id AS "pspAccountId",
+           psp_line.register_id AS "pspRegisterId",
+           tax_register.account_id AS "taxAuthorityAccountId",
+           tax_line.register_id AS "taxRegisterId",
+           merchant_register.account_id AS "merchantAccountId",
+           merchant_line.register_id AS "merchantRegisterId",
+           psp_line.currency_id AS "currencyId"
+      FROM transaction capture
+      JOIN transaction_event captured
+        ON captured.transaction_id = capture.transaction_id
+       AND captured.transaction_event_type_id = 5
+      JOIN journal_entry entry
+        ON entry.transaction_event_id = captured.transaction_event_id
+      JOIN journal_entry_type entry_type
+        ON entry_type.journal_entry_type_id = entry.journal_entry_type_id
+       AND entry_type.code = 'CAPTURE'
+      JOIN journal_entry_line psp_line ON psp_line.journal_entry_id = entry.journal_entry_id
+      JOIN register psp_register ON psp_register.register_id = psp_line.register_id
+      JOIN register_type psp_type ON psp_type.register_type_id = psp_register.register_type_id
+       AND psp_type.register_type_code = 'PSP_RECEIVABLE'
+      JOIN journal_entry_line tax_line ON tax_line.journal_entry_id = entry.journal_entry_id
+      JOIN register tax_register ON tax_register.register_id = tax_line.register_id
+      JOIN register_type tax_type ON tax_type.register_type_id = tax_register.register_type_id
+       AND tax_type.register_type_code = 'TAX_PAYABLE'
+      JOIN journal_entry_line merchant_line
+        ON merchant_line.journal_entry_id = entry.journal_entry_id
+      JOIN register merchant_register
+        ON merchant_register.register_id = merchant_line.register_id
+      JOIN register_type merchant_type
+        ON merchant_type.register_type_id = merchant_register.register_type_id
+       AND merchant_type.register_type_code = 'MERCHANT_PAYABLE'
+     WHERE capture.parent_transaction_id = #{paymentTransactionId}
+       AND capture.transaction_type_id = 2
+  </select>
+
   <select id="findRefundChildren"
       resultType="com.outpost.ledger.payment.repository.mybatis.RefundChildRow">
     SELECT child.transaction_id AS "transactionId",

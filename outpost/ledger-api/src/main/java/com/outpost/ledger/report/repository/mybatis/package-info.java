@@ -1,0 +1,2 @@
+@org.jspecify.annotations.NullMarked
+package com.outpost.ledger.report.repository.mybatis;

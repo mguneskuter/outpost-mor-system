@@ -195,6 +195,43 @@ class PaymentLifecycleTest {
   }
 
   @Test
+  void refundMayBeConfirmedWithOrWithoutAcknowledgement() {
+    assertEquals(
+        TransactionEventTypes.REFUNDED.getValue(),
+        lifecycle.foldRefund(
+            List.of(
+                TransactionEventTypes.REFUND_REQUESTED.getValue(),
+                TransactionEventTypes.REFUNDED.getValue())));
+    assertEquals(
+        TransactionEventTypes.REFUNDED.getValue(),
+        lifecycle.foldRefund(
+            List.of(
+                TransactionEventTypes.REFUND_REQUESTED.getValue(),
+                TransactionEventTypes.REFUND_ACCEPTED.getValue(),
+                TransactionEventTypes.REFUNDED.getValue())));
+  }
+
+  @Test
+  void refundTerminalStatesRejectFurtherEvents() {
+    assertFalse(
+        lifecycle.canFollowRefund(
+            TransactionEventTypes.REFUNDED.getValue(),
+            TransactionEventTypes.REFUND_FAILED.getValue()));
+    assertFalse(
+        lifecycle.canFollowRefund(
+            TransactionEventTypes.REFUND_FAILED.getValue(),
+            TransactionEventTypes.REFUNDED.getValue()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            lifecycle.foldRefund(
+                List.of(
+                    TransactionEventTypes.REFUND_REQUESTED.getValue(),
+                    TransactionEventTypes.REFUND_FAILED.getValue(),
+                    TransactionEventTypes.REFUNDED.getValue())));
+  }
+
+  @Test
   void rejectsAnInvalidPersistedEventTypeSequence() {
     assertThrows(
         IllegalArgumentException.class,

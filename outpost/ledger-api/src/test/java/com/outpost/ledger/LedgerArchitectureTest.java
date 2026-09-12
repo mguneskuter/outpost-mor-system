@@ -58,7 +58,9 @@ class LedgerArchitectureTest {
         .that()
         .haveSimpleNameEndingWith("Row")
         .should()
-        .resideInAnyPackage("com.outpost.ledger.payment.repository.mybatis")
+        .resideInAnyPackage(
+            "com.outpost.ledger.payment.repository.mybatis",
+            "com.outpost.ledger.report.repository.mybatis")
         .check(LEDGER_CLASSES);
   }
 }

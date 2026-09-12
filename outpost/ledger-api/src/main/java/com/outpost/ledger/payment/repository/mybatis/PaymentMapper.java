@@ -273,11 +273,25 @@ public interface PaymentMapper {
       @Param("entryTypeId") long entryTypeId,
       @Param("at") Instant at);
 
+  /** Inserts the REFUND journal entry whose lines are appended in the same transaction. */
+  @Select(
+      """
+      INSERT INTO journal_entry (transaction_event_id, journal_entry_type_id, booked, posted)
+      VALUES (#{eventId},#{entryTypeId},#{at},#{at}) RETURNING journal_entry_id
+      """)
+  long insertRefundEntry(
+      @Param("eventId") long eventId,
+      @Param("entryTypeId") long entryTypeId,
+      @Param("at") Instant at);
+
   /** Checks the full successful-capture precondition for a refund reservation. */
   boolean hasExactlyOneSuccessfulFullCapture(
       @Param("paymentTransactionId") long paymentTransactionId,
       @Param("gross") long gross,
       @Param("currencyId") long currencyId);
+
+  /** Reads the registers used by the successful CAPTURE entry for refund reversals. */
+  CapturePostingRow findCapturePosting(@Param("paymentTransactionId") long paymentTransactionId);
 
   /** Reads refund children and their latest lifecycle events. */
   List<RefundChildRow> findRefundChildren(@Param("paymentTransactionId") long paymentTransactionId);
