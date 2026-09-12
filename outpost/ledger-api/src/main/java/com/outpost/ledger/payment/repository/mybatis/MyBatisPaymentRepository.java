@@ -1,11 +1,23 @@
 package com.outpost.ledger.payment.repository.mybatis;
 
+import com.outpost.account.Account;
+import com.outpost.account.AccountTypes;
+import com.outpost.account.configuration.FeeModes;
+import com.outpost.account.configuration.MerchantFeeConfiguration;
+import com.outpost.accounting.Register;
+import com.outpost.accounting.RegisterTypes;
+import com.outpost.common.iso.Currencies;
+import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.ledger.payment.repository.CaptureChild;
+import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.PendingFee;
+import com.outpost.ledger.payment.repository.RefundChild;
+import com.outpost.payment.common.Amount;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import org.springframework.stereotype.Repository;
 
@@ -20,23 +32,60 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public ExistingPaymentRow findByReference(String r) {
-    return mapper.findByReference(r);
+  public ExistingPayment findByReference(String r) {
+    ExistingPaymentRow row = mapper.findByReference(r);
+    return row == null
+        ? null
+        : new ExistingPayment(
+            row.transactionId(),
+            row.accountId(),
+            row.reference(),
+            row.quantity(),
+            row.currencyId(),
+            row.createdTs(),
+            row.pspAccountId(),
+            row.shopperCountryId(),
+            row.shopperCountrySubdivisionId(),
+            row.netQuantity(),
+            row.taxQuantity());
   }
 
   @Override
-  public AccountRow findAccount(String c) {
-    return mapper.findAccount(c);
+  public Account findAccount(String c) {
+    return account(mapper.findAccount(c));
   }
 
   @Override
-  public AccountRow findAccountById(long i) {
-    return mapper.findAccountById(i);
+  public Account findAccountById(long i) {
+    return account(mapper.findAccountById(i));
   }
 
   @Override
-  public FeeRow findFee(long a, long c) {
-    return mapper.findFee(a, c);
+  public MerchantFeeConfiguration findFee(long a, long c) {
+    FeeRow row = mapper.findFee(a, c);
+    if (row == null) {
+      return null;
+    }
+    Account account = findAccountById(row.accountId());
+    Currency currency =
+        Arrays.stream(Currencies.values())
+            .map(Currencies::getValue)
+            .filter(value -> value.getCurrencyId() == row.currencyId())
+            .findFirst()
+            .orElseThrow(IllegalArgumentException::new);
+    var feeMode =
+        Arrays.stream(FeeModes.values())
+            .map(FeeModes::getValue)
+            .filter(value -> value.getFeeModeId() == row.feeModeId())
+            .findFirst()
+            .orElseThrow(IllegalArgumentException::new);
+    return new MerchantFeeConfiguration(
+        row.merchantFeeConfigurationId(),
+        account,
+        currency,
+        feeMode,
+        row.feeRateBps(),
+        row.feeFixed() == null ? null : new Amount(currency, row.feeFixed()));
   }
 
   @Override
@@ -116,8 +165,22 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public RegisterRow findRegister(long a, long t) {
-    return mapper.findRegister(a, t);
+  public Register findRegister(long a, long t) {
+    RegisterRow row = mapper.findRegister(a, t);
+    if (row == null) {
+      return null;
+    }
+    Account account = findAccountById(row.accountId());
+    if (account.getAccountType().getAccountTypeId() != row.accountTypeId()) {
+      throw new IllegalArgumentException("register account type does not match account");
+    }
+    var registerType =
+        Arrays.stream(RegisterTypes.values())
+            .map(RegisterTypes::getValue)
+            .filter(value -> value.getRegisterTypeId() == row.registerTypeId())
+            .findFirst()
+            .orElseThrow(IllegalArgumentException::new);
+    return new Register(row.registerId(), account, registerType);
   }
 
   @Override
@@ -142,6 +205,79 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   @Override
   public long insertFeeReleaseEntry(long i, long t, Instant at) {
     return mapper.insertFeeReleaseEntry(i, t, at);
+  }
+
+  @Override
+  public boolean hasExactlyOneSuccessfulFullCapture(long i, long g, long c) {
+    return mapper.hasExactlyOneSuccessfulFullCapture(i, g, c);
+  }
+
+  @Override
+  public List<RefundChild> findRefundChildren(long i) {
+    return mapper.findRefundChildren(i).stream()
+        .map(
+            row ->
+                new RefundChild(
+                    row.transactionId(),
+                    row.paymentTransactionId(),
+                    row.reference(),
+                    row.quantity(),
+                    row.currencyId(),
+                    row.netQuantity(),
+                    row.taxQuantity(),
+                    row.createdTs(),
+                    row.eventTypeId()))
+        .toList();
+  }
+
+  @Override
+  public RefundChild findRefundByReference(String r) {
+    RefundChildRow row = mapper.findRefundByReference(r);
+    return row == null
+        ? null
+        : new RefundChild(
+            row.transactionId(),
+            row.paymentTransactionId(),
+            row.reference(),
+            row.quantity(),
+            row.currencyId(),
+            row.netQuantity(),
+            row.taxQuantity(),
+            row.createdTs(),
+            row.eventTypeId());
+  }
+
+  @Override
+  public Long insertRefundTransaction(long p, long m, String r, long g, long c, Instant t) {
+    return mapper.insertRefundTransaction(p, m, r, g, c, t);
+  }
+
+  @Override
+  public void insertRefundDetail(long i, long n, long t) {
+    mapper.insertRefundDetail(i, n, t);
+  }
+
+  private Account account(AccountRow row) {
+    if (row == null) {
+      return null;
+    }
+    Account parent =
+        row.parentAccountId() == null
+            ? null
+            : account(mapper.findAccountById(row.parentAccountId()));
+    AccountTypes accountType =
+        Arrays.stream(AccountTypes.values())
+            .filter(type -> type.getValue().getAccountTypeId() == row.accountTypeId())
+            .findFirst()
+            .orElseThrow(IllegalArgumentException::new);
+    return Account.of(
+        row.accountId(),
+        accountType.getValue(),
+        row.code(),
+        row.name(),
+        row.isActive(),
+        row.createdTs(),
+        parent);
   }
 
   private static CaptureChild capture(CaptureChildRow row) {

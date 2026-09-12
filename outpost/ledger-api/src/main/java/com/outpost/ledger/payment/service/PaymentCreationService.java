@@ -2,7 +2,6 @@ package com.outpost.ledger.payment.service;
 
 import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
-import com.outpost.account.configuration.FeeModes;
 import com.outpost.account.configuration.MerchantFeeConfiguration;
 import com.outpost.accounting.payment.CreatePaymentCommand;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
@@ -14,10 +13,8 @@ import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.ledger.payment.api.CreatePaymentRequest;
 import com.outpost.ledger.payment.api.PaymentResponse;
+import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentRepository;
-import com.outpost.ledger.payment.repository.mybatis.AccountRow;
-import com.outpost.ledger.payment.repository.mybatis.ExistingPaymentRow;
-import com.outpost.ledger.payment.repository.mybatis.FeeRow;
 import com.outpost.payment.common.Amount;
 import java.time.Clock;
 import java.time.Instant;
@@ -70,24 +67,12 @@ public class PaymentCreationService {
       if (gross != request.grossAmount()) {
         throw unprocessable("INCONSISTENT_AMOUNTS");
       }
-      FeeRow feeRow = repository.findFee(merchant.getAccountId(), currency.getCurrencyId());
-      if (feeRow == null || feeRow.currencyId() != currency.getCurrencyId()) {
+      MerchantFeeConfiguration feeConfiguration =
+          repository.findFee(merchant.getAccountId(), currency.getCurrencyId());
+      if (feeConfiguration == null
+          || feeConfiguration.currency().getCurrencyId() != currency.getCurrencyId()) {
         throw unprocessable("MISSING_FEE_CONFIGURATION");
       }
-      String feeModeCode =
-          switch ((int) feeRow.feeModeId()) {
-            case 1 -> "PERCENTAGE";
-            case 2 -> "PERCENTAGE_PLUS_FIXED";
-            default -> throw unprocessable("MISSING_FEE_CONFIGURATION");
-          };
-      MerchantFeeConfiguration feeConfiguration =
-          new MerchantFeeConfiguration(
-              feeRow.merchantFeeConfigurationId(),
-              merchant,
-              currency,
-              FeeModes.fromCode(feeModeCode).orElseThrow(),
-              feeRow.feeRateBps(),
-              feeRow.feeFixed() == null ? null : new Amount(currency, feeRow.feeFixed()));
       long fee;
       try {
         fee =
@@ -146,7 +131,7 @@ public class PaymentCreationService {
       Account p,
       Country country,
       CountrySubdivision subdivision) {
-    ExistingPaymentRow e = repository.findByReference(r.paymentReference());
+    ExistingPayment e = repository.findByReference(r.paymentReference());
     if (e != null
         && e.accountId() == m.getAccountId()
         && e.pspAccountId() == p.getAccountId()
@@ -164,42 +149,13 @@ public class PaymentCreationService {
   }
 
   private Account account(String code, AccountTypes expected) {
-    AccountRow row = repository.findAccount(code);
-    if (row == null
-        || row.accountTypeId() != expected.getValue().getAccountTypeId()
-        || !row.isActive()) {
+    Account account = repository.findAccount(code);
+    if (account == null
+        || !account.getAccountType().equals(expected.getValue())
+        || !account.isActive()) {
       throw unknown();
     }
-    Account parent = row.parentAccountId() == null ? null : accountById(row.parentAccountId());
-    return Account.of(
-        row.accountId(),
-        expected.getValue(),
-        row.code(),
-        row.name(),
-        row.isActive(),
-        row.createdTs(),
-        parent);
-  }
-
-  private Account accountById(long id) {
-    AccountRow row = repository.findAccountById(id);
-    if (row == null) {
-      throw unknown();
-    }
-    Account parent = row.parentAccountId() == null ? null : accountById(row.parentAccountId());
-    AccountTypes type =
-        java.util.Arrays.stream(AccountTypes.values())
-            .filter(v -> v.getValue().getAccountTypeId() == row.accountTypeId())
-            .findFirst()
-            .orElseThrow(PaymentCreationService::unknown);
-    return Account.of(
-        row.accountId(),
-        type.getValue(),
-        row.code(),
-        row.name(),
-        row.isActive(),
-        row.createdTs(),
-        parent);
+    return account;
   }
 
   private static void validate(CreatePaymentRequest r) {

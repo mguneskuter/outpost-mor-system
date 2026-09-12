@@ -54,6 +54,21 @@ public final class Transaction {
         transactionId, transactionType, merchantAccount, reference, amount, createdAt);
   }
 
+  /** Creates and attaches a direct child to a payment transaction. */
+  public static Transaction childOf(
+      Transaction parent,
+      long transactionId,
+      TransactionType transactionType,
+      Account merchantAccount,
+      String reference,
+      Amount amount,
+      Instant createdAt) {
+    Transaction child =
+        of(transactionId, transactionType, merchantAccount, reference, amount, createdAt);
+    Objects.requireNonNull(parent, "parent").attachChild(child);
+    return child;
+  }
+
   /** Returns the transaction identity. */
   public long getTransactionId() {
     return transactionId;

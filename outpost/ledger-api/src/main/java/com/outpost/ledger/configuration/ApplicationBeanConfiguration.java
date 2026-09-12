@@ -17,6 +17,7 @@ import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventService;
+import com.outpost.ledger.payment.service.RefundReservationService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -56,6 +57,11 @@ public class ApplicationBeanConfiguration {
   @Bean
   CaptureService captureService(PaymentRepository repository, Clock clock) {
     return new CaptureService(repository, clock);
+  }
+
+  @Bean
+  RefundReservationService refundReservationService(PaymentRepository repository, Clock clock) {
+    return new RefundReservationService(repository, clock);
   }
 
   /** Creates the repository that converts persisted rate rows to domain rates. */
