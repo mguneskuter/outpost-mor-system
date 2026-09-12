@@ -4,8 +4,9 @@ import com.outpost.ledger.payment.repository.mybatis.AccountRow;
 import com.outpost.ledger.payment.repository.mybatis.ExistingPaymentRow;
 import com.outpost.ledger.payment.repository.mybatis.FeeRow;
 import java.time.Instant;
+import java.util.List;
 
-/** Persistence operations required by payment creation. */
+/** Persistence operations required by payment lifecycle commands. */
 public interface PaymentRepository {
   /** Finds a committed payment by its reference. */
   ExistingPaymentRow findByReference(String reference);
@@ -44,4 +45,19 @@ public interface PaymentRepository {
 
   /** Inserts a journal line. */
   long insertLine(long entryId, long registerId, long currencyId, long quantity);
+
+  /** Locks and returns the payment family root for a payment reference. */
+  PaymentFamily findPaymentFamilyForUpdate(String reference);
+
+  /** Reads payment events in their append order. */
+  List<PaymentEvent> findPaymentEvents(long transactionId);
+
+  /** Inserts a lifecycle event and returns its id, or null when it already exists. */
+  Long insertPaymentEvent(long transactionId, long eventTypeId, Instant occurredAt);
+
+  /** Reads the pending-fee lines that a refusal or cancellation must reverse. */
+  PendingFee findPendingFee(long transactionId);
+
+  /** Inserts a fee-release journal entry. */
+  long insertFeeReleaseEntry(long eventId, long entryTypeId, Instant at);
 }

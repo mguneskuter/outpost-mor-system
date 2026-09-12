@@ -58,7 +58,25 @@ public final class PaymentLifecycle {
       }
       state = transition(state, event.getTransactionEventType());
     }
-    return state;
+    return Objects.requireNonNull(state);
+  }
+
+  /**
+   * Folds persisted payment event types in their stored order.
+   *
+   * @throws IllegalArgumentException if {@code eventTypes} is empty or contains an invalid
+   *     transition
+   */
+  public TransactionEventType fold(List<TransactionEventType> eventTypes) {
+    Objects.requireNonNull(eventTypes, "eventTypes");
+    if (eventTypes.isEmpty()) {
+      throw new IllegalArgumentException("a payment must have at least one event");
+    }
+    TransactionEventType state = null;
+    for (TransactionEventType eventType : eventTypes) {
+      state = transition(state, Objects.requireNonNull(eventType, "eventType"));
+    }
+    return Objects.requireNonNull(state);
   }
 
   /**
