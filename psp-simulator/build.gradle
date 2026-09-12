@@ -1,0 +1,71 @@
+plugins {
+    id 'java'
+    id 'checkstyle'
+    id 'com.diffplug.spotless' version '8.10.2'
+    id 'net.ltgt.errorprone' version '5.1.0'
+    id 'org.springframework.boot' version '4.1.1'
+}
+
+group = 'com.outpost'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    compileOnly 'org.jspecify:jspecify:1.0.1'
+    testCompileOnly 'org.jspecify:jspecify:1.0.1'
+
+    errorprone 'com.uber.nullaway:nullaway:0.14.1'
+    errorprone 'com.google.errorprone:error_prone_core:2.50.0'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+spotless {
+    java {
+        googleJavaFormat()
+    }
+}
+
+checkstyle {
+    toolVersion = '12.1.0'
+    maxWarnings = 0
+    config = resources.text.fromArchiveEntry(
+        configurations.checkstyle.filter { checkstyleArchive ->
+            checkstyleArchive.name.startsWith('checkstyle-')
+        },
+        'google_checks.xml'
+    )
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.errorprone.with {
+        error('NullAway')
+        option('NullAway:OnlyNullMarked', true)
+        error('RequireExplicitNullMarking')
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+springBoot {
+    mainClass = 'com.outpost.pspsimulator.PspSimulatorApplication'
+}
