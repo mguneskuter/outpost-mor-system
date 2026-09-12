@@ -79,9 +79,15 @@ public interface PaymentRepository {
   /** Inserts a fee-release journal entry. */
   long insertFeeReleaseEntry(long eventId, long entryTypeId, Instant at);
 
+  /** Inserts the REFUND journal entry. */
+  long insertRefundEntry(long eventId, long entryTypeId, Instant at);
+
   /** Returns whether the payment has exactly one successful capture for its full amount. */
   boolean hasExactlyOneSuccessfulFullCapture(
       long paymentTransactionId, long gross, long currencyId);
+
+  /** Reads the counterparties used by the successful CAPTURE entry. */
+  CapturePosting findCapturePosting(long paymentTransactionId);
 
   /** Reads refund children and their latest lifecycle events. */
   List<RefundChild> findRefundChildren(long paymentTransactionId);

@@ -2,10 +2,13 @@ package com.outpost.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.FeeModes;
 import com.outpost.accounting.AccountTypeRegisterTypes;
@@ -51,6 +54,7 @@ class PaymentCreationIntegrationTest {
   private static final String WORKER_SECRET = "test-worker-secret";
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8(SECRET);
   private static final HmacKey WORKER_KEY = HmacKey.fromUtf8(WORKER_SECRET);
+  private static final ObjectMapper JSON = new ObjectMapper();
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer("outpost_payment_creation", "outpost", "outpost");
   private static final String VALID_BODY =
@@ -743,6 +747,104 @@ class PaymentCreationIntegrationTest {
         .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
   }
 
+  @Test
+  void refundedBooksThreeLinesAgainstTheCaptureCounterpartiesAndIsIdempotent() throws Exception {
+    String paymentReference = "refund-events-booking";
+    createCapturedPayment(paymentReference);
+    String reservation =
+        refundBody(paymentReference, "refund-events-booking-ref", 8000, 2000, "EUR");
+    performRefund(reservation, workerSignature(reservation)).andExpect(status().isCreated());
+
+    String event = refundEventBody(paymentReference, "refund-events-booking-ref", "REFUNDED");
+    performEvent(event, workerSignature(event)).andExpect(status().isNoContent());
+    long refundId = transactionId("refund-events-booking-ref");
+    long captureId = transactionId(paymentReference + "-capture");
+    assertThat(countForTransaction("transaction_event", refundId)).isEqualTo(2);
+    assertThat(countForTransaction("journal_entry", refundId)).isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM journal_entry_line jel "
+                    + "JOIN journal_entry je USING (journal_entry_id) "
+                    + "JOIN transaction_event te USING (transaction_event_id) "
+                    + "WHERE te.transaction_id = ?",
+                Integer.class,
+                refundId))
+        .isEqualTo(3);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT SUM(jel.quantity) FROM journal_entry_line jel "
+                    + "JOIN journal_entry je USING (journal_entry_id) "
+                    + "JOIN transaction_event te USING (transaction_event_id) "
+                    + "WHERE te.transaction_id = ?",
+                Long.class,
+                refundId))
+        .isZero();
+    assertThat(refundQuantity(refundId, "PSP_RECEIVABLE")).isEqualTo(-10000L);
+    assertThat(refundQuantity(refundId, "TAX_PAYABLE")).isEqualTo(2000L);
+    assertThat(refundQuantity(refundId, "MERCHANT_PAYABLE")).isEqualTo(8000L);
+    assertThat(refundRegisterId(refundId, "PSP_RECEIVABLE"))
+        .isEqualTo(refundRegisterId(captureId, "PSP_RECEIVABLE"));
+    assertThat(refundRegisterId(refundId, "TAX_PAYABLE"))
+        .isEqualTo(refundRegisterId(captureId, "TAX_PAYABLE"));
+    assertThat(refundRegisterId(refundId, "MERCHANT_PAYABLE"))
+        .isEqualTo(refundRegisterId(captureId, "MERCHANT_PAYABLE"));
+
+    int events = countForTransaction("transaction_event", refundId);
+    int entries = countForTransaction("journal_entry", refundId);
+    performEvent(event, workerSignature(event)).andExpect(status().isNoContent());
+    assertThat(countForTransaction("transaction_event", refundId)).isEqualTo(events);
+    assertThat(countForTransaction("journal_entry", refundId)).isEqualTo(entries);
+  }
+
+  @Test
+  void failedRefundReleasesReservationForAnotherRefund() throws Exception {
+    String paymentReference = "refund-events-failure";
+    createCapturedPayment(paymentReference);
+    String first = refundBody(paymentReference, "refund-events-failure-first", 10000, 2000, "EUR");
+    performRefund(first, workerSignature(first)).andExpect(status().isCreated());
+    String failed =
+        refundEventBody(paymentReference, "refund-events-failure-first", "REFUND_FAILED");
+    performEvent(failed, workerSignature(failed)).andExpect(status().isNoContent());
+
+    String second =
+        refundBody(paymentReference, "refund-events-failure-second", 10000, 2000, "EUR");
+    performRefund(second, workerSignature(second)).andExpect(status().isCreated());
+  }
+
+  @Test
+  void balanceReportsGroupCurrenciesAndReflectRefunds() throws Exception {
+    String eurPaymentReference = "balance-report-eur";
+    String eurPayment = balancePaymentBody(eurPaymentReference, 10000, 2000, 12000, "EUR");
+    createCapturedPayment(eurPaymentReference, eurPayment, 12000, "EUR");
+    String refund = refundBody(eurPaymentReference, "balance-report-refund", 4000, 1000, "EUR");
+    performRefund(refund, workerSignature(refund)).andExpect(status().isCreated());
+    String refunded = refundEventBody(eurPaymentReference, "balance-report-refund", "REFUNDED");
+    performEvent(refunded, workerSignature(refunded)).andExpect(status().isNoContent());
+
+    String usdPaymentReference = "balance-report-usd";
+    String usdPayment = balancePaymentBody(usdPaymentReference, 20000, 0, 20000, "USD");
+    createCapturedPayment(usdPaymentReference, usdPayment, 20000, "USD");
+
+    String tax = report("/v1/report/balance/tax");
+    JsonNode taxAuthority = account(tax, "TAX_AUTHORITY_DE");
+    assertThat(taxAuthority.path("name").asText()).isEqualTo("Germany Tax Authority");
+    assertThat(balanceAmount(taxAuthority, "EUR")).isEqualTo(1000L);
+    assertThat(balanceAmount(taxAuthority, "USD")).isZero();
+    String merchant = report("/v1/report/balance/merchant");
+    JsonNode merchantAccount = account(merchant, "DEMO_MERCHANT_2");
+    assertThat(merchantAccount.path("name").asText()).isEqualTo("Demo Merchant 2");
+    assertThat(balanceAmount(merchantAccount, "EUR")).isEqualTo(5500L);
+    assertThat(balanceAmount(merchantAccount, "USD")).isEqualTo(19000L);
+  }
+
+  @Test
+  void balanceReportsRequireTheGatewayKey() throws Exception {
+    mockMvc
+        .perform(get("/v1/report/balance/merchant"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
+  }
+
   private Future<Integer> eventRequest(
       ExecutorService executor, CountDownLatch ready, CountDownLatch start, String body)
       throws Exception {
@@ -810,6 +912,17 @@ class PaymentCreationIntegrationTest {
     return "{\"payment_reference\":\"" + reference + "\",\"event\":\"" + event + "\"}";
   }
 
+  private static String refundEventBody(
+      String paymentReference, String refundReference, String event) {
+    return "{\"payment_reference\":\""
+        + paymentReference
+        + "\",\"refund_reference\":\""
+        + refundReference
+        + "\",\"event\":\""
+        + event
+        + "\"}";
+  }
+
   private static String captureBody(
       String paymentReference,
       String captureReference,
@@ -856,14 +969,97 @@ class PaymentCreationIntegrationTest {
             .header("X-Outpost-Signature", sig));
   }
 
+  private org.springframework.test.web.servlet.ResultActions performReport(String path)
+      throws Exception {
+    return mockMvc.perform(get(path).header("X-Outpost-Signature", signature("")));
+  }
+
+  private String report(String path) throws Exception {
+    return performReport(path)
+        .andExpect(status().isOk())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+  }
+
   private void createCapturedPayment(String paymentReference) throws Exception {
-    String payment = body(paymentReference);
+    createCapturedPayment(paymentReference, body(paymentReference), 12000, "EUR");
+  }
+
+  private void createCapturedPayment(
+      String paymentReference, String payment, long gross, String currency) throws Exception {
     perform(payment, signature(payment)).andExpect(status().isCreated());
     String authorised = eventBody(paymentReference, "AUTHORISED");
     performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
     String capture =
-        captureBody(paymentReference, paymentReference + "-capture", true, 12000, "EUR");
+        captureBody(paymentReference, paymentReference + "-capture", true, gross, currency);
     performCapture(capture, workerSignature(capture)).andExpect(status().isCreated());
+  }
+
+  private static String balancePaymentBody(
+      String reference, long net, long tax, long gross, String currency) {
+    return "{\"payment_reference\":\""
+        + reference
+        + "\",\"merchant_code\":\"DEMO_MERCHANT_2\",\"psp_code\":\"DEMO_PSP\","
+        + "\"shopper_country\":\"DE\",\"net_amount\":"
+        + net
+        + ",\"tax_amount\":"
+        + tax
+        + ",\"gross_amount\":"
+        + gross
+        + ",\"currency\":\""
+        + currency
+        + "\"}";
+  }
+
+  private static JsonNode account(String report, String accountCode) throws Exception {
+    List<JsonNode> matches = new ArrayList<>();
+    for (JsonNode account : JSON.readTree(report).path("accounts")) {
+      if (accountCode.equals(account.path("account_code").asText())) {
+        matches.add(account);
+      }
+    }
+    assertThat(matches).hasSize(1);
+    return matches.getFirst();
+  }
+
+  private static long balanceAmount(JsonNode account, String currency) {
+    List<JsonNode> matches = new ArrayList<>();
+    for (JsonNode balance : account.path("balances")) {
+      if (currency.equals(balance.path("currency").asText())) {
+        matches.add(balance);
+      }
+    }
+    assertThat(matches).hasSize(1);
+    return matches.getFirst().path("amount").asLong();
+  }
+
+  private long refundQuantity(long transactionId, String registerType) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT jel.quantity FROM journal_entry_line jel "
+                + "JOIN journal_entry je USING (journal_entry_id) "
+                + "JOIN transaction_event te USING (transaction_event_id) "
+                + "JOIN register r USING (register_id) "
+                + "JOIN register_type rt USING (register_type_id) "
+                + "WHERE te.transaction_id = ? AND rt.register_type_code = ?",
+            Long.class,
+            transactionId,
+            registerType));
+  }
+
+  private long refundRegisterId(long transactionId, String registerType) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT jel.register_id FROM journal_entry_line jel "
+                + "JOIN journal_entry je USING (journal_entry_id) "
+                + "JOIN transaction_event te USING (transaction_event_id) "
+                + "JOIN register r USING (register_id) "
+                + "JOIN register_type rt USING (register_type_id) "
+                + "WHERE te.transaction_id = ? AND rt.register_type_code = ?",
+            Long.class,
+            transactionId,
+            registerType));
   }
 
   private static String refundBody(

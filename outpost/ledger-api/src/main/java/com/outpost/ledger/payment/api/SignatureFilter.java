@@ -23,7 +23,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
-/** Authenticates the payment route over its exact raw request bytes. */
+/** Authenticates Ledger requests over their exact raw request bytes. */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public final class SignatureFilter implements Filter {
@@ -44,17 +44,13 @@ public final class SignatureFilter implements Filter {
       throws IOException, ServletException {
     if (!(request instanceof HttpServletRequest http)
         || !(response instanceof HttpServletResponse httpResponse)
-        || !"POST".equals(http.getMethod())
-        || (!"/v1/payment".equals(http.getRequestURI())
-            && !"/v1/payment/event".equals(http.getRequestURI())
-            && !"/v1/payment/capture".equals(http.getRequestURI())
-            && !"/v1/payment/refund".equals(http.getRequestURI()))) {
+        || (!gatewayRoute(http) && !workerRoute(http))) {
       chain.doFilter(request, response);
       return;
     }
     byte[] body = http.getInputStream().readAllBytes();
     String encoded = http.getHeader("X-Outpost-Signature");
-    HmacKey key = "/v1/payment".equals(http.getRequestURI()) ? gatewayKey : workerKey;
+    HmacKey key = workerRoute(http) ? workerKey : gatewayKey;
     boolean valid;
     try {
       valid = encoded != null && HmacSha256.verify(key, body, HmacSignature.fromBase64(encoded));
@@ -68,6 +64,20 @@ public final class SignatureFilter implements Filter {
       return;
     }
     chain.doFilter(new CachedBodyRequest(http, body), response);
+  }
+
+  private static boolean gatewayRoute(HttpServletRequest request) {
+    return ("POST".equals(request.getMethod()) && "/v1/payment".equals(request.getRequestURI()))
+        || ("GET".equals(request.getMethod())
+            && ("/v1/report/balance/tax".equals(request.getRequestURI())
+                || "/v1/report/balance/merchant".equals(request.getRequestURI())));
+  }
+
+  private static boolean workerRoute(HttpServletRequest request) {
+    return "POST".equals(request.getMethod())
+        && ("/v1/payment/event".equals(request.getRequestURI())
+            || "/v1/payment/capture".equals(request.getRequestURI())
+            || "/v1/payment/refund".equals(request.getRequestURI()));
   }
 
   private static HmacKey key(String secret, String name) {

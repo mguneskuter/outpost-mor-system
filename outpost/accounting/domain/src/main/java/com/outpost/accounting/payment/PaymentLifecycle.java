@@ -15,9 +15,10 @@ import org.jspecify.annotations.Nullable;
 /**
  * The PAYMENT transaction's state machine over its own recorded events.
  *
- * <p>The only valid edges are {@code no event -> ORDER_CREATED}, {@code ORDER_CREATED ->
- * AUTHORISED}, {@code ORDER_CREATED -> REFUSED}, and {@code AUTHORISED -> CANCELLED}. {@code
- * REFUSED} and {@code CANCELLED} are terminal.
+ * <p>The PAYMENT root edges are {@code no event -> ORDER_CREATED}, {@code ORDER_CREATED ->
+ * AUTHORISED}, {@code ORDER_CREATED -> REFUSED}, and {@code AUTHORISED -> CANCELLED}. CAPTURE and
+ * REFUND child outcomes use their own transition rules. {@code REFUSED}, {@code CANCELLED}, and
+ * terminal child outcomes cannot be followed.
  */
 public final class PaymentLifecycle {
   private static final Comparator<TransactionEvent> CHRONOLOGICAL_ORDER =
@@ -128,9 +129,42 @@ public final class PaymentLifecycle {
             || candidate.equals(TransactionEventTypes.CAPTURE_FAILED.getValue()));
   }
 
+  /** Folds the events recorded on one REFUND child. */
+  public TransactionEventType foldRefund(List<TransactionEventType> eventTypes) {
+    Objects.requireNonNull(eventTypes, "eventTypes");
+    if (eventTypes.isEmpty()) {
+      throw new IllegalArgumentException("a refund must have at least one event");
+    }
+    TransactionEventType state = null;
+    for (TransactionEventType eventType : eventTypes) {
+      state = refundTransition(state, Objects.requireNonNull(eventType, "eventType"));
+    }
+    return Objects.requireNonNull(state);
+  }
+
+  /** Returns whether a REFUND child may record the candidate event. */
+  public boolean canFollowRefund(
+      @Nullable TransactionEventType state, TransactionEventType candidate) {
+    Objects.requireNonNull(candidate, "candidate");
+    return refundAllowedNextEvents(state).contains(candidate);
+  }
+
   private static TransactionEventType transition(
       @Nullable TransactionEventType current, TransactionEventType next) {
     List<TransactionEventType> allowed = allowedNextEvents(current);
+    if (!allowed.contains(next)) {
+      throw new IllegalArgumentException(
+          "event "
+              + next.getCode()
+              + " cannot follow "
+              + (current == null ? "no event" : current.getCode()));
+    }
+    return next;
+  }
+
+  private static TransactionEventType refundTransition(
+      @Nullable TransactionEventType current, TransactionEventType next) {
+    List<TransactionEventType> allowed = refundAllowedNextEvents(current);
     if (!allowed.contains(next)) {
       throw new IllegalArgumentException(
           "event "
@@ -152,6 +186,25 @@ public final class PaymentLifecycle {
     }
     if (current.equals(TransactionEventTypes.AUTHORISED.getValue())) {
       return List.of(TransactionEventTypes.CANCELLED.getValue());
+    }
+    return List.of();
+  }
+
+  private static List<TransactionEventType> refundAllowedNextEvents(
+      @Nullable TransactionEventType current) {
+    if (current == null) {
+      return List.of(TransactionEventTypes.REFUND_REQUESTED.getValue());
+    }
+    if (current.equals(TransactionEventTypes.REFUND_REQUESTED.getValue())) {
+      return List.of(
+          TransactionEventTypes.REFUND_ACCEPTED.getValue(),
+          TransactionEventTypes.REFUNDED.getValue(),
+          TransactionEventTypes.REFUND_FAILED.getValue());
+    }
+    if (current.equals(TransactionEventTypes.REFUND_ACCEPTED.getValue())) {
+      return List.of(
+          TransactionEventTypes.REFUNDED.getValue(),
+          TransactionEventTypes.REFUND_FAILED.getValue());
     }
     return List.of();
   }

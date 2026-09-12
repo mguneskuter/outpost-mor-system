@@ -18,6 +18,8 @@ import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventService;
 import com.outpost.ledger.payment.service.RefundReservationService;
+import com.outpost.ledger.report.repository.BalanceReportRepository;
+import com.outpost.ledger.report.service.BalanceReportService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -62,6 +64,11 @@ public class ApplicationBeanConfiguration {
   @Bean
   RefundReservationService refundReservationService(PaymentRepository repository, Clock clock) {
     return new RefundReservationService(repository, clock);
+  }
+
+  @Bean
+  BalanceReportService balanceReportService(BalanceReportRepository repository) {
+    return new BalanceReportService(repository);
   }
 
   /** Creates the repository that converts persisted rate rows to domain rates. */
