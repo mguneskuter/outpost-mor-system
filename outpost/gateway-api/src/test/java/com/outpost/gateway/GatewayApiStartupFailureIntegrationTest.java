@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import org.flywaydb.core.Flyway;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
@@ -14,8 +15,9 @@ import org.springframework.mock.env.MockEnvironment;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
- * Startup failures that only occur against a real database: divergent reference data and invalid
- * tax data. {@link GatewayApiStartupFailureTest} covers the database-free cases.
+ * Startup failures that only occur against a real database: divergent reference data, invalid tax
+ * data, and the Ledger signing secret, which is read only once a database connection is available.
+ * {@link GatewayApiStartupFailureTest} covers the database-free cases.
  */
 class GatewayApiStartupFailureIntegrationTest {
   private static final PostgreSQLContainer<?> DATABASE =
@@ -41,6 +43,9 @@ class GatewayApiStartupFailureIntegrationTest {
     jdbcTemplate.update("DELETE FROM product_type");
     jdbcTemplate.update("DELETE FROM account_type");
     jdbcTemplate.update("DELETE FROM fee_mode");
+    jdbcTemplate.update("DELETE FROM accounting_request_type");
+    jdbcTemplate.update("DELETE FROM accounting_request_status");
+    jdbcTemplate.update("DELETE FROM accounting_request_result");
   }
 
   @Test
@@ -66,12 +71,40 @@ class GatewayApiStartupFailureIntegrationTest {
         .hasRootCauseInstanceOf(IllegalStateException.class);
   }
 
+  @Test
+  void failsClosedWhenLedgerSigningSecretIsAbsent() {
+    GatewayStaticDataFixtures.materializeAll(jdbcTemplate());
+
+    assertThatThrownBy(() -> startAgainstDatabase(/* ledgerHmacSecret= */ null))
+        .isInstanceOf(Exception.class)
+        .rootCause()
+        .hasMessageContaining("OUTPOST_LEDGER_GATEWAY_HMAC_SECRET");
+  }
+
+  @Test
+  void failsClosedWhenLedgerSigningSecretIsBlank() {
+    GatewayStaticDataFixtures.materializeAll(jdbcTemplate());
+
+    assertThatThrownBy(() -> startAgainstDatabase(""))
+        .isInstanceOf(Exception.class)
+        .rootCause()
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Ledger HMAC secret");
+  }
+
   private void startAgainstDatabase() {
+    startAgainstDatabase("integration-ledger-key");
+  }
+
+  private void startAgainstDatabase(@Nullable String ledgerHmacSecret) {
     MockEnvironment env = new MockEnvironment();
     env.setProperty("spring.datasource.url", DATABASE.getJdbcUrl());
     env.setProperty("spring.datasource.username", DATABASE.getUsername());
     env.setProperty("spring.datasource.password", DATABASE.getPassword());
     env.setProperty("OUTPOST_HMAC_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    if (ledgerHmacSecret != null) {
+      env.setProperty("OUTPOST_LEDGER_GATEWAY_HMAC_SECRET", ledgerHmacSecret);
+    }
     new SpringApplicationBuilder(GatewayApiApplication.class)
         .web(WebApplicationType.NONE)
         .environment(env)

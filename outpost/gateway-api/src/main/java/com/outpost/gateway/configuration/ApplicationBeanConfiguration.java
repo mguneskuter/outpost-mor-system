@@ -159,7 +159,7 @@ public class ApplicationBeanConfiguration {
   LedgerClient ledgerClient(
       ObjectMapper objectMapper,
       @Value("${outpost.gateway.ledger.base-url:http://localhost:8081}") String baseUrl,
-      @Value("${outpost.gateway.ledger.hmac-secret:gateway-key}") String hmacSecret,
+      @Value("${outpost.gateway.ledger.hmac-secret}") String hmacSecret,
       @Value("${outpost.gateway.ledger.connect-timeout:PT1S}") Duration connectTimeout,
       @Value("${outpost.gateway.ledger.read-timeout:PT5S}") Duration readTimeout) {
     return new LedgerHttpClient(baseUrl, hmacSecret, connectTimeout, readTimeout, objectMapper);
@@ -185,7 +185,7 @@ public class ApplicationBeanConfiguration {
   LedgerReportClient ledgerReportClient(
       ObjectMapper objectMapper,
       @Value("${outpost.gateway.ledger.base-url:http://localhost:8081}") String baseUrl,
-      @Value("${outpost.gateway.ledger.hmac-secret:gateway-key}") String hmacSecret,
+      @Value("${outpost.gateway.ledger.hmac-secret}") String hmacSecret,
       @Value("${outpost.gateway.ledger.connect-timeout:PT1S}") Duration connectTimeout,
       @Value("${outpost.gateway.ledger.read-timeout:PT5S}") Duration readTimeout) {
     return new LedgerReportHttpClient(
