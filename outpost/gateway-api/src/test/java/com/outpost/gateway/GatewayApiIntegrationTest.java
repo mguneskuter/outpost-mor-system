@@ -132,6 +132,7 @@ class GatewayApiIntegrationTest {
     registry.add(
         "OUTPOST_HMAC_ENCRYPTION_KEY", () -> "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
     registry.add("OUTPOST_OPERATOR_API_KEY", () -> "fake-operator-key");
+    registry.add("OUTPOST_LEDGER_GATEWAY_HMAC_SECRET", () -> "gateway-integration-test-key");
   }
 
   @Test
