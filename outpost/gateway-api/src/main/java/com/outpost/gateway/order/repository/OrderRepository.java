@@ -21,6 +21,9 @@ public interface OrderRepository {
   /** Loads an attempt by merchant idempotency key. */
   @Nullable PersistedOrder findByIdempotency(long merchantAccountId, String idempotencyKey);
 
+  /** Loads an order by its reference, scoped to the merchant that owns it. */
+  @Nullable PersistedOrder findByReference(long merchantAccountId, String orderReference);
+
   /** Persists the local order, lines, and payment as one durable phase. */
   @Nullable PersistedOrder insert(NewOrder order);
 

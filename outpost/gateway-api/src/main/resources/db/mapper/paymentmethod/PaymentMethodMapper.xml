@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.gateway.paymentmethod.repository.mybatis.PaymentMethodMapper">
+  <resultMap id="paymentMethodRow" type="com.outpost.gateway.paymentmethod.repository.mybatis.PaymentMethodRow">
+    <constructor>
+      <arg column="psp_code" javaType="string"/>
+      <arg column="name" javaType="string"/>
+    </constructor>
+  </resultMap>
+
+  <select id="findEnabled" resultMap="paymentMethodRow">
+    SELECT psp.code AS psp_code, psp.name AS name
+      FROM merchant_psp mp
+      JOIN account psp ON psp.account_id = mp.psp_account_id
+     WHERE mp.account_id = #{merchantAccountId}
+  </select>
+</mapper>
