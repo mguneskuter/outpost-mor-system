@@ -4,9 +4,17 @@
 -- The first statement holds each jurisdiction's rate for every product type;
 -- the second holds product-type rates, each citing its own source. Local US
 -- taxes and historical effective dates are not represented. Re-running
--- this file fails with a unique-key violation rather than replacing an
--- existing rate, so a changed rate is never silently overwritten.
-INSERT INTO tax_rate (
+-- this file skips the rates already stored and fails on a stored rate that
+-- differs, so a changed rate is never silently overwritten.
+CREATE TEMP TABLE seed_tax_rate (
+    tax_rate_id BIGINT PRIMARY KEY,
+    country_id BIGINT NOT NULL,
+    country_subdivision_id BIGINT,
+    product_type_id BIGINT,
+    rate NUMERIC(6, 4) NOT NULL
+);
+
+INSERT INTO seed_tax_rate (
     tax_rate_id, country_id, country_subdivision_id, rate
 )
 VALUES
@@ -102,7 +110,7 @@ VALUES
 -- provides "a printed copy of the electronically transferred information or a
 -- backup data copy on a physical storage medium", the "entire sale is usually
 -- taxable".
-INSERT INTO tax_rate (
+INSERT INTO seed_tax_rate (
     tax_rate_id, country_id, country_subdivision_id, product_type_id, rate
 )
 VALUES (
@@ -122,4 +130,55 @@ VALUES (
     0.0000
 );
 
-SELECT setval('tax_rate_seq', (SELECT max(tax_rate_id) FROM tax_rate), TRUE);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM seed_tax_rate expected
+        JOIN tax_rate actual ON actual.tax_rate_id = expected.tax_rate_id
+        WHERE actual.country_id <> expected.country_id
+           OR actual.country_subdivision_id
+              IS DISTINCT FROM expected.country_subdivision_id
+           OR actual.product_type_id IS DISTINCT FROM expected.product_type_id
+           OR actual.rate <> expected.rate
+    ) THEN
+        RAISE EXCEPTION 'tax rate seed found a divergent rate';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM seed_tax_rate expected
+        JOIN tax_rate actual
+          ON actual.country_id = expected.country_id
+         AND actual.country_subdivision_id
+             IS NOT DISTINCT FROM expected.country_subdivision_id
+         AND actual.product_type_id IS NOT DISTINCT FROM expected.product_type_id
+        WHERE actual.tax_rate_id <> expected.tax_rate_id
+    ) THEN
+        RAISE EXCEPTION 'tax rate seed found a jurisdiction rate with a divergent ID';
+    END IF;
+END
+$$;
+
+INSERT INTO tax_rate (
+    tax_rate_id, country_id, country_subdivision_id, product_type_id, rate
+)
+SELECT
+    tax_rate_id,
+    country_id,
+    country_subdivision_id,
+    product_type_id,
+    rate
+FROM seed_tax_rate
+ON CONFLICT (tax_rate_id) DO NOTHING;
+
+SELECT setval(
+    'tax_rate_seq',
+    greatest(
+        coalesce((SELECT max(tax_rate_id) FROM tax_rate), 1),
+        (SELECT last_value FROM tax_rate_seq)
+    ),
+    TRUE
+);
+
+DROP TABLE seed_tax_rate;
