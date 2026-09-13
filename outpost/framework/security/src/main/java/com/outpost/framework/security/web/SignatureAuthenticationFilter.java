@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.AuthorityUtils;
@@ -33,7 +34,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>The caller whose key verifies the signature becomes the authenticated principal, with its name
  * as the only granted authority. A request without a verifying signature continues unauthenticated,
  * so the chain's authorization rules decide its outcome. A signed request's body is read in full
- * and remains readable downstream.
+ * and remains readable downstream; a signed request whose body exceeds {@link
+ * SizeBoundedRequestBody} is answered {@code 413} and goes no further.
  */
 public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
   private static final String SIGNATURE_HEADER = "X-Outpost-Signature";
@@ -69,7 +71,12 @@ public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
       chain.doFilter(request, response);
       return;
     }
-    byte[] body = request.getInputStream().readAllBytes();
+    Optional<byte[]> boundedBody = SizeBoundedRequestBody.read(request);
+    if (boundedBody.isEmpty()) {
+      response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+      return;
+    }
+    byte[] body = boundedBody.orElseThrow();
     String caller = caller(body, encodedSignature);
     if (caller != null) {
       SecurityContext context = contextHolder.createEmptyContext();

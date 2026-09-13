@@ -6,6 +6,7 @@ import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.hmac.HmacSignature;
+import com.outpost.framework.security.web.SizeBoundedRequestBody;
 import com.outpost.gateway.security.repository.MerchantApiKeyCredentials;
 import com.outpost.gateway.security.repository.MerchantApiKeyRepository;
 import jakarta.servlet.FilterChain;
@@ -69,6 +70,14 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       chain.doFilter(request, response);
       return;
     }
+    Optional<byte[]> boundedBody = SizeBoundedRequestBody.read(request);
+    if (boundedBody.isEmpty()) {
+      response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+      return;
+    }
+    byte[] body = boundedBody.orElseThrow();
+    // Credential failures are answered here rather than rethrown: the servlet container logs an
+    // escaping exception as a second ERROR event.
     Optional<MerchantApiKeyCredentials> credentials;
     try {
       credentials = merchantApiKeys.findActiveByHash(sha256Hex(presented));
@@ -77,7 +86,8 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
           "merchant credential lookup failed",
           exception,
           new StructuredLogField(LogField.FAILURE, "CREDENTIAL_STORE"));
-      throw exception;
+      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      return;
     }
     if (credentials.isEmpty()) {
       response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
@@ -88,7 +98,6 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
       return;
     }
-    byte[] body = request.getInputStream().readAllBytes();
     MerchantApiKeyCredentials key = credentials.orElseThrow();
     HmacKey hmacKey;
     try {
@@ -97,8 +106,10 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       LOGGER.error(
           "merchant credential decryption failed",
           exception,
-          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_DECRYPTION"));
-      throw exception;
+          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_DECRYPTION"),
+          new StructuredLogField(LogField.MERCHANT_ACCOUNT_ID, Long.toString(key.accountId())));
+      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      return;
     }
     boolean validSignature;
     try {
@@ -172,7 +183,8 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
   }
 
   private enum LogField implements LogFields {
-    FAILURE("authentication_failure");
+    FAILURE("authentication_failure"),
+    MERCHANT_ACCOUNT_ID("merchant_account_id");
 
     private final String jsonKey;
 
