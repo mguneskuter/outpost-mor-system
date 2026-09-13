@@ -7,8 +7,10 @@
       FROM transaction child
       JOIN transaction_event outcome ON outcome.transaction_id = child.transaction_id
      WHERE child.parent_transaction_id = #{paymentTransactionId}
-       AND child.transaction_type_id = 2
-       AND outcome.transaction_event_type_id = 5
+       AND child.transaction_type_id =
+           (SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE')
+       AND outcome.transaction_event_type_id =
+           (SELECT transaction_event_type_id FROM transaction_event_type WHERE code = 'CAPTURED')
   </select>
 
   <select id="findCapturePosting"
@@ -23,7 +25,8 @@
       FROM transaction capture
       JOIN transaction_event captured
         ON captured.transaction_id = capture.transaction_id
-       AND captured.transaction_event_type_id = 5
+       AND captured.transaction_event_type_id =
+           (SELECT transaction_event_type_id FROM transaction_event_type WHERE code = 'CAPTURED')
       JOIN journal_entry entry
         ON entry.transaction_event_id = captured.transaction_event_id
       JOIN journal_entry_type entry_type
@@ -45,7 +48,8 @@
         ON merchant_type.register_type_id = merchant_register.register_type_id
        AND merchant_type.register_type_code = 'MERCHANT_PAYABLE'
      WHERE capture.parent_transaction_id = #{paymentTransactionId}
-       AND capture.transaction_type_id = 2
+       AND capture.transaction_type_id =
+           (SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE')
   </select>
 
   <select id="findRefundChildren"
@@ -69,7 +73,8 @@
            LIMIT 1
       ) outcome ON true
      WHERE child.parent_transaction_id = #{paymentTransactionId}
-       AND child.transaction_type_id = 3
+       AND child.transaction_type_id =
+           (SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND')
      ORDER BY child.transaction_id
   </select>
 
@@ -94,19 +99,23 @@
            LIMIT 1
       ) outcome ON true
      WHERE child.reference = #{reference}
-       AND child.transaction_type_id = 3
+       AND child.transaction_type_id =
+           (SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND')
   </select>
 
   <select id="insertRefundTransaction" resultType="java.lang.Long">
     INSERT INTO transaction (transaction_type_id, parent_transaction_id, account_id, reference,
                              quantity, currency_id, created_ts)
-    VALUES (3,#{paymentTransactionId},#{merchantAccountId},#{reference},#{gross},#{currencyId},
+    VALUES ((SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND'),
+            #{paymentTransactionId},#{merchantAccountId},#{reference},#{gross},#{currencyId},
             #{createdAt})
     ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
   </select>
 
   <insert id="insertRefundDetail">
     INSERT INTO refund_detail (transaction_id, transaction_type_id, net_quantity, tax_quantity)
-    VALUES (#{transactionId},3,#{net},#{tax})
+    VALUES (#{transactionId},
+            (SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND'),
+            #{net},#{tax})
   </insert>
 </mapper>

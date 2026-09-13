@@ -113,6 +113,118 @@ class AccountingSchemaIntegrationTest {
   }
 
   @Test
+  void merchantFeeAndPaymentDetailConstraintsResolveByCodeRegardlessOfSeededIdentifiers()
+      throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(connection, "INSERT INTO account_type VALUES (20, 'MERCHANT'), (30, 'PSP')");
+      execute(
+          connection,
+          "INSERT INTO fee_mode VALUES (10, 'PERCENTAGE'), (11, 'PERCENTAGE_PLUS_FIXED')");
+      execute(connection, "INSERT INTO transaction_type VALUES (40, 'PAYMENT'), (41, 'CAPTURE')");
+      execute(connection, "INSERT INTO currency VALUES (1, 'EUR', 2)");
+      execute(connection, "INSERT INTO country VALUES (1, 'NL', 'Netherlands')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (100, 20, 'merchant', 'Merchant', true, now()), "
+              + "(101, 30, 'psp', 'PSP', true, now())");
+      execute(
+          connection,
+          "INSERT INTO merchant_fee_configuration "
+              + "(account_id, account_type_id, currency_id, fee_mode_id, fee_rate_bps, fee_fixed) "
+              + "VALUES (100, 20, 1, 10, 100, NULL)");
+      execute(
+          connection,
+          "INSERT INTO transaction "
+              + "(transaction_id, transaction_type_id, account_id, reference, quantity, "
+              + "currency_id, created_ts) VALUES (200, 40, 100, 'ref', 1000, 1, now())");
+      execute(
+          connection,
+          "INSERT INTO payment_detail "
+              + "(transaction_id, transaction_type_id, shopper_country_id, psp_account_id, "
+              + "net_quantity, tax_quantity) VALUES (200, 40, 1, 101, 900, 100)");
+      connection.commit();
+
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO merchant_fee_configuration "
+                          + "(account_id, account_type_id, currency_id, fee_mode_id, "
+                          + "fee_rate_bps, fee_fixed) VALUES (101, 30, 1, 10, 100, NULL)"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "UPDATE merchant_fee_configuration SET fee_mode_id = 11 "
+                          + "WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "UPDATE merchant_fee_configuration SET fee_fixed = 50 "
+                          + "WHERE account_id = 100"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+      execute(
+          connection,
+          "INSERT INTO transaction "
+              + "(transaction_id, transaction_type_id, account_id, reference, quantity, "
+              + "currency_id, created_ts) VALUES (201, 41, 100, 'ref-2', 1000, 1, now())");
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO payment_detail "
+                          + "(transaction_id, transaction_type_id, shopper_country_id, "
+                          + "psp_account_id, net_quantity, tax_quantity) "
+                          + "VALUES (201, 41, 1, 101, 900, 100)"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+    }
+  }
+
+  @Test
+  void refundDetailRequiresRefundTransactionTypeRegardlessOfSeededIdentifiers()
+      throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(connection, "INSERT INTO account_type VALUES (20, 'MERCHANT')");
+      execute(connection, "INSERT INTO transaction_type VALUES (40, 'PAYMENT'), (41, 'REFUND')");
+      execute(connection, "INSERT INTO currency VALUES (1, 'EUR', 2)");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (100, 20, 'merchant', 'Merchant', true, now())");
+      execute(
+          connection,
+          "INSERT INTO transaction "
+              + "(transaction_id, transaction_type_id, account_id, reference, quantity, "
+              + "currency_id, created_ts) VALUES "
+              + "(200, 40, 100, 'payment-ref', 1000, 1, now()), "
+              + "(201, 41, 100, 'refund-ref', 200, 1, now())");
+      execute(
+          connection,
+          "INSERT INTO refund_detail (transaction_id, transaction_type_id, net_quantity, "
+              + "tax_quantity) VALUES (201, 41, 180, 20)");
+      connection.commit();
+
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO refund_detail (transaction_id, transaction_type_id, "
+                          + "net_quantity, tax_quantity) VALUES (200, 40, 180, 20)"))
+          .isInstanceOf(SQLException.class);
+    }
+  }
+
+  @Test
   void rejectsDuplicateAccountCodesAndRegisters() throws SQLException {
     try (Connection connection = database.createConnection("")) {
       execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (3, 'PSP')");

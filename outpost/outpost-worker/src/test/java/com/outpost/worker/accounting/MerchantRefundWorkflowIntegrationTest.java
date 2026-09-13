@@ -416,13 +416,13 @@ class MerchantRefundWorkflowIntegrationTest {
     }
     for (AccountingRequestStatuses status : AccountingRequestStatuses.values()) {
       seed.update(
-          "INSERT INTO accounting_request_status VALUES (?, ?)",
+          "INSERT INTO accounting_request_status_type VALUES (?, ?)",
           status.getValue().accountingRequestStatusId(),
           status.name());
     }
     for (AccountingRequestResults result : AccountingRequestResults.values()) {
       seed.update(
-          "INSERT INTO accounting_request_result VALUES (?, ?)",
+          "INSERT INTO accounting_request_result_type VALUES (?, ?)",
           result.getValue().accountingRequestResultId(),
           result.name());
     }

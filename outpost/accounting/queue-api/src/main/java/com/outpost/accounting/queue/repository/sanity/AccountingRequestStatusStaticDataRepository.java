@@ -23,7 +23,7 @@ final class AccountingRequestStatusStaticDataRepository
 
   @Override
   public String table() {
-    return "accounting_request_status";
+    return "accounting_request_status_type";
   }
 
   @Override
