@@ -3,6 +3,7 @@ package com.outpost.gateway.psp.api;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.hmac.HmacSignature;
+import com.outpost.framework.security.web.SizeBoundedRequestBody;
 import com.outpost.gateway.psp.service.PspWebhookProcessResultCodes;
 import com.outpost.integration.psp.simulator.repository.PspConfiguration;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
@@ -61,13 +62,18 @@ public final class PspWebhookSignatureFilter extends OncePerRequestFilter {
       chain.doFilter(request, response);
       return;
     }
+    Optional<byte[]> boundedBody = SizeBoundedRequestBody.read(request);
+    if (boundedBody.isEmpty()) {
+      response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+      return;
+    }
+    byte[] body = boundedBody.orElseThrow();
     Optional<PspConfiguration> configuration = configurations.findByCode(path.group(1));
     if (configuration.isEmpty()) {
       reject(response, PspWebhookProcessResultCodes.UNKNOWN_PSP);
       return;
     }
     PspConfiguration psp = configuration.orElseThrow();
-    byte[] body = request.getInputStream().readAllBytes();
     if (!hasValidSignature(psp, request.getHeader("X-Outpost-Signature"), body)) {
       reject(response, PspWebhookProcessResultCodes.INVALID_SIGNATURE);
       return;

@@ -2,24 +2,32 @@ package com.outpost.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
+import com.outpost.framework.security.web.SizeBoundedRequestBody;
 import com.outpost.gateway.security.AesGcmSecretAdapter;
 import com.outpost.gateway.security.GatewayPrincipal;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
 import com.outpost.gateway.security.repository.MerchantApiKeyCredentials;
+import com.outpost.gateway.security.repository.MerchantApiKeyRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -67,6 +75,75 @@ class MerchantAuthenticationFilterTest {
   }
 
   @Test
+  void authenticatesSignedBodyAtMaxSize() throws Exception {
+    MerchantAuthenticationFilter filter =
+        new MerchantAuthenticationFilter(
+            MerchantAuthenticationFilterTest::activeCredentialsFor, "", secrets());
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    CapturingChain chain = new CapturingChain();
+
+    filter.doFilter(
+        signedRequest("a".repeat(SizeBoundedRequestBody.MAX_SIZE_BYTES)), response, chain);
+
+    assertThat(response.getStatus()).isEqualTo(200);
+    assertThat(chain.principal).isEqualTo(GatewayPrincipal.merchant(ACCOUNT_ID));
+    assertThat(chain.body).hasSize(SizeBoundedRequestBody.MAX_SIZE_BYTES);
+  }
+
+  @Test
+  void rejectsBodyExceedingMaxSizeBeforeReadingItOrLookingUpCredentials() throws Exception {
+    AtomicBoolean credentialsLookedUp = new AtomicBoolean();
+    MerchantAuthenticationFilter filter =
+        new MerchantAuthenticationFilter(
+            apiKeyHash -> {
+              credentialsLookedUp.set(true);
+              return activeCredentialsFor(apiKeyHash);
+            },
+            "",
+            secrets());
+    MockHttpServletRequest request =
+        new DeclaredLengthRequest("/orders", SizeBoundedRequestBody.MAX_SIZE_BYTES + 1L);
+    request.addHeader("X-Outpost-Api-Key", API_KEY);
+    request.addHeader("X-Outpost-Signature", "c2lnbmF0dXJl");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, new CapturingChain());
+
+    assertThat(response.getStatus()).isEqualTo(413);
+    assertThat(credentialsLookedUp).isFalse();
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unreadableCredentials")
+  void answersServerErrorWithOneErrorLogWhenCredentialsCannotBeRead(
+      String failure, MerchantApiKeyRepository merchantApiKeys, @Nullable String merchantAccountId)
+      throws Exception {
+    MerchantAuthenticationFilter filter =
+        new MerchantAuthenticationFilter(merchantApiKeys, "", secrets());
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    Logger logger = (Logger) LoggerFactory.getLogger(MerchantAuthenticationFilter.class);
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+
+    try {
+      filter.doFilter(signedRequest("payload"), response, new CapturingChain());
+
+      assertThat(response.getStatus()).isEqualTo(500);
+      assertThat(appender.list).hasSize(1);
+      ILoggingEvent event = appender.list.getFirst();
+      assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+      assertThat(event.getMDCPropertyMap())
+          .containsEntry("authentication_failure", failure)
+          .extractingByKey("merchant_account_id")
+          .isEqualTo(merchantAccountId);
+    } finally {
+      logger.detachAppender(appender);
+      appender.stop();
+    }
+  }
+
+  @Test
   void propagatesDownstreamIllegalArgumentException() {
     MerchantAuthenticationFilter filter =
         new MerchantAuthenticationFilter(
@@ -101,6 +178,18 @@ class MerchantAuthenticationFilterTest {
         Arguments.of("absent key", absentKey),
         Arguments.of("inactive key", inactiveKey),
         Arguments.of("tampered body", tamperedBody));
+  }
+
+  private static Stream<Arguments> unreadableCredentials() {
+    MerchantApiKeyRepository unavailableStore =
+        apiKeyHash -> {
+          throw new IllegalStateException("credential store unavailable");
+        };
+    MerchantApiKeyRepository undecryptableSecret =
+        apiKeyHash -> Optional.of(new MerchantApiKeyCredentials(ACCOUNT_ID, "not-a-ciphertext"));
+    return Stream.of(
+        Arguments.of("CREDENTIAL_STORE", unavailableStore, null),
+        Arguments.of("CREDENTIAL_DECRYPTION", undecryptableSecret, Long.toString(ACCOUNT_ID)));
   }
 
   private static MockHttpServletRequest signedRequest(String body) {

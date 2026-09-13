@@ -2,12 +2,16 @@ package com.outpost.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.outpost.framework.security.hmac.HmacKey;
+import com.outpost.framework.security.hmac.HmacSha256;
+import com.outpost.framework.security.web.SizeBoundedRequestBody;
 import com.outpost.gateway.psp.api.PspWebhookSignatureFilter;
 import com.outpost.integration.psp.simulator.repository.PspConfiguration;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
@@ -65,6 +69,45 @@ class PspWebhookSignatureFilterTest {
     assertThat(response.getStatus()).isEqualTo(401);
     assertThat(new ObjectMapper().readTree(response.getContentAsByteArray()).get("code").asString())
         .isEqualTo("INVALID_SIGNATURE");
+    assertThat(dispatched).isFalse();
+  }
+
+  @Test
+  void dispatchesSignedBodyAtMaxSize() throws Exception {
+    PspConfigurationRepository configurations = mock(PspConfigurationRepository.class);
+    when(configurations.findByCode("PSP"))
+        .thenReturn(
+            Optional.of(new PspConfiguration(1L, "PSP", "http://psp", "key", "secret", 1, 1)));
+    byte[] body = new byte[SizeBoundedRequestBody.MAX_SIZE_BYTES];
+    MockHttpServletRequest request = new MockHttpServletRequest("POST", "/v1/psp/PSP/webhook");
+    request.setContent(body);
+    request.addHeader(
+        "X-Outpost-Signature", HmacSha256.sign(HmacKey.fromUtf8("secret"), body).toBase64());
+    AtomicBoolean dispatched = new AtomicBoolean();
+
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    new PspWebhookSignatureFilter(configurations, new ObjectMapper())
+        .doFilter(request, response, (req, res) -> dispatched.set(true));
+
+    assertThat(response.getStatus()).isEqualTo(200);
+    assertThat(dispatched).isTrue();
+  }
+
+  @Test
+  void rejectsBodyExceedingMaxSizeBeforeReadingItOrResolvingThePsp() throws Exception {
+    PspConfigurationRepository configurations = mock(PspConfigurationRepository.class);
+    MockHttpServletRequest request =
+        new DeclaredLengthRequest(
+            "/v1/psp/PSP/webhook", SizeBoundedRequestBody.MAX_SIZE_BYTES + 1L);
+    request.addHeader("X-Outpost-Signature", "c2lnbmF0dXJl");
+    AtomicBoolean dispatched = new AtomicBoolean();
+
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    new PspWebhookSignatureFilter(configurations, new ObjectMapper())
+        .doFilter(request, response, (req, res) -> dispatched.set(true));
+
+    assertThat(response.getStatus()).isEqualTo(413);
+    verifyNoInteractions(configurations);
     assertThat(dispatched).isFalse();
   }
 
