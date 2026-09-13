@@ -7,6 +7,6 @@ import java.util.List;
 @RegisteredMapper
 public interface TaxRateMapper {
 
-  /** Returns tax-rate database rows. */
-  List<TaxRateRow> findAll();
+  /** Returns every stored tax rate. */
+  List<TaxRate> findTaxRates();
 }

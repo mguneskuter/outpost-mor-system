@@ -31,7 +31,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -228,7 +227,6 @@ public final class OrderService {
     List<OrderItem> items = new ArrayList<>();
     Amount netAmount = new Amount(currency, 0);
     Amount taxAmount = new Amount(currency, 0);
-    LocalDate asOf = LocalDate.now(clock);
     for (CreateOrderCommand.OrderLineCommand input : requestLines) {
       String lineReference = required(input.merchantLineReference(), "merchant_line_reference");
       if (!merchantLineReferences.add(lineReference)) {
@@ -246,7 +244,7 @@ public final class OrderService {
               .orElseThrow(() -> failure(HttpStatus.BAD_REQUEST.value(), "INVALID_PRODUCT_TYPE"));
       TaxRate rate;
       try {
-        rate = taxRates.getRate(country, subdivision, productType, asOf);
+        rate = taxRates.getRate(country, subdivision, productType);
       } catch (RuntimeException exception) {
         throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "TAX_RATE_UNAVAILABLE");
       }

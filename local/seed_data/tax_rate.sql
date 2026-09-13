@@ -1,8 +1,9 @@
 -- Sources: https://www.vatcomply.com/ (European Commission TEDB-derived EU
 -- and UK VAT) and https://www.salestaxzip.com/ (US state general
 -- sales-tax rates), extracted 2026-09-11.
--- Rates are general jurisdiction rates only. Product taxability, local US
--- taxes, and historical effective dates are not represented. Re-running
+-- The first statement holds each jurisdiction's rate for every product type;
+-- the second holds product-type rates, each citing its own source. Local US
+-- taxes and historical effective dates are not represented. Re-running
 -- this file fails with a unique-key violation rather than replacing an
 -- existing rate, so a changed rate is never silently overwritten.
 INSERT INTO tax_rate (
@@ -90,5 +91,35 @@ VALUES
 (1049, 29, 49, 0.0500), -- US-WI Wisconsin
 (1050, 29, 50, 0.0600), -- US-WV West Virginia
 (1051, 29, 51, 0.0400); -- US-WY Wyoming
+
+-- US-CA DIGITAL_GOODS, where DIGITAL_GOODS means goods delivered to the
+-- customer over the Internet. Source: California Department of Tax and Fee
+-- Administration, Publication 109, Internet Sales, "Nontaxable Sales"
+-- (revised July 2026),
+-- https://cdtfa.ca.gov/formspubs/pub109/nontaxable-sales.htm: electronic data
+-- products "are generally not taxable when you transmit the data to your
+-- customer over the Internet". The same page states that if the sale also
+-- provides "a printed copy of the electronically transferred information or a
+-- backup data copy on a physical storage medium", the "entire sale is usually
+-- taxable".
+INSERT INTO tax_rate (
+    tax_rate_id, country_id, country_subdivision_id, product_type_id, rate
+)
+VALUES (
+    1052,
+    (
+        SELECT country_id FROM country
+        WHERE iso_code = 'US'
+    ),
+    (
+        SELECT country_subdivision_id FROM country_subdivision
+        WHERE code = 'US-CA'
+    ),
+    (
+        SELECT product_type_id FROM product_type
+        WHERE code = 'DIGITAL_GOODS'
+    ),
+    0.0000
+);
 
 SELECT setval('tax_rate_seq', (SELECT max(tax_rate_id) FROM tax_rate), TRUE);

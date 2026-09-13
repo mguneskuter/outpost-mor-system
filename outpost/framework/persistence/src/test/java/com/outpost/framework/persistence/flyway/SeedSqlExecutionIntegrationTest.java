@@ -11,6 +11,7 @@ import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.CountrySubdivisions;
 import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
+import com.outpost.payment.common.ProductTypes;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -188,6 +189,14 @@ class SeedSqlExecutionIntegrationTest {
           value.getCurrencyCode(),
           value.getExponent());
     }
+    for (ProductTypes productType : ProductTypes.values()) {
+      ProductTypes.ProductType value = productType.getValue();
+      insert(
+          connection,
+          "INSERT INTO product_type (product_type_id, code) VALUES (?, ?)",
+          value.getProductTypeId(),
+          value.getCode());
+    }
     for (AccountTypes accountType : AccountTypes.values()) {
       AccountTypes.AccountType value = accountType.getValue();
       insert(
@@ -278,7 +287,7 @@ class SeedSqlExecutionIntegrationTest {
         "SELECT s.code FROM tax_rate t "
             + "JOIN country_subdivision s "
             + "ON s.country_subdivision_id = t.country_subdivision_id "
-            + "WHERE t.rate = 0");
+            + "WHERE t.rate = 0 AND t.product_type_id IS NULL");
   }
 
   private static Set<String> strings(Connection connection, String sql) throws SQLException {

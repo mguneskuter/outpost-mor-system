@@ -3,7 +3,8 @@ package com.outpost.gateway.tax.repository.mybatis;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.CountrySubdivisions;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
-import com.outpost.tax.TaxRate;
+import com.outpost.payment.common.ProductTypes;
+import com.outpost.payment.common.ProductTypes.ProductType;
 import com.outpost.tax.repository.TaxRateRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,26 +22,35 @@ public final class MyBatisTaxRateRepository implements TaxRateRepository {
   }
 
   @Override
-  public List<TaxRate> findAll() {
-    List<TaxRateRow> rows = Objects.requireNonNull(mapper.findAll(), "tax-rate rows");
-    List<TaxRate> taxRates = new ArrayList<>(rows.size());
-    for (TaxRateRow row : rows) {
+  public List<com.outpost.tax.TaxRate> findAll() {
+    List<TaxRate> rows = Objects.requireNonNull(mapper.findTaxRates(), "tax-rate rows");
+    List<com.outpost.tax.TaxRate> taxRates = new ArrayList<>(rows.size());
+    for (TaxRate row : rows) {
       taxRates.add(toTaxRate(Objects.requireNonNull(row, "tax-rate row")));
     }
     return taxRates;
   }
 
-  private static TaxRate toTaxRate(TaxRateRow row) {
+  private static com.outpost.tax.TaxRate toTaxRate(TaxRate row) {
     var country =
         Countries.fromIsoCode(row.countryCode())
             .orElseThrow(
                 () -> new IllegalStateException("unknown tax country: " + row.countryCode()));
     CountrySubdivision subdivision = subdivision(row, country);
-    return new TaxRate(country, subdivision, row.rate());
+    return new com.outpost.tax.TaxRate(country, subdivision, productType(row), row.rate());
+  }
+
+  private static @Nullable ProductType productType(TaxRate row) {
+    if (row.productTypeCode() == null) {
+      return null;
+    }
+    return ProductTypes.fromCode(row.productTypeCode())
+        .orElseThrow(
+            () -> new IllegalStateException("unknown tax product type: " + row.productTypeCode()));
   }
 
   private static @Nullable CountrySubdivision subdivision(
-      TaxRateRow row, com.outpost.common.iso.Countries.Country country) {
+      TaxRate row, com.outpost.common.iso.Countries.Country country) {
     if (row.subdivisionCode() == null) {
       return null;
     }

@@ -373,7 +373,8 @@ class OrderServiceTest {
 
   private static TaxRateProvider rate(String value) {
     BigDecimal rate = new BigDecimal(value);
-    return (country, subdivision, productType, asOf) -> new TaxRate(country, subdivision, rate);
+    return (country, subdivision, productType) ->
+        new TaxRate(country, subdivision, productType, rate);
   }
 
   private static CreateOrderCommand withOrderDetails(
