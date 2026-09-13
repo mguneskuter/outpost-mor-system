@@ -2,9 +2,9 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.outpost.payment.repository.mybatis.PspEventQueueMapper">
   <select id="findPaymentAccounts" resultType="com.outpost.payment.repository.mybatis.PaymentAccountsRow">
-    SELECT merchant_order.account_id AS merchantAccountId, order_payment.psp_account_id AS pspAccountId
-    FROM order_payment JOIN merchant_order ON merchant_order.order_id = order_payment.order_id
-    WHERE order_payment.payment_reference = #{paymentReference}
+    SELECT account_id AS merchantAccountId, psp_account_id AS pspAccountId
+    FROM merchant_order
+    WHERE payment_reference = #{paymentReference}
   </select>
   <insert id="insertReceived">
     INSERT INTO psp_event_queue (created_ts, status_id, type_id, reference, original_reference, account_id, account_type_id, psp_account_id, psp_account_type_id, payload)

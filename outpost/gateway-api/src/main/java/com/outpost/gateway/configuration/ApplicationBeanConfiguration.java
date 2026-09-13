@@ -1,11 +1,16 @@
 package com.outpost.gateway.configuration;
 
+import com.outpost.account.configuration.repository.MerchantFeeConfigurationRepository;
+import com.outpost.account.configuration.repository.MerchantPspRepository;
+import com.outpost.account.configuration.repository.mybatis.MerchantFeeConfigurationMapper;
+import com.outpost.account.configuration.repository.mybatis.MerchantPspMapper;
+import com.outpost.account.configuration.repository.mybatis.MyBatisMerchantFeeConfigurationRepository;
+import com.outpost.account.configuration.repository.mybatis.MyBatisMerchantPspRepository;
+import com.outpost.account.repository.AccountRepository;
+import com.outpost.account.repository.mybatis.MyBatisAccountRepository;
 import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.gateway.order.client.LedgerClient;
 import com.outpost.gateway.order.client.ledger.LedgerHttpClient;
-import com.outpost.gateway.order.repository.OrderRepository;
-import com.outpost.gateway.order.repository.mybatis.MyBatisOrderRepository;
-import com.outpost.gateway.order.repository.mybatis.OrderMapper;
 import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.gateway.order.service.OrderService;
 import com.outpost.gateway.paymentmethod.repository.PaymentMethodRepository;
@@ -31,28 +36,30 @@ import com.outpost.integration.psp.simulator.SimulatorPspClient;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.MyBatisPspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationMapper;
+import com.outpost.payment.order.LineTaxCalculator;
+import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.payment.repository.PspEventRepository;
+import com.outpost.payment.repository.mybatis.MyBatisOrderRepository;
 import com.outpost.payment.repository.mybatis.MyBatisPspEventRepository;
 import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import javax.sql.DataSource;
-import org.springframework.beans.factory.annotation.Qualifier;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.context.annotation.Import;
+import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
 
 /** Application bean definitions. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({GatewayLedgerProperties.class, GatewayPspClientProperties.class})
+@Import(OrderService.class)
 public class ApplicationBeanConfiguration {
 
   @Bean
@@ -122,46 +129,30 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  DataSource orderPhaseOwnershipDataSource(
-      @Value("${spring.datasource.url}") String url,
-      @Value("${spring.datasource.username}") String username,
-      @Value("${spring.datasource.password}") String password,
-      @Value("${outpost.gateway.order.phase-ownership.tcp-keepalives-idle:10}")
-          int tcpKeepalivesIdle,
-      @Value("${outpost.gateway.order.phase-ownership.tcp-keepalives-interval:5}")
-          int tcpKeepalivesInterval,
-      @Value("${outpost.gateway.order.phase-ownership.tcp-keepalives-count:3}")
-          int tcpKeepalivesCount) {
-    DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.postgresql.Driver");
-    dataSource.setUrl(
-        withPhaseOwnershipOptions(
-            url, tcpKeepalivesIdle, tcpKeepalivesInterval, tcpKeepalivesCount));
-    dataSource.setUsername(username);
-    dataSource.setPassword(password);
-    return dataSource;
-  }
-
-  private static String withPhaseOwnershipOptions(
-      String url, int tcpKeepalivesIdle, int tcpKeepalivesInterval, int tcpKeepalivesCount) {
-    String options =
-        "-c tcp_keepalives_idle="
-            + tcpKeepalivesIdle
-            + " -c tcp_keepalives_interval="
-            + tcpKeepalivesInterval
-            + " -c tcp_keepalives_count="
-            + tcpKeepalivesCount;
-    String separator = url.contains("?") ? "&" : "?";
-    return url
-        + separator
-        + "tcpKeepAlive=true&ApplicationName=outpost-gateway-order-phase&options="
-        + URLEncoder.encode(options, StandardCharsets.UTF_8);
+  OrderRepository orderRepository(
+      SqlSessionTemplate sqlSessionTemplate, PlatformTransactionManager transactionManager) {
+    return new MyBatisOrderRepository(sqlSessionTemplate, transactionManager);
   }
 
   @Bean
-  OrderRepository orderRepository(
-      OrderMapper mapper, @Qualifier("orderPhaseOwnershipDataSource") DataSource dataSource) {
-    return new MyBatisOrderRepository(mapper, dataSource);
+  AccountRepository accountRepository(SqlSessionTemplate sqlSessionTemplate) {
+    return new MyBatisAccountRepository(sqlSessionTemplate);
+  }
+
+  @Bean
+  MerchantPspRepository merchantPspRepository(MerchantPspMapper mapper) {
+    return new MyBatisMerchantPspRepository(mapper);
+  }
+
+  @Bean
+  MerchantFeeConfigurationRepository merchantFeeConfigurationRepository(
+      MerchantFeeConfigurationMapper mapper) {
+    return new MyBatisMerchantFeeConfigurationRepository(mapper);
+  }
+
+  @Bean
+  LineTaxCalculator lineTaxCalculator() {
+    return new LineTaxCalculator();
   }
 
   @Bean
@@ -177,16 +168,6 @@ public class ApplicationBeanConfiguration {
         properties.connectTimeout(),
         properties.readTimeout(),
         objectMapper);
-  }
-
-  @Bean
-  OrderService orderService(
-      OrderRepository repository,
-      LedgerClient ledgerClient,
-      PspClient pspClient,
-      TaxRateProvider taxRateProvider,
-      Clock clock) {
-    return new OrderService(repository, ledgerClient, pspClient, taxRateProvider, clock);
   }
 
   @Bean

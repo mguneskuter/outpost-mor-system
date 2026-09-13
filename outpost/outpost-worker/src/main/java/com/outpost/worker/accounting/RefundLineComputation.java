@@ -18,7 +18,10 @@ final class RefundLineComputation {
    * remains refundable.
    */
   static LineRefund compute(
-      OrderItem item, RefundedTotal alreadyActive, @Nullable Long requestedAmount) {
+      long orderItemId,
+      OrderItem item,
+      RefundedTotal alreadyActive,
+      @Nullable Long requestedAmount) {
     long remainingNet = item.getNetAmount().quantity() - alreadyActive.net();
     long remainingTax = item.getTaxAmount().quantity() - alreadyActive.tax();
     long requestedNet = requestedAmount != null ? requestedAmount : remainingNet;
@@ -37,7 +40,7 @@ final class RefundLineComputation {
         throw new RefundLineRejectedException(item.getOrderLineReference());
       }
     }
-    return new LineRefund(item.getOrderItemId(), requestedNet, requestedTax);
+    return new LineRefund(orderItemId, requestedNet, requestedTax);
   }
 
   /** The net and tax to refund for one order line. */

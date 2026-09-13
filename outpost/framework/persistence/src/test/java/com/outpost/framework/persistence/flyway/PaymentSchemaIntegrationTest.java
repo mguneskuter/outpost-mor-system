@@ -1,5 +1,6 @@
 package com.outpost.framework.persistence.flyway;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
@@ -49,21 +50,16 @@ class PaymentSchemaIntegrationTest {
           connection,
           "INSERT INTO merchant_order (order_id, order_reference, merchant_reference, "
               + "account_id, account_type_id, shopper_id, currency_id, net_amount, tax_amount, "
-              + "gross_amount, idempotency_key, created_ts) "
+              + "gross_amount, idempotency_key, payment_reference, psp_account_id, "
+              + "shopper_country_id, request_fingerprint, created_ts) "
               + "VALUES (1, 'order-ref', 'merchant-ref', 100, 2, 1, 1, 1000, 210, 1210, "
-              + "'idem-key', now())");
+              + "'idem-key', 'payment-ref', 101, 1, 'fingerprint', now())");
       execute(
           connection,
-          "INSERT INTO order_item (order_item_id, order_id, sequence, product_type_id, "
+          "INSERT INTO order_item (order_item_id, order_id, product_type_id, "
               + "order_line_reference, merchant_line_reference, net_amount, tax_amount, "
-              + "tax_rate) VALUES (1, 1, 1, 1, 'line-ref', 'merchant-line-ref', 1000, 210, "
+              + "tax_rate) VALUES (1, 1, 1, 'line-ref', 'merchant-line-ref', 1000, 210, "
               + "0.2100)");
-      execute(
-          connection,
-          "INSERT INTO order_payment (order_payment_id, order_id, payment_reference, "
-              + "psp_account_id, psp_account_type_id, shopper_country_id, "
-              + "shopper_country_subdivision_id, created_ts) "
-              + "VALUES (1, 1, 'payment-ref', 101, 4, 1, NULL, now())");
       connection.commit();
 
       assertThatThrownBy(
@@ -73,9 +69,11 @@ class PaymentSchemaIntegrationTest {
                       "INSERT INTO merchant_order (order_id, order_reference, "
                           + "merchant_reference, account_id, account_type_id, shopper_id, "
                           + "currency_id, net_amount, tax_amount, gross_amount, "
-                          + "idempotency_key, created_ts) "
+                          + "idempotency_key, payment_reference, psp_account_id, "
+                          + "shopper_country_id, request_fingerprint, created_ts) "
                           + "VALUES (2, 'order-ref-2', 'merchant-ref-2', 101, 4, 1, 1, 1000, "
-                          + "210, 1210, 'idem-key-2', now())"))
+                          + "210, 1210, 'idem-key-2', 'payment-ref-2', 101, 1, "
+                          + "'fingerprint', now())"))
           .isInstanceOf(SQLException.class);
       connection.rollback();
 
@@ -83,10 +81,14 @@ class PaymentSchemaIntegrationTest {
               () ->
                   execute(
                       connection,
-                      "INSERT INTO order_payment (order_payment_id, order_id, "
-                          + "payment_reference, psp_account_id, psp_account_type_id, "
-                          + "shopper_country_id, shopper_country_subdivision_id, created_ts) "
-                          + "VALUES (2, 1, 'payment-ref-2', 100, 2, 1, NULL, now())"))
+                      "INSERT INTO merchant_order (order_id, order_reference, "
+                          + "merchant_reference, account_id, account_type_id, shopper_id, "
+                          + "currency_id, net_amount, tax_amount, gross_amount, "
+                          + "idempotency_key, payment_reference, psp_account_id, "
+                          + "shopper_country_id, request_fingerprint, created_ts) "
+                          + "VALUES (3, 'order-ref-3', 'merchant-ref-3', 100, 2, 1, 1, 1000, "
+                          + "210, 1210, 'idem-key-3', 'payment-ref-3', 100, 1, "
+                          + "'fingerprint', now())"))
           .isInstanceOf(SQLException.class);
       connection.rollback();
     }
@@ -108,33 +110,35 @@ class PaymentSchemaIntegrationTest {
                       "INSERT INTO merchant_order (order_id, order_reference, "
                           + "merchant_reference, account_id, account_type_id, shopper_id, "
                           + "currency_id, net_amount, tax_amount, gross_amount, "
-                          + "idempotency_key, created_ts) "
+                          + "idempotency_key, payment_reference, psp_account_id, "
+                          + "shopper_country_id, request_fingerprint, created_ts) "
                           + "VALUES (1, 'order-ref', 'merchant-ref', 100, 2, 1, 1, 1000, 210, "
-                          + "9999, 'idem-key', now())"))
+                          + "9999, 'idem-key', 'payment-ref', 101, 1, 'fingerprint', now())"))
           .isInstanceOf(SQLException.class);
 
       execute(
           connection,
           "INSERT INTO merchant_order (order_id, order_reference, merchant_reference, "
               + "account_id, account_type_id, shopper_id, currency_id, net_amount, "
-              + "tax_amount, gross_amount, idempotency_key, created_ts) "
+              + "tax_amount, gross_amount, idempotency_key, payment_reference, psp_account_id, "
+              + "shopper_country_id, request_fingerprint, created_ts) "
               + "VALUES (1, 'order-ref', 'merchant-ref', 100, 2, 1, 1, 1000, 210, 1210, "
-              + "'idem-key', now())");
+              + "'idem-key', 'payment-ref', 101, 1, 'fingerprint', now())");
       execute(
           connection,
-          "INSERT INTO order_item (order_item_id, order_id, sequence, product_type_id, "
+          "INSERT INTO order_item (order_item_id, order_id, product_type_id, "
               + "order_line_reference, merchant_line_reference, net_amount, tax_amount, "
-              + "tax_rate) VALUES (1, 1, 1, 1, 'line-ref', 'merchant-line-ref', 1000, 210, "
+              + "tax_rate) VALUES (1, 1, 1, 'line-ref', 'merchant-line-ref', 1000, 210, "
               + "0.2100)");
 
       assertThatThrownBy(
               () ->
                   execute(
                       connection,
-                      "INSERT INTO order_item (order_item_id, order_id, sequence, "
+                      "INSERT INTO order_item (order_item_id, order_id, "
                           + "product_type_id, order_line_reference, merchant_line_reference, "
                           + "net_amount, tax_amount, tax_rate) "
-                          + "VALUES (2, 1, 2, 1, 'other-line-ref', 'merchant-line-ref', 500, "
+                          + "VALUES (2, 1, 1, 'other-line-ref', 'merchant-line-ref', 500, "
                           + "105, 0.2100)"))
           .isInstanceOf(SQLException.class);
 
@@ -142,10 +146,10 @@ class PaymentSchemaIntegrationTest {
               () ->
                   execute(
                       connection,
-                      "INSERT INTO order_item (order_item_id, order_id, sequence, "
+                      "INSERT INTO order_item (order_item_id, order_id, "
                           + "product_type_id, order_line_reference, merchant_line_reference, "
                           + "net_amount, tax_amount, tax_rate) "
-                          + "VALUES (3, 1, 2, 1, 'line-ref', 'other-merchant-line-ref', 500, "
+                          + "VALUES (3, 1, 1, 'line-ref', 'other-merchant-line-ref', 500, "
                           + "105, 0.2100)"))
           .isInstanceOf(SQLException.class);
 
@@ -156,10 +160,44 @@ class PaymentSchemaIntegrationTest {
                       "INSERT INTO merchant_order (order_id, order_reference, "
                           + "merchant_reference, account_id, account_type_id, shopper_id, "
                           + "currency_id, net_amount, tax_amount, gross_amount, "
-                          + "idempotency_key, created_ts) "
+                          + "idempotency_key, payment_reference, psp_account_id, "
+                          + "shopper_country_id, request_fingerprint, created_ts) "
                           + "VALUES (2, 'order-ref-2', 'merchant-ref-2', 100, 2, 1, 1, 1000, "
-                          + "210, 1210, 'idem-key', now())"))
+                          + "210, 1210, 'idem-key', 'payment-ref-2', 101, 1, "
+                          + "'fingerprint', now())"))
           .isInstanceOf(SQLException.class);
+    }
+  }
+
+  @Test
+  void rejectsAnOrderWhoseShopperSubdivisionBelongsToAnotherCountry() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      seedReferenceData(connection);
+      execute(connection, "INSERT INTO country VALUES (2, 'US', 'United States')");
+      execute(
+          connection,
+          "INSERT INTO country_subdivision (country_subdivision_id, country_id, code, name) "
+              + "VALUES (10, 2, 'US-CA', 'California')");
+      execute(
+          connection,
+          "INSERT INTO shopper_detail (shopper_id, email, full_name, country_id) "
+              + "VALUES (1, 'shopper@example.com', 'Shopper', 1)");
+
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO merchant_order (order_id, order_reference, "
+                          + "merchant_reference, account_id, account_type_id, shopper_id, "
+                          + "currency_id, net_amount, tax_amount, gross_amount, "
+                          + "idempotency_key, payment_reference, psp_account_id, "
+                          + "shopper_country_id, shopper_country_subdivision_id, "
+                          + "request_fingerprint, created_ts) "
+                          + "VALUES (1, 'order-ref', 'merchant-ref', 100, 2, 1, 1, 1000, 210, "
+                          + "1210, 'idem-key', 'payment-ref', 101, 1, 10, 'fingerprint', now())"))
+          .isInstanceOfSatisfying(
+              SQLException.class,
+              exception -> assertThat(exception.getSQLState()).isEqualTo("23503"));
     }
   }
 

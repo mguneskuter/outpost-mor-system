@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.payment.repository.mybatis.OrderMapper">
+  <resultMap id="order" type="com.outpost.payment.repository.mybatis.Order">
+    <constructor>
+      <idArg column="order_id" javaType="long"/>
+      <arg column="order_reference" javaType="string"/>
+      <arg column="merchant_reference" javaType="string"/>
+      <arg column="account_id" javaType="_long"/>
+      <arg column="shopper_id" javaType="_long"/>
+      <arg column="shopper_country" javaType="string"/>
+      <arg column="shopper_country_subdivision" javaType="string"/>
+      <arg column="currency" javaType="string"/>
+      <arg column="net_amount" javaType="_long"/>
+      <arg column="tax_amount" javaType="_long"/>
+      <arg column="gross_amount" javaType="_long"/>
+      <arg column="idempotency_key" javaType="string"/>
+      <arg column="request_fingerprint" javaType="string"/>
+      <arg column="payment_reference" javaType="string"/>
+      <arg column="psp_account_id" javaType="_long"/>
+      <arg column="psp_reference" javaType="string"/>
+      <arg column="payment_link" javaType="string"/>
+      <arg column="created_ts" javaType="java.time.Instant"/>
+    </constructor>
+  </resultMap>
+
+  <resultMap id="orderItem" type="com.outpost.payment.repository.mybatis.OrderItem">
+    <constructor>
+      <idArg column="order_item_id" javaType="long"/>
+      <arg column="order_id" javaType="_long"/>
+      <arg column="product_type" javaType="string"/>
+      <arg column="order_line_reference" javaType="string"/>
+      <arg column="merchant_line_reference" javaType="string"/>
+      <arg column="net_amount" javaType="_long"/>
+      <arg column="tax_amount" javaType="_long"/>
+      <arg column="tax_rate" javaType="java.math.BigDecimal"/>
+    </constructor>
+  </resultMap>
+
+  <resultMap id="shopperDetail" type="com.outpost.payment.repository.mybatis.ShopperDetail">
+    <constructor>
+      <idArg column="shopper_id" javaType="long"/>
+      <arg column="email" javaType="string"/>
+      <arg column="full_name" javaType="string"/>
+      <arg column="country" javaType="string"/>
+      <arg column="country_subdivision" javaType="string"/>
+      <arg column="postal_code" javaType="string"/>
+    </constructor>
+  </resultMap>
+
+  <resultMap id="pspRouting" type="com.outpost.payment.order.repository.OrderRepository$PspRouting">
+    <constructor>
+      <arg column="psp_code" javaType="string"/>
+      <arg column="psp_reference" javaType="string"/>
+    </constructor>
+  </resultMap>
+
+  <sql id="orderColumns">
+    o.order_id, o.order_reference, o.merchant_reference, o.account_id, o.shopper_id,
+    shopper_country.iso_code AS shopper_country,
+    shopper_subdivision.code AS shopper_country_subdivision,
+    currency.currency_code AS currency, o.net_amount, o.tax_amount, o.gross_amount,
+    o.idempotency_key, o.request_fingerprint, o.payment_reference, o.psp_account_id,
+    o.psp_reference, o.payment_link, o.created_ts
+  </sql>
+
+  <sql id="orderJoins">
+    JOIN currency ON currency.currency_id = o.currency_id
+    JOIN country shopper_country ON shopper_country.country_id = o.shopper_country_id
+    LEFT JOIN country_subdivision shopper_subdivision
+      ON shopper_subdivision.country_subdivision_id = o.shopper_country_subdivision_id
+  </sql>
+
+  <sql id="orderItemColumns">
+    item.order_item_id, item.order_id, product_type.code AS product_type,
+    item.order_line_reference, item.merchant_line_reference, item.net_amount, item.tax_amount,
+    item.tax_rate
+  </sql>
+
+  <sql id="shopperDetailColumns">
+    shopper.shopper_id, shopper.email, shopper.full_name, country.iso_code AS country,
+    subdivision.code AS country_subdivision, shopper.postal_code
+  </sql>
+
+  <sql id="shopperDetailJoins">
+    JOIN country ON country.country_id = shopper.country_id
+    LEFT JOIN country_subdivision subdivision
+      ON subdivision.country_subdivision_id = shopper.country_subdivision_id
+  </sql>
+
+  <select id="findOrderByIdempotencyKey" resultMap="order">
+    SELECT <include refid="orderColumns"/>
+      FROM merchant_order o
+      <include refid="orderJoins"/>
+     WHERE o.account_id = #{accountId}
+       AND o.idempotency_key = #{idempotencyKey}
+  </select>
+
+  <select id="findOrderByOrderReference" resultMap="order">
+    SELECT <include refid="orderColumns"/>
+      FROM merchant_order o
+      <include refid="orderJoins"/>
+     WHERE o.account_id = #{accountId}
+       AND o.order_reference = #{orderReference}
+  </select>
+
+  <select id="findOrderByPaymentReference" resultMap="order">
+    SELECT <include refid="orderColumns"/>
+      FROM merchant_order o
+      <include refid="orderJoins"/>
+     WHERE o.payment_reference = #{paymentReference}
+  </select>
+
+  <select id="findOrderItems" resultMap="orderItem">
+    SELECT <include refid="orderItemColumns"/>
+      FROM order_item item
+      JOIN product_type ON product_type.product_type_id = item.product_type_id
+     WHERE item.order_id = #{orderId}
+     ORDER BY item.order_item_id
+  </select>
+
+  <select id="findPspRoutingByPaymentReference" resultMap="pspRouting">
+    SELECT psp.code AS psp_code, o.psp_reference
+      FROM merchant_order o
+      JOIN account psp ON psp.account_id = o.psp_account_id
+     WHERE o.payment_reference = #{paymentReference}
+  </select>
+
+  <select id="findShopperDetailByEmail" resultMap="shopperDetail">
+    SELECT <include refid="shopperDetailColumns"/>
+      FROM shopper_detail shopper
+      <include refid="shopperDetailJoins"/>
+     WHERE shopper.email = #{email}
+  </select>
+
+  <select id="insertShopperDetail" resultMap="shopperDetail">
+    WITH shopper AS (
+      INSERT INTO shopper_detail (email, full_name, country_id, country_subdivision_id, postal_code)
+      VALUES (
+        #{email}, #{fullName},
+        (SELECT country_id FROM country WHERE iso_code = #{country}),
+        (SELECT subdivision.country_subdivision_id
+           FROM country_subdivision subdivision
+           JOIN country ON country.country_id = subdivision.country_id
+          WHERE country.iso_code = #{country}
+            AND subdivision.code = #{countrySubdivision,jdbcType=VARCHAR}),
+        #{postalCode,jdbcType=VARCHAR}
+      )
+      ON CONFLICT (email) DO NOTHING
+      RETURNING *
+    )
+    SELECT <include refid="shopperDetailColumns"/>
+      FROM shopper
+      <include refid="shopperDetailJoins"/>
+  </select>
+
+  <select id="insertOrder" resultMap="order">
+    WITH o AS (
+      INSERT INTO merchant_order (
+        order_reference, merchant_reference, account_id, account_type_id, shopper_id,
+        shopper_country_id, shopper_country_subdivision_id, currency_id, net_amount, tax_amount,
+        gross_amount, idempotency_key, request_fingerprint, payment_reference, psp_account_id,
+        created_ts
+      )
+      VALUES (
+        #{orderReference}, #{merchantReference}, #{accountId},
+        (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'),
+        #{shopperId},
+        (SELECT country_id FROM country WHERE iso_code = #{shopperCountry}),
+        (SELECT subdivision.country_subdivision_id
+           FROM country_subdivision subdivision
+           JOIN country ON country.country_id = subdivision.country_id
+          WHERE country.iso_code = #{shopperCountry}
+            AND subdivision.code = #{shopperCountrySubdivision,jdbcType=VARCHAR}),
+        (SELECT currency_id FROM currency WHERE currency_code = #{currency}),
+        #{netAmount}, #{taxAmount}, #{grossAmount}, #{idempotencyKey}, #{requestFingerprint},
+        #{paymentReference}, #{pspAccountId}, #{createdAt}
+      )
+      ON CONFLICT (account_id, idempotency_key) DO NOTHING
+      RETURNING *
+    )
+    SELECT <include refid="orderColumns"/>
+      FROM o
+      <include refid="orderJoins"/>
+  </select>
+
+  <select id="insertOrderItem" resultMap="orderItem">
+    WITH item AS (
+      INSERT INTO order_item (
+        order_id, product_type_id, order_line_reference, merchant_line_reference,
+        net_amount, tax_amount, tax_rate
+      )
+      VALUES (
+        #{orderId}, (SELECT product_type_id FROM product_type WHERE code = #{productType}),
+        #{orderLineReference}, #{merchantLineReference}, #{netAmount}, #{taxAmount}, #{taxRate}
+      )
+      RETURNING *
+    )
+    SELECT <include refid="orderItemColumns"/>
+      FROM item
+      JOIN product_type ON product_type.product_type_id = item.product_type_id
+  </select>
+
+  <update id="updateOrderPspReferenceAndPaymentLink">
+    UPDATE merchant_order
+       SET psp_reference = #{pspReference},
+           payment_link = #{paymentLink}
+     WHERE payment_reference = #{paymentReference}
+       AND psp_reference IS NULL
+  </update>
+</mapper>

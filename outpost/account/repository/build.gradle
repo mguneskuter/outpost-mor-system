@@ -13,4 +13,15 @@ dependencies {
     implementation project(':platform-sanity:static-data-repository')
     implementation project(':framework:persistence')
     implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
+    testImplementation testFixtures(project(':framework:persistence'))
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.flywaydb:flyway-core'
+    testImplementation 'org.flywaydb:flyway-database-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
 }

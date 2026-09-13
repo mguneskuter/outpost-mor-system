@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+    PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+    "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.account.repository.mybatis.AccountMapper">
+  <resultMap id="account" type="com.outpost.account.repository.mybatis.Account">
+    <constructor>
+      <idArg column="account_id" javaType="_long"/>
+      <arg column="account_type" javaType="string"/>
+      <arg column="parent_account_id" javaType="long"/>
+      <arg column="code" javaType="string"/>
+      <arg column="name" javaType="string"/>
+      <arg column="is_active" javaType="_boolean"/>
+      <arg column="created_ts" javaType="java.time.Instant"/>
+    </constructor>
+  </resultMap>
+
+  <sql id="accountSelect">
+    SELECT account.account_id, account_type.code AS account_type, account.parent_account_id,
+           account.code, account.name, account.is_active, account.created_ts
+      FROM account
+      JOIN account_type ON account_type.account_type_id = account.account_type_id
+  </sql>
+
+  <select id="findAccountById" resultMap="account">
+    <include refid="accountSelect"/>
+     WHERE account.account_id = #{accountId}
+  </select>
+
+  <select id="findAccountByCode" resultMap="account">
+    <include refid="accountSelect"/>
+     WHERE account.code = #{code}
+  </select>
+</mapper>

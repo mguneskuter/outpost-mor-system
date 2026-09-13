@@ -21,8 +21,8 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.env.MockEnvironment;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -102,12 +102,12 @@ class OutpostWorkerStartupFailureIntegrationTest {
   }
 
   private static JdbcTemplate jdbcTemplate() {
-    DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.postgresql.Driver");
-    dataSource.setUrl(DATABASE.getJdbcUrl());
-    dataSource.setUsername(DATABASE.getUsername());
-    dataSource.setPassword(DATABASE.getPassword());
-    return new JdbcTemplate(dataSource);
+    return new JdbcTemplate(
+        DataSourceBuilder.create()
+            .url(DATABASE.getJdbcUrl())
+            .username(DATABASE.getUsername())
+            .password(DATABASE.getPassword())
+            .build());
   }
 
   @Test

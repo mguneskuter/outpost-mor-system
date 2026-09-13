@@ -107,24 +107,9 @@ class GatewayApiIntegrationTest {
         Objects.requireNonNull(
             seed.queryForObject(
                 "SELECT currency_id FROM currency WHERE currency_code = 'EUR'", Long.class));
-    long order =
-        Objects.requireNonNull(
-            seed.queryForObject(
-                "INSERT INTO merchant_order (order_reference, merchant_reference, account_id, "
-                    + "account_type_id, shopper_id, currency_id, net_amount, tax_amount, "
-                    + "gross_amount, "
-                    + "idempotency_key, "
-                    + "created_ts) VALUES ('webhook-order', 'webhook-order', ?, "
-                    + "(SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), ?, ?, "
-                    + "100, 0, "
-                    + "100, 'webhook-key', now()) "
-                    + "RETURNING order_id",
-                Long.class,
-                merchantAccount,
-                shopper,
-                currency));
-    seedPayment(seed, order, PAYMENT_REFERENCE, pspAccount);
-    seedPayment(seed, order, FOREIGN_PAYMENT_REFERENCE, foreignPspAccount);
+    seedOrder(seed, merchantAccount, shopper, currency, PAYMENT_REFERENCE, pspAccount);
+    seedOrder(
+        seed, merchantAccount, shopper, currency, FOREIGN_PAYMENT_REFERENCE, foreignPspAccount);
   }
 
   @DynamicPropertySource
@@ -253,21 +238,32 @@ class GatewayApiIntegrationTest {
             code));
   }
 
-  private static void seedPayment(
-      JdbcTemplate jdbcTemplate, long order, String paymentReference, long pspAccount) {
+  private static void seedOrder(
+      JdbcTemplate jdbcTemplate,
+      long merchantAccount,
+      long shopper,
+      long currency,
+      String paymentReference,
+      long pspAccount) {
     jdbcTemplate.update(
-        "INSERT INTO order_payment (order_id, payment_reference, psp_account_id, "
-            + "psp_account_type_id, shopper_country_id, shopper_country_subdivision_id, "
-            + "created_ts) "
-            + "SELECT ?, ?, ?, (SELECT account_type_id FROM account_type WHERE code = 'PSP'), "
-            + "shopper.country_id, shopper.country_subdivision_id, now() "
-            + "FROM merchant_order orders "
-            + "JOIN shopper_detail shopper ON shopper.shopper_id = orders.shopper_id "
-            + "WHERE orders.order_id = ?",
-        order,
+        "INSERT INTO merchant_order (order_reference, merchant_reference, account_id, "
+            + "account_type_id, shopper_id, currency_id, net_amount, tax_amount, gross_amount, "
+            + "idempotency_key, request_fingerprint, payment_reference, psp_account_id, "
+            + "shopper_country_id, created_ts) "
+            + "VALUES (?, ?, ?, "
+            + "(SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), ?, ?, "
+            + "100, 0, 100, ?, ?, ?, ?, "
+            + "(SELECT country_id FROM shopper_detail WHERE shopper_id = ?), now())",
+        paymentReference + "-order",
+        paymentReference + "-order",
+        merchantAccount,
+        shopper,
+        currency,
+        paymentReference + "-key",
+        paymentReference + "-fingerprint",
         paymentReference,
         pspAccount,
-        order);
+        shopper);
   }
 
   private int queueCount() {

@@ -4,11 +4,12 @@ import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import org.jspecify.annotations.Nullable;
 
 /** The shopper a payment order was created for. */
 public final class ShopperDetail {
-  private final long shopperId;
+  @Nullable private final Long shopperId;
   private final String email;
   private final String fullName;
   private final Country country;
@@ -17,16 +18,16 @@ public final class ShopperDetail {
 
   /**
    * Creates a shopper detail. A null {@code countrySubdivision} means the country has no
-   * subdivision-level tax jurisdiction.
+   * subdivision-level tax jurisdiction. {@code shopperId} is absent until the shopper is stored.
    */
   public ShopperDetail(
-      long shopperId,
+      @Nullable Long shopperId,
       String email,
       String fullName,
       Country country,
       @Nullable CountrySubdivision countrySubdivision,
       @Nullable String postalCode) {
-    if (shopperId <= 0) {
+    if (shopperId != null && shopperId <= 0) {
       throw new IllegalArgumentException("shopperId must be positive: " + shopperId);
     }
     this.shopperId = shopperId;
@@ -49,9 +50,9 @@ public final class ShopperDetail {
     this.postalCode = postalCode;
   }
 
-  /** Returns the shopper identity. */
-  public long getShopperId() {
-    return shopperId;
+  /** Returns the shopper identity; empty until the shopper is stored. */
+  public OptionalLong getShopperId() {
+    return shopperId == null ? OptionalLong.empty() : OptionalLong.of(shopperId);
   }
 
   /** Returns the shopper's email, the shopper's natural key. */
@@ -87,7 +88,7 @@ public final class ShopperDetail {
     if (!(other instanceof ShopperDetail that)) {
       return false;
     }
-    return shopperId == that.shopperId
+    return Objects.equals(shopperId, that.shopperId)
         && Objects.equals(email, that.email)
         && Objects.equals(fullName, that.fullName)
         && Objects.equals(country, that.country)
