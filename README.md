@@ -66,8 +66,9 @@ A merchant signs every request with `X-Outpost-Api-Key` and `X-Outpost-Signature
 Base64 HMAC-SHA-256 of the exact raw body under its HMAC secret. The operator sends its
 `X-Outpost-Api-Key` alone. A PSP signs its webhook body with its own secret. Every refused or
 failed request answers `{"code": "<CODE>"}`; a `500` adds `correlation_id`, the identifier of
-the one log line that records the failure. A body over 1 MiB is refused with
-`413 BODY_TOO_LARGE`, and a bad key or signature with `401 UNAUTHENTICATED`, on every route.
+the one log line that records the failure. A bad key or signature answers `401 UNAUTHENTICATED`
+on every merchant and operator route, and a body over 1 MiB `413 BODY_TOO_LARGE`; the PSP webhook
+answers its `413` with no body.
 
 | Route                             | Caller   | Success | Errors                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
