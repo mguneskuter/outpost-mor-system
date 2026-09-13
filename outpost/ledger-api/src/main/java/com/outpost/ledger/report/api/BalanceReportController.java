@@ -1,14 +1,14 @@
 package com.outpost.ledger.report.api;
 
+import com.outpost.accounting.api.BalanceReportApi;
+import com.outpost.accounting.api.BalanceReportResponse;
+import com.outpost.ledger.report.service.BalanceReport;
 import com.outpost.ledger.report.service.BalanceReportService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Exposes Ledger's tax-authority and merchant balance reports. */
 @RestController
-@RequestMapping("/v1/report/balance")
-public final class BalanceReportController {
+public final class BalanceReportController implements BalanceReportApi {
   private final BalanceReportService service;
 
   /** Creates a controller backed by the balance report service. */
@@ -16,15 +16,30 @@ public final class BalanceReportController {
     this.service = service;
   }
 
-  /** Returns tax-authority balances. */
-  @GetMapping("/tax")
+  @Override
   public BalanceReportResponse tax() {
-    return BalanceReportResponse.from(service.tax());
+    return toResponse(service.tax());
   }
 
-  /** Returns merchant balances. */
-  @GetMapping("/merchant")
+  @Override
   public BalanceReportResponse merchant() {
-    return BalanceReportResponse.from(service.merchant());
+    return toResponse(service.merchant());
+  }
+
+  private static BalanceReportResponse toResponse(BalanceReport report) {
+    return new BalanceReportResponse(
+        report.accounts().stream()
+            .map(
+                account ->
+                    new BalanceReportResponse.Account(
+                        account.accountCode(),
+                        account.name(),
+                        account.balances().stream()
+                            .map(
+                                balance ->
+                                    new BalanceReportResponse.Balance(
+                                        balance.currency(), balance.amount()))
+                            .toList()))
+            .toList());
   }
 }

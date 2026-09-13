@@ -26,6 +26,8 @@ dependencies {
     implementation project(':psp-integration:domain')
     implementation project(':psp-integration:client')
     implementation project(':accounting:queue-api')
+    implementation project(':accounting:api')
+    implementation project(':accounting:api-client')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'com.tngtech.archunit:archunit:1.4.1'

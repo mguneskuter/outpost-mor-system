@@ -1,4 +1,4 @@
-package com.outpost.ledger.payment.api;
+package com.outpost.accounting.api;
 
 /** Safe application-authored error response. */
 public record PaymentError(String code) {}

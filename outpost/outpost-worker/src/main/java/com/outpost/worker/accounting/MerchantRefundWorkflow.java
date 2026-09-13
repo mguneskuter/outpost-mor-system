@@ -5,6 +5,9 @@ import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.queue.AccountingRequest;
 import com.outpost.accounting.queue.AccountingRequestLine;
 import com.outpost.accounting.queue.AccountingRequestResults;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.integration.psp.service.CancelRequest;
 import com.outpost.integration.psp.service.CancelResult;
 import com.outpost.integration.psp.service.PspClient;
@@ -31,12 +34,15 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.LoggerFactory;
 
 /**
  * Carries out a merchant's queued refund request: cancels an authorised, uncaptured payment at the
  * PSP, or reserves, refunds, and books a captured one.
  */
 public final class MerchantRefundWorkflow {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(MerchantRefundWorkflow.class));
   private final OrderRepository orders;
   private final RefundItemRepository refundItems;
   private final LedgerTransactionRepository transactions;
@@ -99,6 +105,10 @@ public final class MerchantRefundWorkflow {
       ledger.reserveRefund(
           paymentReference, request.getReference(), totalNet, totalTax, currencyCode);
     } catch (LedgerPaymentClientException exception) {
+      LOGGER.warn(
+          "Ledger refund reservation failed",
+          exception,
+          fields(paymentReference, request.getReference()));
       return AccountingRequestResults.FAILED;
     }
 
@@ -151,6 +161,10 @@ public final class MerchantRefundWorkflow {
     try {
       ledger.appendPaymentEvent(paymentReference, request.getReference(), transactionEventType);
     } catch (LedgerPaymentClientException exception) {
+      LOGGER.warn(
+          "Ledger refund event failed",
+          exception,
+          fields(paymentReference, request.getReference()));
       return AccountingRequestResults.FAILED;
     }
     return onAppended;
@@ -213,5 +227,28 @@ public final class MerchantRefundWorkflow {
 
   private static IllegalStateException noRefundTransaction(String reference) {
     return new IllegalStateException("Reserved refund transaction not found: " + reference);
+  }
+
+  private static StructuredLogField[] fields(String paymentReference, String refundReference) {
+    return new StructuredLogField[] {
+      new StructuredLogField(LogField.PAYMENT_REFERENCE, paymentReference),
+      new StructuredLogField(LogField.REFUND_REFERENCE, refundReference)
+    };
+  }
+
+  private enum LogField implements LogFields {
+    PAYMENT_REFERENCE("payment_reference"),
+    REFUND_REFERENCE("refund_reference");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
   }
 }

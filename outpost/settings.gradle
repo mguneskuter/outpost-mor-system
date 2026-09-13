@@ -25,6 +25,8 @@ include(
     ':accounting:domain',
     ':accounting:persistence',
     ':accounting:queue-api',
+    ':accounting:api',
+    ':accounting:api-client',
     ':tax',
     ':fx',
     ':payment:domain',

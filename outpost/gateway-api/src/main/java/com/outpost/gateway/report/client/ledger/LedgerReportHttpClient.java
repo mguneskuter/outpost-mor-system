@@ -1,94 +1,39 @@
 package com.outpost.gateway.report.client.ledger;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.outpost.framework.security.hmac.HmacKey;
-import com.outpost.framework.security.hmac.HmacSha256;
+import com.outpost.accounting.api.BalanceReportApi;
+import com.outpost.accounting.api.BalanceReportResponse;
 import com.outpost.gateway.report.client.BalanceReport;
 import com.outpost.gateway.report.client.LedgerReportClient;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.time.Duration;
-import java.util.List;
-import java.util.Objects;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
+import java.util.function.Supplier;
 
-/** HTTP adapter for Ledger's balance report routes, signed with the Gateway key. */
+/** Reads Ledger's balance reports through Ledger's HTTP contract. */
 public final class LedgerReportHttpClient implements LedgerReportClient {
-  private static final byte[] EMPTY_BODY = new byte[0];
-  private final RestClient client;
-  private final HmacKey signingKey;
-  private final ObjectMapper objectMapper;
+  private final BalanceReportApi balanceReportApi;
 
-  /** Creates a Ledger report client with bounded connection and response timeouts. */
-  public LedgerReportHttpClient(
-      String baseUrl,
-      String hmacSecret,
-      Duration connectTimeout,
-      Duration readTimeout,
-      ObjectMapper objectMapper) {
-    if (baseUrl == null || baseUrl.isBlank()) {
-      throw new IllegalArgumentException("Ledger base URL must not be blank");
-    }
-    if (hmacSecret == null || hmacSecret.isBlank()) {
-      throw new IllegalArgumentException("Ledger HMAC secret must not be blank");
-    }
-    if (connectTimeout.isZero() || connectTimeout.isNegative()) {
-      throw new IllegalArgumentException("Ledger connect timeout must be positive");
-    }
-    if (readTimeout.isZero() || readTimeout.isNegative()) {
-      throw new IllegalArgumentException("Ledger read timeout must be positive");
-    }
-    this.client =
-        RestClient.builder()
-            .requestFactory(newRequestFactory(connectTimeout, readTimeout))
-            .baseUrl(baseUrl)
-            .build();
-    this.signingKey = HmacKey.fromUtf8(hmacSecret);
-    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+  /** Creates a Ledger report client over the balance report contract proxy. */
+  public LedgerReportHttpClient(BalanceReportApi balanceReportApi) {
+    this.balanceReportApi = balanceReportApi;
   }
 
   @Override
   public BalanceReport taxBalances() {
-    return fetch("/v1/report/balance/tax");
+    return fetch(balanceReportApi::tax);
   }
 
   @Override
   public BalanceReport merchantBalances() {
-    return fetch("/v1/report/balance/merchant");
+    return fetch(balanceReportApi::merchant);
   }
 
-  private BalanceReport fetch(String path) {
-    byte[] response;
+  private static BalanceReport fetch(Supplier<BalanceReportResponse> report) {
     try {
-      response =
-          client
-              .get()
-              .uri(URI.create(path))
-              .header("X-Outpost-Signature", HmacSha256.sign(signingKey, EMPTY_BODY).toBase64())
-              .retrieve()
-              .body(byte[].class);
-    } catch (RestClientResponseException exception) {
-      throw new LedgerReportClientException("Ledger balance report request failed", exception);
+      return toBalanceReport(report.get());
     } catch (RuntimeException exception) {
       throw new LedgerReportClientException("Ledger balance report request failed", exception);
     }
-    return toBalanceReport(deserialize(response));
   }
 
-  private ReportResponse deserialize(byte[] body) {
-    try {
-      return objectMapper.readValue(body, ReportResponse.class);
-    } catch (JacksonException exception) {
-      throw new LedgerReportClientException(
-          "Ledger balance report response could not be parsed", exception);
-    }
-  }
-
-  private static BalanceReport toBalanceReport(ReportResponse response) {
+  private static BalanceReport toBalanceReport(BalanceReportResponse response) {
     return new BalanceReport(
         response.accounts().stream()
             .map(
@@ -102,23 +47,5 @@ public final class LedgerReportHttpClient implements LedgerReportClient {
                                     new BalanceReport.Balance(balance.currency(), balance.amount()))
                             .toList()))
             .toList());
-  }
-
-  private static JdkClientHttpRequestFactory newRequestFactory(
-      Duration connectTimeout, Duration readTimeout) {
-    HttpClient http = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
-    JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
-    factory.setReadTimeout(readTimeout);
-    return factory;
-  }
-
-  private record ReportResponse(@JsonProperty("accounts") List<Account> accounts) {
-    private record Account(
-        @JsonProperty("account_code") String accountCode,
-        @JsonProperty("name") String name,
-        @JsonProperty("balances") List<Balance> balances) {}
-
-    private record Balance(
-        @JsonProperty("currency") String currency, @JsonProperty("amount") long amount) {}
   }
 }

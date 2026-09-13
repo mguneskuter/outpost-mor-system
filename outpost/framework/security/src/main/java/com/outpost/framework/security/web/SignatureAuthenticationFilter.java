@@ -38,7 +38,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * SizeBoundedRequestBody} is answered {@code 413} and goes no further.
  */
 public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
-  private static final String SIGNATURE_HEADER = "X-Outpost-Signature";
+  static final String SIGNATURE_HEADER = "X-Outpost-Signature";
 
   private final SecurityContextHolderStrategy contextHolder =
       SecurityContextHolder.getContextHolderStrategy();

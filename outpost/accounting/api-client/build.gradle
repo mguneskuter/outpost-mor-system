@@ -1,0 +1,16 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+group = 'com.outpost.accounting'
+
+base {
+    archivesName = 'accounting-api-client'
+}
+
+dependencies {
+    implementation project(':accounting:api')
+    implementation project(':framework:security')
+    implementation 'org.springframework:spring-context'
+    implementation 'org.springframework:spring-web'
+}

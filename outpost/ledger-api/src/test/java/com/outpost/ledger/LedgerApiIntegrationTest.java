@@ -1,8 +1,15 @@
 package com.outpost.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.api.BalanceReportApi;
+import com.outpost.accounting.api.PaymentApi;
+import com.outpost.accounting.api.PaymentEventRequest;
+import com.outpost.accounting.api.client.LedgerClientConfiguration;
+import com.outpost.accounting.api.client.LedgerHttpServiceGroupConfigurer;
 import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.framework.security.hmac.HmacKey;
@@ -14,6 +21,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.LocalDate;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,9 +30,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalManagementPort;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.web.client.HttpClientErrorException;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 @SpringBootTest(
@@ -35,6 +45,7 @@ class LedgerApiIntegrationTest {
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8("test-gateway-secret");
   private static final Currencies.Currency EUR = Currencies.EUR.getValue();
   private static final Currencies.Currency USD = Currencies.USD.getValue();
+  private static final HmacKey WORKER_KEY = HmacKey.fromUtf8("test-worker-secret");
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_ledger_api", "outpost_ledger_api", "outpost_ledger_api");
@@ -144,6 +155,50 @@ class LedgerApiIntegrationTest {
 
     assertThat(initial.statusCode()).isEqualTo(200);
     assertThat(repeated.statusCode()).isEqualTo(200);
+  }
+
+  @Test
+  void acceptsGatewaySignedReportReadThroughTheLedgerClient() {
+    try (AnnotationConfigApplicationContext gateway = ledgerClient(GATEWAY_KEY)) {
+      BalanceReportApi reports = gateway.getBean(BalanceReportApi.class);
+
+      assertThatCode(reports::tax).doesNotThrowAnyException();
+    }
+  }
+
+  @Test
+  void acceptsWorkerSignedPaymentEventThroughTheLedgerClient() {
+    try (AnnotationConfigApplicationContext worker = ledgerClient(WORKER_KEY)) {
+      PaymentApi payments = worker.getBean(PaymentApi.class);
+      PaymentEventRequest unknownPayment =
+          new PaymentEventRequest(
+              "unknown-payment", null, TransactionEventTypes.AUTHORISED.getValue().getCode());
+
+      assertThatThrownBy(() -> payments.appendPaymentEvent(unknownPayment))
+          .isInstanceOf(HttpClientErrorException.NotFound.class);
+    }
+  }
+
+  @Test
+  void rejectsLedgerClientSignedWithAnUnknownKey() {
+    try (AnnotationConfigApplicationContext stranger =
+        ledgerClient(HmacKey.fromUtf8("unknown-caller-secret"))) {
+      BalanceReportApi reports = stranger.getBean(BalanceReportApi.class);
+
+      assertThatThrownBy(reports::tax).isInstanceOf(HttpClientErrorException.Unauthorized.class);
+    }
+  }
+
+  private static AnnotationConfigApplicationContext ledgerClient(HmacKey signingKey) {
+    AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+    context.register(LedgerClientConfiguration.class);
+    context.registerBean(
+        LedgerHttpServiceGroupConfigurer.class,
+        () ->
+            new LedgerHttpServiceGroupConfigurer(
+                "http://localhost:8081", signingKey, Duration.ofSeconds(1), Duration.ofSeconds(5)));
+    context.refresh();
+    return context;
   }
 
   private HttpResponse<String> get(String path) {
