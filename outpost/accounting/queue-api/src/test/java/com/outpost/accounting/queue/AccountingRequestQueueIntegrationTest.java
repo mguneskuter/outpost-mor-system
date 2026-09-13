@@ -183,6 +183,16 @@ class AccountingRequestQueueIntegrationTest {
     assertThatThrownBy(
             () ->
                 jdbcTemplate.update(
+                    "INSERT INTO accounting_request_queue "
+                        + "(queue_id, status_id, type_id, reference, original_reference, "
+                        + "account_id, account_type_id, created_ts) "
+                        + "VALUES (9007, 1, 1, 'schema-reference-7', 'payment-1', 101, 4, ?)",
+                    timestamp(START)))
+        .isInstanceOf(DataAccessException.class);
+
+    assertThatThrownBy(
+            () ->
+                jdbcTemplate.update(
                     "UPDATE accounting_request_queue SET status_id = 3 WHERE queue_id = 9000"))
         .isInstanceOf(DataAccessException.class);
     assertThatThrownBy(
@@ -262,6 +272,35 @@ class AccountingRequestQueueIntegrationTest {
   }
 
   @Test
+  void claimAndCompleteResolveStatusByCodeRegardlessOfSeededIdentifiers() {
+    rotateStatusIdentifiers();
+    insertPayment(2010L, "payment-1");
+    AccountingRequest submitted =
+        queue.submit(command("request-1", "payment-1", "key-1", List.of()));
+
+    queue.claimNext();
+
+    assertThat(statusCodeOf(submitted.getQueueId())).isEqualTo("IN_PROGRESS");
+
+    queue.complete(submitted.getQueueId(), AccountingRequestResults.SUCCESS);
+
+    assertThat(statusCodeOf(submitted.getQueueId())).isEqualTo("DONE");
+  }
+
+  @Test
+  void missingPaymentIsCompletedWithStatusAndResultResolvedByCodeRegardlessOfSeededIdentifiers() {
+    rotateStatusIdentifiers();
+    rotateResultIdentifiers();
+    AccountingRequest submitted =
+        queue.submit(command("request-1", "unknown-payment", "key-1", List.of()));
+
+    assertThat(queue.claimNext()).isEmpty();
+
+    assertThat(statusCodeOf(submitted.getQueueId())).isEqualTo("DONE");
+    assertThat(resultCodeOf(submitted.getQueueId())).isEqualTo("FAILED");
+  }
+
+  @Test
   void concurrentClaimsGiveOnePaymentToOnlyOneCaller() throws Exception {
     insertPayment(2003L, "payment-1");
     queue.submit(command("request-1", "payment-1", "key-1", List.of()));
@@ -323,16 +362,16 @@ class AccountingRequestQueueIntegrationTest {
     }
     for (AccountingRequestStatuses status : AccountingRequestStatuses.values()) {
       jdbcTemplate.update(
-          "INSERT INTO accounting_request_status "
-              + "(accounting_request_status_id, accounting_request_status_code) "
+          "INSERT INTO accounting_request_status_type "
+              + "(accounting_request_status_type_id, accounting_request_status_type_code) "
               + "VALUES (?, ?)",
           status.getValue().accountingRequestStatusId(),
           status.getValue().code());
     }
     for (AccountingRequestResults result : AccountingRequestResults.values()) {
       jdbcTemplate.update(
-          "INSERT INTO accounting_request_result "
-              + "(accounting_request_result_id, accounting_request_result_code) "
+          "INSERT INTO accounting_request_result_type "
+              + "(accounting_request_result_type_id, accounting_request_result_type_code) "
               + "VALUES (?, ?)",
           result.getValue().accountingRequestResultId(),
           result.getValue().code());
@@ -420,6 +459,44 @@ class AccountingRequestQueueIntegrationTest {
     return Objects.requireNonNull(
         jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM accounting_request_queue", Integer.class));
+  }
+
+  private void rotateStatusIdentifiers() {
+    jdbcTemplate.update("DELETE FROM accounting_request_status_type");
+    jdbcTemplate.update(
+        "INSERT INTO accounting_request_status_type "
+            + "(accounting_request_status_type_id, accounting_request_status_type_code) "
+            + "VALUES (2, 'RECEIVED'), (3, 'IN_PROGRESS'), (1, 'DONE')");
+  }
+
+  private void rotateResultIdentifiers() {
+    jdbcTemplate.update("DELETE FROM accounting_request_result_type");
+    jdbcTemplate.update(
+        "INSERT INTO accounting_request_result_type "
+            + "(accounting_request_result_type_id, accounting_request_result_type_code) "
+            + "VALUES (2, 'SUCCESS'), (1, 'FAILED')");
+  }
+
+  private String statusCodeOf(long queueId) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT s.accounting_request_status_type_code FROM accounting_request_queue q "
+                + "JOIN accounting_request_status_type s "
+                + "ON s.accounting_request_status_type_id = q.status_id "
+                + "WHERE q.queue_id = ?",
+            String.class,
+            queueId));
+  }
+
+  private String resultCodeOf(long queueId) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT r.accounting_request_result_type_code FROM accounting_request_queue q "
+                + "JOIN accounting_request_result_type r "
+                + "ON r.accounting_request_result_type_id = q.result_id "
+                + "WHERE q.queue_id = ?",
+            String.class,
+            queueId));
   }
 
   private static final class MutableClock extends Clock {

@@ -67,15 +67,17 @@ class OutpostWorkerStartupFailureIntegrationTest {
     }
     for (AccountingRequestStatuses status : AccountingRequestStatuses.values()) {
       jdbcTemplate.update(
-          "INSERT INTO accounting_request_status "
-              + "(accounting_request_status_id, accounting_request_status_code) VALUES (?, ?)",
+          "INSERT INTO accounting_request_status_type "
+              + "(accounting_request_status_type_id, accounting_request_status_type_code) "
+              + "VALUES (?, ?)",
           status.getValue().accountingRequestStatusId(),
           status.getValue().code());
     }
     for (AccountingRequestResults result : AccountingRequestResults.values()) {
       jdbcTemplate.update(
-          "INSERT INTO accounting_request_result "
-              + "(accounting_request_result_id, accounting_request_result_code) VALUES (?, ?)",
+          "INSERT INTO accounting_request_result_type "
+              + "(accounting_request_result_type_id, accounting_request_result_type_code) "
+              + "VALUES (?, ?)",
           result.getValue().accountingRequestResultId(),
           result.getValue().code());
     }

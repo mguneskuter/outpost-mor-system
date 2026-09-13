@@ -47,9 +47,9 @@
       psp_event_queue_id, idempotency_key, merchant_reference, success,
       amount, currency_id, psp_reference
     ) VALUES (
-      (SELECT accounting_request_status_id
-       FROM accounting_request_status
-       WHERE accounting_request_status_code = 'RECEIVED'),
+      (SELECT accounting_request_status_type_id
+       FROM accounting_request_status_type
+       WHERE accounting_request_status_type_code = 'RECEIVED'),
       #{typeId}, #{reference}, #{originalReference}, #{accountId},
       (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), #{createdTs},
       #{pspEventQueueId}, #{idempotencyKey}, #{merchantReference}, #{success},
@@ -112,7 +112,9 @@
 
   <update id="markInProgress">
     UPDATE accounting_request_queue
-    SET status_id = 2
+    SET status_id = (SELECT accounting_request_status_type_id
+                      FROM accounting_request_status_type
+                      WHERE accounting_request_status_type_code = 'IN_PROGRESS')
     WHERE queue_id = #{queueId} AND NOT done
   </update>
 
@@ -128,14 +130,27 @@
 
   <update id="markMissingPaymentFailed">
     UPDATE accounting_request_queue
-    SET done = TRUE, done_ts = #{doneTs}, status_id = 3, result_id = 2
+    SET done = TRUE, done_ts = #{doneTs},
+        status_id = (SELECT accounting_request_status_type_id
+                     FROM accounting_request_status_type
+                     WHERE accounting_request_status_type_code = 'DONE'),
+        result_id = (SELECT accounting_request_result_type_id
+                     FROM accounting_request_result_type
+                     WHERE accounting_request_result_type_code = 'FAILED')
     WHERE queue_id = #{queueId} AND NOT done
   </update>
 
   <update id="markDone">
     UPDATE accounting_request_queue
-    SET done = TRUE, done_ts = #{doneTs}, status_id = 3, result_id = #{resultId}
-    WHERE queue_id = #{queueId} AND NOT done AND status_id = 2
+    SET done = TRUE, done_ts = #{doneTs},
+        status_id = (SELECT accounting_request_status_type_id
+                     FROM accounting_request_status_type
+                     WHERE accounting_request_status_type_code = 'DONE'),
+        result_id = #{resultId}
+    WHERE queue_id = #{queueId} AND NOT done
+      AND status_id = (SELECT accounting_request_status_type_id
+                        FROM accounting_request_status_type
+                        WHERE accounting_request_status_type_code = 'IN_PROGRESS')
   </update>
 
   <delete id="deletePaymentLock">

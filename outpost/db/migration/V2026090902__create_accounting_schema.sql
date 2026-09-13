@@ -26,13 +26,44 @@ CREATE TABLE merchant_fee_configuration (
     CONSTRAINT fk_merchant_fee_account_type
     FOREIGN KEY (account_id, account_type_id)
     REFERENCES account (account_id, account_type_id),
-    CONSTRAINT chk_merchant_fee_merchant_type CHECK (account_type_id = 2),
-    CONSTRAINT chk_merchant_fee_rate CHECK (fee_rate_bps BETWEEN 0 AND 1000),
-    CONSTRAINT chk_merchant_fee_mode CHECK (
-        (fee_mode_id = 1 AND fee_fixed IS NULL)
-        OR (fee_mode_id = 2 AND fee_fixed IS NOT NULL AND fee_fixed >= 0)
-    )
+    CONSTRAINT chk_merchant_fee_rate CHECK (fee_rate_bps BETWEEN 0 AND 1000)
 );
+
+CREATE FUNCTION validate_merchant_fee_configuration_account_type()
+RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.account_type_id <> (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT') THEN
+        RAISE EXCEPTION 'merchant fee configuration account must have MERCHANT type';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER merchant_fee_configuration_account_type
+BEFORE INSERT OR UPDATE ON merchant_fee_configuration
+FOR EACH ROW
+EXECUTE FUNCTION validate_merchant_fee_configuration_account_type();
+
+CREATE FUNCTION validate_merchant_fee_configuration_mode() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT (
+        (NEW.fee_mode_id = (SELECT fee_mode_id FROM fee_mode WHERE code = 'PERCENTAGE')
+            AND NEW.fee_fixed IS NULL)
+        OR (NEW.fee_mode_id =
+                (SELECT fee_mode_id FROM fee_mode WHERE code = 'PERCENTAGE_PLUS_FIXED')
+            AND NEW.fee_fixed IS NOT NULL AND NEW.fee_fixed >= 0)
+    ) THEN
+        RAISE EXCEPTION 'merchant fee configuration fee mode and fee_fixed are inconsistent';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER merchant_fee_configuration_mode
+BEFORE INSERT OR UPDATE ON merchant_fee_configuration
+FOR EACH ROW EXECUTE FUNCTION validate_merchant_fee_configuration_mode();
 
 CREATE TABLE register_type (
     register_type_id BIGINT PRIMARY KEY,
@@ -93,11 +124,24 @@ CREATE TABLE payment_detail (
     CONSTRAINT fk_payment_detail_payment
     FOREIGN KEY (transaction_id, transaction_type_id)
     REFERENCES transaction (transaction_id, transaction_type_id),
-    CONSTRAINT chk_payment_detail_payment_type CHECK (transaction_type_id = 1),
     CONSTRAINT fk_payment_detail_subdivision_country
     FOREIGN KEY (shopper_country_id, shopper_country_subdivision_id)
     REFERENCES country_subdivision (country_id, country_subdivision_id)
 );
+
+CREATE FUNCTION validate_payment_detail_payment_type() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.transaction_type_id <> (SELECT transaction_type_id FROM transaction_type WHERE code = 'PAYMENT') THEN
+        RAISE EXCEPTION 'payment detail transaction must have PAYMENT type';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER payment_detail_payment_type
+BEFORE INSERT OR UPDATE ON payment_detail
+FOR EACH ROW EXECUTE FUNCTION validate_payment_detail_payment_type();
 
 CREATE FUNCTION validate_payment_detail_psp_account() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$

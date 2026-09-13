@@ -7,7 +7,7 @@
     SELECT code
       FROM account
      WHERE account_id = #{accountId}
-       AND account_type_id = 2
+       AND account_type_id = (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT')
        AND is_active
   </select>
 </mapper>

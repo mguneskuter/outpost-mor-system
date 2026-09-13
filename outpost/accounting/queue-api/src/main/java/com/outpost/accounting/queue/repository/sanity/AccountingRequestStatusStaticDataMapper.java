@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Select;
 public interface AccountingRequestStatusStaticDataMapper {
   /** Reads all accounting request status rows. */
   @Select(
-      "SELECT accounting_request_status_id, accounting_request_status_code "
-          + "FROM accounting_request_status ORDER BY accounting_request_status_id")
+      "SELECT accounting_request_status_type_id, accounting_request_status_type_code "
+          + "FROM accounting_request_status_type ORDER BY accounting_request_status_type_id")
   List<AccountingRequestStatusRecord> findAll();
 }
