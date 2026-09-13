@@ -29,7 +29,7 @@ public final class OrderModificationController {
     this.service = service;
   }
 
-  /** Submits a modification request for an order owned by the authenticated merchant. */
+  /** Refunds an order owned by the authenticated merchant. */
   @PostMapping
   public ResponseEntity<OrderModificationResponse> request(
       @RequestBody OrderModificationRequest request, HttpServletRequest httpRequest) {

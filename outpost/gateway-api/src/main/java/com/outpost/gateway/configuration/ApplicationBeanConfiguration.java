@@ -8,14 +8,16 @@ import com.outpost.account.configuration.repository.mybatis.MyBatisMerchantFeeCo
 import com.outpost.account.configuration.repository.mybatis.MyBatisMerchantPspRepository;
 import com.outpost.account.repository.AccountRepository;
 import com.outpost.account.repository.mybatis.MyBatisAccountRepository;
+import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingRequestApi;
 import com.outpost.accounting.api.BalanceReportApi;
-import com.outpost.accounting.api.PaymentApi;
 import com.outpost.accounting.api.client.LedgerClientConfiguration;
 import com.outpost.accounting.api.client.LedgerHttpServiceGroupConfigurer;
-import com.outpost.accounting.queue.AccountingRequestQueue;
+import com.outpost.framework.queue.QueueProcessor;
+import com.outpost.framework.queue.QueueProcessorSettings;
+import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.framework.security.hmac.HmacKey;
-import com.outpost.gateway.order.client.LedgerClient;
-import com.outpost.gateway.order.client.ledger.LedgerHttpClient;
+import com.outpost.gateway.accounting.LedgerAccountingRequestSender;
 import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.gateway.order.service.OrderService;
 import com.outpost.gateway.paymentmethod.repository.PaymentMethodRepository;
@@ -44,14 +46,15 @@ import com.outpost.integration.psp.simulator.repository.mybatis.MyBatisPspConfig
 import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationMapper;
 import com.outpost.payment.order.LineTaxCalculator;
 import com.outpost.payment.order.repository.OrderRepository;
-import com.outpost.payment.repository.PspEventRepository;
+import com.outpost.payment.refund.repository.RefundRepository;
 import com.outpost.payment.repository.mybatis.MyBatisOrderRepository;
-import com.outpost.payment.repository.mybatis.MyBatisPspEventRepository;
-import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
+import com.outpost.payment.repository.mybatis.MyBatisRefundRepository;
+import com.outpost.payment.repository.mybatis.RefundMapper;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Clock;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -64,7 +67,11 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Application bean definitions. */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({GatewayLedgerProperties.class, GatewayPspClientProperties.class})
+@EnableConfigurationProperties({
+  GatewayLedgerProperties.class,
+  GatewayPspClientProperties.class,
+  GatewayAccountingQueueProperties.class
+})
 @Import({OrderService.class, LedgerClientConfiguration.class})
 public class ApplicationBeanConfiguration {
 
@@ -105,11 +112,6 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  PspEventRepository pspEventRepository(PspEventQueueMapper mapper) {
-    return new MyBatisPspEventRepository(mapper);
-  }
-
-  @Bean
   PspWebhookResponses pspWebhookResponses(MeterRegistry meterRegistry) {
     return new PspWebhookResponses(meterRegistry);
   }
@@ -127,8 +129,9 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  PspWebhookService pspWebhookService(PspEventRepository events) {
-    return new PspWebhookService(events);
+  PspWebhookService pspWebhookService(
+      OrderRepository orders, TimeOrderedQueue<AccountingQueueRequest> accountingQueue) {
+    return new PspWebhookService(orders, accountingQueue);
   }
 
   /** Creates the tax-rate provider. */
@@ -180,14 +183,40 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  LedgerClient ledgerClient(PaymentApi paymentApi) {
-    return new LedgerHttpClient(paymentApi);
+  TimeOrderedQueue<AccountingQueueRequest> accountingQueue() {
+    return new TimeOrderedQueue<>(Clock.systemUTC());
+  }
+
+  @Bean
+  LedgerAccountingRequestSender ledgerAccountingRequestSender(AccountingRequestApi api) {
+    return new LedgerAccountingRequestSender(api);
+  }
+
+  @Bean(initMethod = "start", destroyMethod = "stop")
+  QueueProcessor<AccountingQueueRequest> accountingQueueSenders(
+      TimeOrderedQueue<AccountingQueueRequest> accountingQueue,
+      LedgerAccountingRequestSender sender,
+      GatewayAccountingQueueProperties properties) {
+    return new QueueProcessor<>(
+        "gateway-accounting-queue",
+        accountingQueue,
+        sender,
+        new QueueProcessorSettings(
+            properties.workerCount(),
+            properties.pollInterval(),
+            properties.retryDelay(),
+            properties.maxAttempts()));
+  }
+
+  @Bean
+  RefundRepository refundRepository(RefundMapper mapper) {
+    return new MyBatisRefundRepository(mapper);
   }
 
   @Bean
   OrderModificationService orderModificationService(
-      OrderRepository repository, AccountingRequestQueue queue) {
-    return new OrderModificationService(repository, queue);
+      OrderRepository orders, AccountRepository accounts, PspClient psp, RefundRepository refunds) {
+    return new OrderModificationService(orders, accounts, psp, refunds);
   }
 
   @Bean

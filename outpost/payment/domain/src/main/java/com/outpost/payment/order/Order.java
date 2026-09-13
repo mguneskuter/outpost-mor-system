@@ -29,7 +29,6 @@ public final class Order {
   private final Amount grossAmount;
   private final String idempotencyKey;
   private final String requestFingerprint;
-  private final String paymentReference;
   private final long pspAccountId;
   @Nullable private final String pspReference;
   @Nullable private final String paymentLink;
@@ -40,7 +39,7 @@ public final class Order {
    * Creates an order with its lines. {@code shopperCountry} and {@code shopperCountrySubdivision}
    * are the jurisdiction the order was sold under; a null subdivision means a country-level
    * jurisdiction. {@code pspReference} and {@code paymentLink} are absent until the PSP has created
-   * its order for {@code paymentReference}. {@code orderId}, {@code shopperId}, {@code createdAt},
+   * its order for {@code orderReference}. {@code orderId}, {@code shopperId}, {@code createdAt},
    * and the lines' ids are absent until the order is stored.
    *
    * @throws IllegalArgumentException when a text value is blank, the subdivision is not in the
@@ -60,7 +59,6 @@ public final class Order {
       Amount grossAmount,
       String idempotencyKey,
       String requestFingerprint,
-      String paymentReference,
       long pspAccountId,
       @Nullable String pspReference,
       @Nullable String paymentLink,
@@ -102,7 +100,6 @@ public final class Order {
     }
     this.idempotencyKey = requireText(idempotencyKey, "idempotencyKey");
     this.requestFingerprint = requireText(requestFingerprint, "requestFingerprint");
-    this.paymentReference = requireText(paymentReference, "paymentReference");
     if (pspAccountId <= 0) {
       throw new IllegalArgumentException("pspAccountId must be positive: " + pspAccountId);
     }
@@ -175,7 +172,10 @@ public final class Order {
     return orderId == null ? OptionalLong.empty() : OptionalLong.of(orderId);
   }
 
-  /** Returns Outpost's reference for this order. */
+  /**
+   * Returns Outpost's reference for this order: the original reference the Ledger's PAYMENT
+   * transaction and the PSP carry.
+   */
   public String getOrderReference() {
     return orderReference;
   }
@@ -236,11 +236,6 @@ public final class Order {
     return requestFingerprint;
   }
 
-  /** Returns the reference Outpost passes to the Ledger and the PSP for this order's payment. */
-  public String getPaymentReference() {
-    return paymentReference;
-  }
-
   /** Returns the PSP account this order's payment is routed to. */
   public long getPspAccountId() {
     return pspAccountId;
@@ -287,7 +282,6 @@ public final class Order {
         && Objects.equals(grossAmount, that.grossAmount)
         && Objects.equals(idempotencyKey, that.idempotencyKey)
         && Objects.equals(requestFingerprint, that.requestFingerprint)
-        && Objects.equals(paymentReference, that.paymentReference)
         && Objects.equals(pspReference, that.pspReference)
         && Objects.equals(paymentLink, that.paymentLink)
         && Objects.equals(createdAt, that.createdAt)
@@ -309,7 +303,6 @@ public final class Order {
         grossAmount,
         idempotencyKey,
         requestFingerprint,
-        paymentReference,
         pspAccountId,
         pspReference,
         paymentLink,

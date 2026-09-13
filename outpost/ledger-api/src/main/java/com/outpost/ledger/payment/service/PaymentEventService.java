@@ -2,7 +2,6 @@ package com.outpost.ledger.payment.service;
 
 import com.outpost.account.Account;
 import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.RefundDetail;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
 import com.outpost.accounting.Transaction;
@@ -13,22 +12,19 @@ import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.payment.PaymentLifecycle;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
-import com.outpost.accounting.templates.RefundJournalTemplates;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
-import com.outpost.ledger.payment.repository.CapturePosting;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.repository.PaymentTransaction;
 import com.outpost.ledger.payment.repository.PendingFee;
-import com.outpost.ledger.payment.repository.RefundChild;
 import com.outpost.payment.common.Amount;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Appends a Worker-authorised payment or refund lifecycle event and its accounting evidence. */
+/** Books PSP authorisation outcomes on a payment. */
 public class PaymentEventService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
@@ -44,20 +40,19 @@ public class PaymentEventService {
     this.lifecycle = lifecycle;
   }
 
-  /** Appends one valid lifecycle event, or returns without writing for an exact duplicate. */
+  /**
+   * Books a PSP authorisation outcome: AUTHORISED when {@code success}, otherwise REFUSED and the
+   * release of the pending fee. A repeat of a booked outcome writes nothing.
+   *
+   * @throws PaymentEventException 404 PAYMENT_NOT_FOUND, 409 INVALID_TRANSITION
+   */
   @Transactional
-  public void appendPaymentEvent(AppendPaymentEventCommand request) {
-    validateRequest(request);
-    if (request.refundReference() != null) {
-      appendToRefund(request);
-      return;
-    }
-    appendToPayment(request);
-  }
-
-  private void appendToPayment(AppendPaymentEventCommand request) {
-    TransactionEventType candidate = paymentCandidate(request.event());
-    PaymentFamily payment = repository.findPaymentFamilyForUpdate(request.paymentReference());
+  public void recordAuthorisation(String originalReference, boolean success) {
+    TransactionEventType candidate =
+        success
+            ? TransactionEventTypes.AUTHORISED.getValue()
+            : TransactionEventTypes.REFUSED.getValue();
+    PaymentTransaction payment = repository.findPaymentTransactionForUpdate(originalReference);
     if (payment == null) {
       throw notFound();
     }
@@ -80,45 +75,13 @@ public class PaymentEventService {
       return;
     }
     if (releasesPendingFee(candidate)) {
-      appendFeeRelease(payment, request.paymentReference(), candidate, event);
-    }
-  }
-
-  private void appendToRefund(AppendPaymentEventCommand request) {
-    TransactionEventType candidate = refundCandidate(request.event());
-    PaymentFamily payment = repository.findPaymentFamilyForUpdate(request.paymentReference());
-    if (payment == null) {
-      throw notFound();
-    }
-    RefundChild refund = repository.findRefundByReference(request.refundReference());
-    if (refund == null || refund.paymentTransactionId() != payment.transactionId()) {
-      throw refundNotFound();
-    }
-    List<PaymentEvent> existingEvents = repository.findPaymentEvents(refund.transactionId());
-    if (existingEvents.stream()
-        .anyMatch(
-            event -> event.transactionEventTypeId() == candidate.getTransactionEventTypeId())) {
-      return;
-    }
-    TransactionEventType current = refundFold(existingEvents);
-    if (!lifecycle.canFollowRefund(current, candidate)) {
-      throw new PaymentEventException(409, "INVALID_TRANSITION");
-    }
-
-    PaymentEvent event =
-        repository.insertPaymentEvent(
-            refund.transactionId(), candidate.getTransactionEventTypeId());
-    if (event == null) {
-      return;
-    }
-    if (candidate.equals(TransactionEventTypes.REFUNDED.getValue())) {
-      appendRefundEntry(payment, request.paymentReference(), refund, event);
+      appendFeeRelease(payment, originalReference, candidate, event);
     }
   }
 
   private void appendFeeRelease(
-      PaymentFamily payment,
-      String paymentReference,
+      PaymentTransaction payment,
+      String originalReference,
       TransactionEventType candidate,
       PaymentEvent event) {
     try {
@@ -140,7 +103,7 @@ public class PaymentEventService {
       TransactionEvent releaseEvent =
           new TransactionEvent(
               event.transactionEventId(),
-              buildTransaction(payment, paymentReference),
+              buildTransaction(payment, originalReference),
               candidate,
               event.occurredAt());
       JournalEntry release =
@@ -156,67 +119,9 @@ public class PaymentEventService {
     }
   }
 
-  private void appendRefundEntry(
-      PaymentFamily payment, String paymentReference, RefundChild refund, PaymentEvent event) {
-    try {
-      CapturePosting posting = repository.findCapturePosting(payment.transactionId());
-      Currency currency = currency(payment.currencyId());
-      if (posting == null
-          || posting.currencyId() != payment.currencyId()
-          || refund.currencyId() != payment.currencyId()
-          || refund.quantity() != Math.addExact(refund.netQuantity(), refund.taxQuantity())) {
-        throw new IllegalArgumentException("capture posting is not compatible with refund");
-      }
-      Register psp =
-          register(posting.pspAccountId(), RegisterTypes.PSP_RECEIVABLE, posting.pspRegisterId());
-      Register tax =
-          register(
-              posting.taxAuthorityAccountId(), RegisterTypes.TAX_PAYABLE, posting.taxRegisterId());
-      Register merchant =
-          register(
-              posting.merchantAccountId(),
-              RegisterTypes.MERCHANT_PAYABLE,
-              posting.merchantRegisterId());
-
-      Transaction parentTransaction = buildTransaction(payment, paymentReference);
-      Transaction refundTransaction =
-          Transaction.childOf(
-              parentTransaction,
-              refund.transactionId(),
-              TransactionTypes.REFUND.getValue(),
-              parentTransaction.getMerchantAccount(),
-              refund.reference(),
-              new Amount(currency, refund.quantity()),
-              refund.createdTs());
-      new RefundDetail(
-          refundTransaction,
-          new Amount(currency, refund.netQuantity()),
-          new Amount(currency, refund.taxQuantity()));
-      TransactionEvent refundEvent =
-          new TransactionEvent(
-              event.transactionEventId(),
-              refundTransaction,
-              TransactionEventTypes.REFUNDED.getValue(),
-              event.occurredAt());
-      JournalEntry refundEntry =
-          RefundJournalTemplates.REFUND.build(
-              refundEvent,
-              psp,
-              tax,
-              merchant,
-              new Amount(currency, refund.quantity()),
-              new Amount(currency, refund.netQuantity()),
-              new Amount(currency, refund.taxQuantity()),
-              event.occurredAt());
-      journalEntryRepository.insertJournalEntry(refundEntry);
-    } catch (IllegalArgumentException | ArithmeticException exception) {
-      throw new PaymentEventException(500, "INTERNAL_ERROR");
-    }
-  }
-
-  private Transaction buildTransaction(PaymentFamily payment, String paymentReference) {
+  private Transaction buildTransaction(PaymentTransaction payment, String originalReference) {
     Account merchant = repository.findAccountById(payment.merchantAccountId());
-    ExistingPayment created = repository.findByReference(paymentReference);
+    ExistingPayment created = repository.findByReference(originalReference);
     if (merchant == null || created == null || created.transactionId() != payment.transactionId()) {
       throw new IllegalArgumentException("payment transaction is missing");
     }
@@ -247,53 +152,12 @@ public class PaymentEventService {
     }
   }
 
-  private TransactionEventType refundFold(List<PaymentEvent> existingEvents) {
-    try {
-      return lifecycle.foldRefund(
-          existingEvents.stream().map(PaymentEventService::eventType).toList());
-    } catch (IllegalArgumentException exception) {
-      throw new PaymentEventException(500, "INTERNAL_ERROR");
-    }
-  }
-
   private static TransactionEventType eventType(PaymentEvent event) {
     return Arrays.stream(TransactionEventTypes.values())
         .map(TransactionEventTypes::getValue)
         .filter(type -> type.getTransactionEventTypeId() == event.transactionEventTypeId())
         .findFirst()
         .orElseThrow(() -> new IllegalArgumentException("unknown transaction event type"));
-  }
-
-  private static TransactionEventType paymentCandidate(String event) {
-    TransactionEventType candidate =
-        TransactionEventTypes.fromCode(event).orElseThrow(PaymentEventService::bad);
-    if (!releasesPendingFee(candidate)
-        && !candidate.equals(TransactionEventTypes.AUTHORISED.getValue())) {
-      throw bad();
-    }
-    return candidate;
-  }
-
-  private static TransactionEventType refundCandidate(String event) {
-    TransactionEventType candidate =
-        TransactionEventTypes.fromCode(event).orElseThrow(PaymentEventService::bad);
-    if (!candidate.equals(TransactionEventTypes.REFUND_ACCEPTED.getValue())
-        && !candidate.equals(TransactionEventTypes.REFUNDED.getValue())
-        && !candidate.equals(TransactionEventTypes.REFUND_FAILED.getValue())) {
-      throw bad();
-    }
-    return candidate;
-  }
-
-  private static void validateRequest(AppendPaymentEventCommand request) {
-    if (request == null
-        || request.paymentReference() == null
-        || request.paymentReference().isBlank()
-        || request.event() == null
-        || request.event().isBlank()
-        || (request.refundReference() != null && request.refundReference().isBlank())) {
-      throw bad();
-    }
   }
 
   private static Currency currency(long currencyId) {
@@ -309,15 +173,7 @@ public class PaymentEventService {
         || eventType.equals(TransactionEventTypes.CANCELLED.getValue());
   }
 
-  private static PaymentEventException bad() {
-    return new PaymentEventException(400, "INVALID_REQUEST");
-  }
-
   private static PaymentEventException notFound() {
     return new PaymentEventException(404, "PAYMENT_NOT_FOUND");
-  }
-
-  private static PaymentEventException refundNotFound() {
-    return new PaymentEventException(404, "REFUND_NOT_FOUND");
   }
 }

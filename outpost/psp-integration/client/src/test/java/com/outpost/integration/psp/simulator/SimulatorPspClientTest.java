@@ -6,8 +6,6 @@ import static com.outpost.integration.psp.service.ResultCode.UNKNOWN;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.outpost.common.iso.Currencies;
-import com.outpost.integration.psp.service.CancelRequest;
-import com.outpost.integration.psp.service.CancelResult;
 import com.outpost.integration.psp.service.CreateOrderRequest;
 import com.outpost.integration.psp.service.CreateOrderResult;
 import com.outpost.integration.psp.service.RefundRequest;
@@ -47,21 +45,18 @@ class SimulatorPspClientTest {
   }
 
   @Test
-  void sendsCreateRefundAndCancelRequestsAndMapsResponses() {
+  void sendsCreateAndRefundRequestsAndMapsResponses() {
     var create = client.createOrder(new CreateOrderRequest("DEMO_PSP", "pay-1", amount(10)));
-    var refund = client.refund(new RefundRequest("DEMO_PSP", "psp-1", "refund-1", amount(1)));
-    var cancel = client.cancel(new CancelRequest("DEMO_PSP", "psp-1"));
+    var refund = client.refund(new RefundRequest("DEMO_PSP", "psp-1", "refund-1"));
 
     assertThat(create).isEqualTo(new CreateOrderResult("psp-1", "https://pay", ACCEPTED));
     assertThat(refund).isEqualTo(new RefundResult("psp-1", "refund-1", ACCEPTED));
-    assertThat(cancel).isEqualTo(new CancelResult("psp-1", ACCEPTED));
     assertThat(requests)
         .containsExactly(
             "/v1/DEMO_PSP/order|{\"payment_reference\":\"pay-1\",\"amount\":10,"
                 + "\"currency\":\"EUR\"}|secret",
-            "/v1/DEMO_PSP/refund|{\"psp_reference\":\"psp-1\",\"refund_reference\":\"refund-1\","
-                + "\"amount\":1,\"currency\":\"EUR\"}|secret",
-            "/v1/DEMO_PSP/cancel|{\"psp_reference\":\"psp-1\"}|secret");
+            "/v1/DEMO_PSP/refund|{\"psp_reference\":\"psp-1\",\"refund_reference\":\"refund-1\"}"
+                + "|secret");
   }
 
   @Test
@@ -72,7 +67,7 @@ class SimulatorPspClientTest {
         exchange ->
             respond(exchange, 200, "{\"psp_refund_reference\":\"refund-1\",\"accepted\":false}"));
 
-    var result = client.refund(new RefundRequest("DEMO_PSP", "psp-1", "refund-1", amount(1)));
+    var result = client.refund(new RefundRequest("DEMO_PSP", "psp-1", "refund-1"));
 
     assertThat(result).isEqualTo(new RefundResult("psp-1", "refund-1", REJECTED));
   }
@@ -108,9 +103,7 @@ class SimulatorPspClientTest {
             + new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)
             + "|"
             + exchange.getRequestHeaders().getFirst("X-Outpost-Api-Key"));
-    if (exchange.getRequestURI().getPath().endsWith("/cancel")) {
-      respond(exchange, 202, "");
-    } else if (exchange.getRequestURI().getPath().endsWith("/order")) {
+    if (exchange.getRequestURI().getPath().endsWith("/order")) {
       respond(exchange, 201, "{\"psp_reference\":\"psp-1\",\"payment_url\":\"https://pay\"}");
     } else {
       respond(exchange, 200, "{\"psp_refund_reference\":\"refund-1\",\"accepted\":true}");

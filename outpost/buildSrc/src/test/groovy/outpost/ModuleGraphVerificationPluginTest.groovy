@@ -79,12 +79,12 @@ class ModuleGraphVerificationPluginTest {
     @Test
     void deployableToDeployableEdgeFails() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':gateway-api'] << ':outpost-worker'
+        dependencies[':gateway-api'] << ':ledger-api'
 
         BuildResult failure = buildAndFail(dependencies)
 
         assertTrue(failure.output.contains(
-            'Deployable depends on deployable: :gateway-api -> :outpost-worker'
+            'Deployable depends on deployable: :gateway-api -> :ledger-api'
         ))
     }
 

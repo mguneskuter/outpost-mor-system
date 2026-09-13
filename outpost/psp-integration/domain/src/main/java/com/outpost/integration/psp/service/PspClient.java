@@ -5,9 +5,6 @@ public interface PspClient {
   /** Creates an order at the payment service provider. */
   CreateOrderResult createOrder(CreateOrderRequest request);
 
-  /** Requests a refund. */
+  /** Requests a full refund of an order. */
   RefundResult refund(RefundRequest request);
-
-  /** Cancels an uncaptured order. */
-  CancelResult cancel(CancelRequest request);
 }

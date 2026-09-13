@@ -37,7 +37,7 @@ class WebhookDispatcherHttpTest {
               "http://localhost:8083",
               "http://localhost:" + server.port(),
               new SimulatorProperties.DelaySettings(
-                  Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO),
+                  Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO),
               List.of(new PspAccount("DEMO_PSP", "api-key", "secret")));
       WebhookDispatcher dispatcher =
           new WebhookDispatcher(properties, new PspAccounts(properties), new ObjectMapper());
@@ -113,7 +113,7 @@ class WebhookDispatcherHttpTest {
         "http://localhost:8083",
         "http://localhost:" + server.port(),
         new SimulatorProperties.DelaySettings(
-            Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO),
+            Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO),
         List.of(new PspAccount("DEMO_PSP", "api-key", "secret")));
   }
 

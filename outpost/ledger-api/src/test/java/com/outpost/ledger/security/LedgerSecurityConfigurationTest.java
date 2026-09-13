@@ -1,7 +1,6 @@
 package com.outpost.ledger.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
@@ -10,18 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
-import com.outpost.ledger.payment.api.PaymentController;
-import com.outpost.ledger.payment.service.CaptureService;
-import com.outpost.ledger.payment.service.PaymentCreationService;
-import com.outpost.ledger.payment.service.PaymentEventService;
-import com.outpost.ledger.payment.service.RefundReservationService;
-import com.outpost.ledger.payment.service.ReserveRefundResult;
+import com.outpost.ledger.accountingrequest.api.AccountingRequestController;
+import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
 import com.outpost.ledger.report.api.BalanceReportController;
 import com.outpost.ledger.report.service.BalanceReport;
 import com.outpost.ledger.report.service.BalanceReportService;
 import jakarta.servlet.Filter;
 import java.net.URI;
-import java.time.Instant;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,16 +44,12 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 @SpringJUnitWebConfig(LedgerSecurityConfigurationTest.LedgerRoutes.class)
 @TestPropertySource(
-    properties = {
-      "outpost.ledger.gateway-hmac-secret=" + LedgerSecurityConfigurationTest.GATEWAY_SECRET,
-      "outpost.ledger.worker-hmac-secret=" + LedgerSecurityConfigurationTest.WORKER_SECRET
-    })
+    properties =
+        "outpost.ledger.gateway-hmac-secret=" + LedgerSecurityConfigurationTest.GATEWAY_SECRET)
 class LedgerSecurityConfigurationTest {
 
   static final String GATEWAY_SECRET = "gateway-secret";
-  static final String WORKER_SECRET = "worker-secret";
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8(GATEWAY_SECRET);
-  private static final HmacKey WORKER_KEY = HmacKey.fromUtf8(WORKER_SECRET);
   private static final String UNAUTHENTICATED = "{\"code\":\"UNAUTHENTICATED\"}";
 
   @Autowired private WebApplicationContext context;
@@ -76,7 +66,13 @@ class LedgerSecurityConfigurationTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"/v1/payment", "/v1/%70ayment", "/v1/payment.", "/V1/PAYMENT"})
+  @ValueSource(
+      strings = {
+        "/v1/accounting-request",
+        "/v1/%61ccounting-request",
+        "/v1/accounting-request.",
+        "/V1/ACCOUNTING-REQUEST"
+      })
   void rejectsUnsignedPaymentCreationUnderEveryPathVariant(String path) throws Exception {
     mockMvc
         .perform(request(HttpMethod.POST, URI.create(path)).contentType("application/json"))
@@ -86,12 +82,13 @@ class LedgerSecurityConfigurationTest {
 
   @Test
   void authorizesAnEncodedPathAsTheRouteItDispatchesTo() throws Exception {
-    signed(HttpMethod.POST, "/v1/%70ayment", "{}", GATEWAY_KEY).andExpect(status().isCreated());
+    signed(HttpMethod.POST, "/v1/%61ccounting-request", "{}", GATEWAY_KEY)
+        .andExpect(status().isAccepted());
   }
 
   @Test
   void rejectsPathParameterVariantBeforeAnyRouteIsMatched() throws Exception {
-    signed(HttpMethod.POST, "/v1/payment;x=1", "{}", GATEWAY_KEY)
+    signed(HttpMethod.POST, "/v1/accounting-request;x=1", "{}", GATEWAY_KEY)
         .andExpect(status().isBadRequest());
   }
 
@@ -102,20 +99,11 @@ class LedgerSecurityConfigurationTest {
         .andExpect(status().is(route.successStatus()));
   }
 
-  @ParameterizedTest
-  @MethodSource("callerRoutes")
-  void rejectsTheOtherCallersSignatureOnEachRoute(CallerRoute route) throws Exception {
-    HmacKey otherCaller = route.owner().equals(GATEWAY_KEY) ? WORKER_KEY : GATEWAY_KEY;
-
-    signed(route.method(), route.path(), route.body(), otherCaller)
-        .andExpect(status().isForbidden());
-  }
-
   @Test
   void rejectsSignatureThatDoesNotMatchTheBody() throws Exception {
     mockMvc
         .perform(
-            request(HttpMethod.POST, URI.create("/v1/payment"))
+            request(HttpMethod.POST, URI.create("/v1/accounting-request"))
                 .contentType("application/json")
                 .content("{}")
                 .header("X-Outpost-Signature", signature(GATEWAY_KEY, "{\"changed\":true}")))
@@ -144,12 +132,9 @@ class LedgerSecurityConfigurationTest {
 
   static Stream<CallerRoute> callerRoutes() {
     return Stream.of(
-        new CallerRoute(HttpMethod.POST, "/v1/payment", "{}", GATEWAY_KEY, 201),
+        new CallerRoute(HttpMethod.POST, "/v1/accounting-request", "{}", GATEWAY_KEY, 202),
         new CallerRoute(HttpMethod.GET, "/v1/report/balance/tax", "", GATEWAY_KEY, 200),
-        new CallerRoute(HttpMethod.GET, "/v1/report/balance/merchant", "", GATEWAY_KEY, 200),
-        new CallerRoute(HttpMethod.POST, "/v1/payment/event", "{}", WORKER_KEY, 204),
-        new CallerRoute(HttpMethod.POST, "/v1/payment/capture", "{}", WORKER_KEY, 201),
-        new CallerRoute(HttpMethod.POST, "/v1/payment/refund", "{}", WORKER_KEY, 201));
+        new CallerRoute(HttpMethod.GET, "/v1/report/balance/merchant", "", GATEWAY_KEY, 200));
   }
 
   /** A route, the caller granted it, and the status its controller returns on success. */
@@ -175,33 +160,15 @@ class LedgerSecurityConfigurationTest {
   @EnableConfigurationProperties(LedgerAuthenticationProperties.class)
   @Import({
     LedgerSecurityConfiguration.class,
-    PaymentController.class,
+    AccountingRequestController.class,
     BalanceReportController.class,
     UnlistedController.class
   })
   static class LedgerRoutes {
 
     @Bean
-    PaymentCreationService paymentCreationService() {
-      return mock(PaymentCreationService.class);
-    }
-
-    @Bean
-    PaymentEventService paymentEventService() {
-      return mock(PaymentEventService.class);
-    }
-
-    @Bean
-    CaptureService captureService() {
-      return mock(CaptureService.class);
-    }
-
-    @Bean
-    RefundReservationService refundReservationService() {
-      RefundReservationService service = mock(RefundReservationService.class);
-      when(service.reserve(any()))
-          .thenReturn(new ReserveRefundResult("refund", Instant.parse("2026-09-13T00:00:00Z")));
-      return service;
+    AccountingRequestService accountingRequestService() {
+      return mock(AccountingRequestService.class);
     }
 
     @Bean

@@ -34,8 +34,7 @@ psp-simulator:
 	./outpost/gradlew -p psp-simulator bootRun
 
 images:
-	./outpost/gradlew -p outpost :gateway-api:bootBuildImage :ledger-api:bootBuildImage \
-		:outpost-worker:bootBuildImage :static-data-job:bootBuildImage
+	./outpost/gradlew -p outpost :gateway-api:bootBuildImage :ledger-api:bootBuildImage :static-data-job:bootBuildImage
 	./outpost/gradlew -p psp-simulator bootBuildImage
 
 precommit:

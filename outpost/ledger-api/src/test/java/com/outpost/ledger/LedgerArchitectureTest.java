@@ -59,7 +59,7 @@ class LedgerArchitectureTest {
     classes()
         .should()
         .onlyDependOnClassesThat()
-        .resideOutsideOfPackages("com.outpost.gateway..", "com.outpost.worker..")
+        .resideOutsideOfPackages("com.outpost.gateway..")
         .check(LEDGER_CLASSES);
   }
 

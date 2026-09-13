@@ -52,11 +52,6 @@ public final class WebhookScheduler {
     taskScheduler.schedule(refundEvent(order, refund), Instant.now().plus(delays.refund()));
   }
 
-  /** Schedules the CANCELLATION webhook. */
-  public void scheduleCancellation(Order order) {
-    taskScheduler.schedule(cancellationEvent(order), Instant.now().plus(delays.cancellation()));
-  }
-
   private Runnable authorisationEvent(Order order, ResultCodes outcome) {
     return () -> dispatcher.dispatch(eventPayload(order, WebhookEventCodes.AUTHORISATION, outcome));
   }
@@ -90,12 +85,6 @@ public final class WebhookScheduler {
                 refund.amountMinor(),
                 refund.currencyCode(),
                 refund.refundReference()));
-  }
-
-  private Runnable cancellationEvent(Order order) {
-    return () ->
-        dispatcher.dispatch(
-            eventPayload(order, WebhookEventCodes.CANCELLATION, ResultCodes.APPROVED));
   }
 
   private static WebhookPayload eventPayload(

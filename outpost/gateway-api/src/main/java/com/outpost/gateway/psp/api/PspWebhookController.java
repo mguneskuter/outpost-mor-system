@@ -22,13 +22,13 @@ public final class PspWebhookController {
     this.responses = responses;
   }
 
-  /** Records a PSP event notification for its payment. */
+  /** Queues a PSP event notification for the Ledger. */
   @PostMapping("/v1/psp/{pspCode}/webhook")
   ResponseEntity<PspWebhookEventResponse> process(
       @RequestAttribute(PspWebhookSignatureFilter.VERIFIED_WEBHOOK_ATTRIBUTE)
           VerifiedPspWebhook webhook,
       @RequestBody PspWebhookEventRequest request) {
-    return responses.respond(service.process(webhook.psp(), request.toEvent(), webhook.payload()));
+    return responses.respond(service.process(webhook.psp(), request.toEvent()));
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)

@@ -129,11 +129,9 @@ class MyBatisPaymentRepositoryIntegrationTest {
             .transactionId();
 
     assertThat(eventTypeCodeOf(orderCreatedEventId)).isEqualTo("ORDER_CREATED");
-    assertThat(repository.findPaymentFamilyForUpdate("payment-by-code").transactionId())
+    assertThat(repository.findPaymentTransactionForUpdate("payment-by-code").transactionId())
         .isEqualTo(paymentTransactionId);
     assertThat(repository.findCaptureChild(paymentTransactionId).transactionId())
-        .isEqualTo(captureTransactionId);
-    assertThat(repository.findCaptureByReference("capture-by-code").transactionId())
         .isEqualTo(captureTransactionId);
   }
 

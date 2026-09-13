@@ -48,9 +48,6 @@ class GatewayApiStartupFailureIntegrationTest {
     jdbcTemplate.update("DELETE FROM product_type");
     jdbcTemplate.update("DELETE FROM account_type");
     jdbcTemplate.update("DELETE FROM fee_mode");
-    jdbcTemplate.update("DELETE FROM accounting_request_type");
-    jdbcTemplate.update("DELETE FROM accounting_request_status_type");
-    jdbcTemplate.update("DELETE FROM accounting_request_result_type");
   }
 
   @Test

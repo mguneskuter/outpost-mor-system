@@ -29,7 +29,7 @@ public final class RefundService {
    * Refunds a captured order, or returns the existing refund when the refund reference repeats.
    *
    * @throws NotFoundException when the order is unknown
-   * @throws ConflictException when the refund reference repeats with different data
+   * @throws ConflictException when the refund reference was used for another order
    */
   public RefundResult refund(String pspCode, RefundCommand command) {
     Order order =
@@ -39,21 +39,14 @@ public final class RefundService {
                 () ->
                     new NotFoundException(
                         "no order with psp reference: " + command.pspReference()));
-    if (!order.currencyCode().equals(command.currencyCode())) {
-      throw new IllegalArgumentException(
-          "refund currency "
-              + command.currencyCode()
-              + " does not match order currency "
-              + order.currencyCode());
-    }
     boolean accepted = order.status() == OrderStatuses.CAPTURED;
     Optional<Refund> inserted =
         refundRepository.insert(
             pspCode,
             command.pspReference(),
             command.refundReference(),
-            command.amountMinor(),
-            command.currencyCode(),
+            order.amountMinor(),
+            order.currencyCode(),
             accepted);
     if (inserted.isPresent()) {
       Refund refund = inserted.get();
@@ -70,11 +63,9 @@ public final class RefundService {
                     new IllegalStateException(
                         "refund reference claimed but not persisted: "
                             + command.refundReference()));
-    if (existing.pspReference() != command.pspReference()
-        || existing.amountMinor() != command.amountMinor()
-        || !existing.currencyCode().equals(command.currencyCode())) {
+    if (existing.pspReference() != command.pspReference()) {
       throw new ConflictException(
-          "refund reference " + command.refundReference() + " was used with different data");
+          "refund reference " + command.refundReference() + " was used for another order");
     }
     return new RefundResult(existing.pspRefundReference(), existing.accepted());
   }

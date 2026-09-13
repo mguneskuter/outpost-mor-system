@@ -8,12 +8,10 @@ import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.repository.MerchantFeeConfigurationRepository;
 import com.outpost.account.configuration.repository.MerchantPspRepository;
 import com.outpost.account.repository.AccountRepository;
-import com.outpost.common.iso.Countries;
-import com.outpost.common.iso.Countries.Country;
-import com.outpost.common.iso.CountrySubdivisions;
-import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
-import com.outpost.gateway.order.client.LedgerPayment;
-import com.outpost.gateway.order.client.ledger.LedgerClientException;
+import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingQueueRequestTypes;
+import com.outpost.framework.queue.QueuedItem;
+import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.gateway.order.service.CreateOrderCommand;
 import com.outpost.gateway.order.service.CreateOrderCommand.OrderDetailsCommand;
 import com.outpost.gateway.order.service.CreateOrderCommand.OrderLineCommand;
@@ -21,8 +19,6 @@ import com.outpost.gateway.order.service.CreateOrderCommand.ShopperDetailsComman
 import com.outpost.gateway.order.service.CreateOrderResult;
 import com.outpost.gateway.order.service.OrderCreationException;
 import com.outpost.gateway.order.service.OrderService;
-import com.outpost.integration.psp.service.CancelRequest;
-import com.outpost.integration.psp.service.CancelResult;
 import com.outpost.integration.psp.service.CreateOrderRequest;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.service.RefundRequest;
@@ -36,13 +32,14 @@ import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class OrderServiceTest {
@@ -52,7 +49,7 @@ class OrderServiceTest {
   private static final String PAYMENT_LINK = "https://pay.example/order-1";
 
   @Test
-  void createsTheOrderCallsLedgerAndPspOnceAndReturnsTheStoredResponse() {
+  void createsTheOrderCallsThePspOnceQueuesOrderCreatedAndReturnsTheStoredResponse() {
     TestDependencies dependencies = new TestDependencies();
 
     CreateOrderResult result = dependencies.service.create(MERCHANT_ACCOUNT_ID, validCommand());
@@ -60,20 +57,27 @@ class OrderServiceTest {
     Order stored = dependencies.repository.onlyOrder();
     assertThat(dependencies.repository.orders).hasSize(1);
     assertThat(stored.getItems()).hasSize(1);
-    assertThat(dependencies.ledgerPayments)
+    assertThat(dependencies.queued())
         .singleElement()
         .satisfies(
-            payment -> {
-              assertThat(payment.paymentReference()).isEqualTo(stored.getPaymentReference());
-              assertThat(payment.merchantCode()).isEqualTo("MERCHANT");
-              assertThat(payment.pspCode()).isEqualTo(PSP_CODE);
-              assertThat(payment.grossAmount().quantity()).isEqualTo(119);
+            queued -> {
+              assertThat(queued.type()).isEqualTo(AccountingQueueRequestTypes.ORDER_CREATED);
+              assertThat(queued.originalReference()).isEqualTo(stored.getOrderReference());
+              assertThat(queued.pspReference()).isEqualTo(PSP_REFERENCE);
+              assertThat(queued.merchantCode()).isEqualTo("MERCHANT");
+              assertThat(queued.pspCode()).isEqualTo(PSP_CODE);
+              assertThat(queued.shopperCountry()).isEqualTo(stored.getShopperCountry());
+              assertThat(queued.shopperCountrySubdivision())
+                  .isEqualTo(stored.getShopperCountrySubdivision().orElse(null));
+              assertThat(queued.netAmount()).isEqualTo(stored.getNetAmount());
+              assertThat(queued.taxAmount()).isEqualTo(stored.getTaxAmount());
+              assertThat(queued.grossAmount()).isEqualTo(stored.getGrossAmount());
             });
     assertThat(dependencies.pspRequests)
         .singleElement()
         .satisfies(
             request -> {
-              assertThat(request.paymentReference()).isEqualTo(stored.getPaymentReference());
+              assertThat(request.paymentReference()).isEqualTo(stored.getOrderReference());
               assertThat(request.amount().quantity()).isEqualTo(119);
             });
     assertThat(stored.getPspReference()).contains(PSP_REFERENCE);
@@ -97,18 +101,6 @@ class OrderServiceTest {
   }
 
   @Test
-  void ledgerFailureReturnsFailureAndLeavesOrderWithoutPspReference() {
-    TestDependencies dependencies = new TestDependencies();
-    dependencies.ledgerFailures.add(
-        new LedgerClientException("Ledger unavailable", true, new RuntimeException()));
-
-    assertFailure(dependencies, validCommand(), 503, "LEDGER_RETRYABLE");
-
-    assertThat(dependencies.pspRequests).isEmpty();
-    assertThat(dependencies.repository.onlyOrder().getPspReference()).isEmpty();
-  }
-
-  @Test
   void pspFailureReturnsFailureAndLeavesOrderWithoutPspReference() {
     TestDependencies dependencies = new TestDependencies();
     dependencies.pspResults.add(
@@ -116,7 +108,7 @@ class OrderServiceTest {
 
     assertFailure(dependencies, validCommand(), 503, "PSP_RETRYABLE");
 
-    assertThat(dependencies.ledgerPayments).hasSize(1);
+    assertThat(dependencies.queued()).isEmpty();
     assertThat(dependencies.repository.onlyOrder().getPspReference()).isEmpty();
   }
 
@@ -129,12 +121,12 @@ class OrderServiceTest {
 
     assertThat(repeated).isEqualTo(first);
     assertThat(dependencies.repository.orders).hasSize(1);
-    assertThat(dependencies.ledgerPayments).hasSize(1);
+    assertThat(dependencies.queued()).hasSize(1);
     assertThat(dependencies.pspRequests).hasSize(1);
   }
 
   @Test
-  void repeatedRequestAfterPspFailureCallsLedgerAndPspAgainWithSameReferences() {
+  void repeatedRequestAfterPspFailureCallsThePspAgainWithTheSameReferenceAndQueuesOnce() {
     TestDependencies dependencies = new TestDependencies();
     dependencies.pspResults.add(
         new com.outpost.integration.psp.service.CreateOrderResult("", "", ResultCode.REJECTED));
@@ -144,32 +136,14 @@ class OrderServiceTest {
 
     Order stored = dependencies.repository.onlyOrder();
     assertThat(dependencies.repository.orders).hasSize(1);
-    assertThat(dependencies.ledgerPayments)
-        .extracting(LedgerPayment::paymentReference)
-        .containsExactly(stored.getPaymentReference(), stored.getPaymentReference());
     assertThat(dependencies.pspRequests)
         .extracting(CreateOrderRequest::paymentReference)
-        .containsExactly(stored.getPaymentReference(), stored.getPaymentReference());
+        .containsExactly(stored.getOrderReference(), stored.getOrderReference());
+    assertThat(dependencies.queued())
+        .extracting(AccountingQueueRequest::originalReference)
+        .containsExactly(stored.getOrderReference());
     assertThat(result.orderReference()).isEqualTo(stored.getOrderReference());
     assertThat(result.paymentLink()).isEqualTo(PAYMENT_LINK);
-  }
-
-  @Test
-  void repeatedRequestSendsLedgerTheJurisdictionStoredOnTheOrder() {
-    TestDependencies dependencies = new TestDependencies();
-    dependencies.ledgerFailures.add(
-        new LedgerClientException("Ledger unavailable", true, new RuntimeException()));
-    assertFailure(dependencies, validCommand(), 503, "LEDGER_RETRYABLE");
-    Country storedCountry = Countries.UNITED_STATES.getValue();
-    CountrySubdivision storedSubdivision = CountrySubdivisions.US_CA.getValue();
-    dependencies.repository.storeJurisdiction(storedCountry, storedSubdivision);
-
-    dependencies.service.create(MERCHANT_ACCOUNT_ID, validCommand());
-
-    assertThat(dependencies.ledgerPayments).hasSize(2);
-    LedgerPayment repeated = dependencies.ledgerPayments.get(1);
-    assertThat(repeated.shopperCountry()).isEqualTo(storedCountry);
-    assertThat(repeated.shopperCountrySubdivision()).isEqualTo(storedSubdivision);
   }
 
   @Test
@@ -187,7 +161,7 @@ class OrderServiceTest {
     assertFailure(dependencies, changed, 409, "IDEMPOTENCY_CONFLICT");
 
     assertThat(dependencies.repository.orders).hasSize(1);
-    assertThat(dependencies.ledgerPayments).hasSize(1);
+    assertThat(dependencies.queued()).hasSize(1);
     assertThat(dependencies.pspRequests).hasSize(1);
   }
 
@@ -396,12 +370,14 @@ class OrderServiceTest {
   }
 
   private static final class TestDependencies {
+    private static final Clock FIXED_CLOCK =
+        Clock.fixed(Instant.parse("2026-09-13T10:00:00Z"), ZoneOffset.UTC);
     private final FakeOrderRepository repository = new FakeOrderRepository();
     private final FakeMerchantPspRepository merchantPsps = new FakeMerchantPspRepository();
     private final FakeMerchantFeeConfigurationRepository feeConfigurations =
         new FakeMerchantFeeConfigurationRepository();
-    private final List<LedgerPayment> ledgerPayments = new ArrayList<>();
-    private final List<LedgerClientException> ledgerFailures = new ArrayList<>();
+    private final TimeOrderedQueue<AccountingQueueRequest> accountingQueue =
+        new TimeOrderedQueue<>(FIXED_CLOCK);
     private final List<CreateOrderRequest> pspRequests = new ArrayList<>();
     private final List<com.outpost.integration.psp.service.CreateOrderResult> pspResults =
         new ArrayList<>();
@@ -418,15 +394,20 @@ class OrderServiceTest {
               new FakeAccountRepository(),
               merchantPsps,
               feeConfigurations,
-              payment -> {
-                ledgerPayments.add(payment);
-                if (!ledgerFailures.isEmpty()) {
-                  throw ledgerFailures.remove(0);
-                }
-              },
+              accountingQueue,
               new FakePspClient(pspRequests, pspResults),
               taxRates,
               new LineTaxCalculator());
+    }
+
+    /** Removes and returns every queued request, in queue order. */
+    private List<AccountingQueueRequest> queued() {
+      List<AccountingQueueRequest> requests = new ArrayList<>();
+      Optional<QueuedItem<AccountingQueueRequest>> item;
+      while ((item = accountingQueue.pollDue()).isPresent()) {
+        requests.add(item.orElseThrow().payload());
+      }
+      return requests;
     }
   }
 
@@ -453,11 +434,6 @@ class OrderServiceTest {
 
     @Override
     public RefundResult refund(RefundRequest request) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public CancelResult cancel(CancelRequest request) {
       throw new UnsupportedOperationException();
     }
   }
@@ -519,18 +495,6 @@ class OrderServiceTest {
       return orders.values().iterator().next();
     }
 
-    private void storeJurisdiction(Country country, @Nullable CountrySubdivision subdivision) {
-      Order stored = onlyOrder();
-      orders.put(
-          stored.getIdempotencyKey(),
-          copy(
-              stored,
-              country,
-              subdivision,
-              stored.getPspReference().orElse(null),
-              stored.getPaymentLink().orElse(null)));
-    }
-
     @Override
     public Optional<Order> findOrderByIdempotencyKey(long accountId, String idempotencyKey) {
       return Optional.ofNullable(orders.get(idempotencyKey))
@@ -538,23 +502,10 @@ class OrderServiceTest {
     }
 
     @Override
-    public Optional<Order> findOrderByOrderReference(long accountId, String orderReference) {
+    public Optional<Order> findOrderByOrderReference(String orderReference) {
       return orders.values().stream()
-          .filter(stored -> stored.getAccountId() == accountId)
           .filter(stored -> stored.getOrderReference().equals(orderReference))
           .findFirst();
-    }
-
-    @Override
-    public Optional<Order> findOrderByPaymentReference(String paymentReference) {
-      return orders.values().stream()
-          .filter(stored -> stored.getPaymentReference().equals(paymentReference))
-          .findFirst();
-    }
-
-    @Override
-    public Optional<PspRouting> findPspRoutingByPaymentReference(String paymentReference) {
-      throw new UnsupportedOperationException();
     }
 
     @Override
@@ -589,7 +540,6 @@ class OrderServiceTest {
               order.getGrossAmount(),
               order.getIdempotencyKey(),
               order.getRequestFingerprint(),
-              order.getPaymentReference(),
               order.getPspAccountId(),
               null,
               null,
@@ -601,40 +551,27 @@ class OrderServiceTest {
 
     @Override
     public void updateOrderPspReferenceAndPaymentLink(
-        String paymentReference, String pspReference, String paymentLink) {
-      Order stored = findOrderByPaymentReference(paymentReference).orElseThrow();
+        String orderReference, String pspReference, String paymentLink) {
+      Order stored = findOrderByOrderReference(orderReference).orElseThrow();
       if (stored.getPspReference().isEmpty()) {
-        orders.put(
-            stored.getIdempotencyKey(),
-            copy(
-                stored,
-                stored.getShopperCountry(),
-                stored.getShopperCountrySubdivision().orElse(null),
-                pspReference,
-                paymentLink));
+        orders.put(stored.getIdempotencyKey(), withPspFacts(stored, pspReference, paymentLink));
       }
     }
 
-    private static Order copy(
-        Order order,
-        Country shopperCountry,
-        @Nullable CountrySubdivision shopperCountrySubdivision,
-        @Nullable String pspReference,
-        @Nullable String paymentLink) {
+    private static Order withPspFacts(Order order, String pspReference, String paymentLink) {
       return new Order(
           order.getOrderId().getAsLong(),
           order.getOrderReference(),
           order.getMerchantReference(),
           order.getAccountId(),
           order.getShopperId().getAsLong(),
-          shopperCountry,
-          shopperCountrySubdivision,
+          order.getShopperCountry(),
+          order.getShopperCountrySubdivision().orElse(null),
           order.getNetAmount(),
           order.getTaxAmount(),
           order.getGrossAmount(),
           order.getIdempotencyKey(),
           order.getRequestFingerprint(),
-          order.getPaymentReference(),
           order.getPspAccountId(),
           pspReference,
           paymentLink,

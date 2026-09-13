@@ -83,9 +83,7 @@ public final class PspWebhookSignatureFilter extends OncePerRequestFilter {
       return;
     }
     HttpServletRequest verified = new CachedBodyRequest(request, body);
-    verified.setAttribute(
-        VERIFIED_WEBHOOK_ATTRIBUTE,
-        new VerifiedPspWebhook(psp, new String(body, StandardCharsets.UTF_8)));
+    verified.setAttribute(VERIFIED_WEBHOOK_ATTRIBUTE, new VerifiedPspWebhook(psp));
     chain.doFilter(verified, response);
   }
 

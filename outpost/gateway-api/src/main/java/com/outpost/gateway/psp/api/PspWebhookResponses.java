@@ -10,7 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * Answers PSP event notifications. Every notification that is not recorded is logged without its
+ * Answers PSP event notifications. Every notification that is not queued is logged without its
  * payload and counted in {@code outpost.webhook.rejected}, tagged by {@code reason}.
  */
 public final class PspWebhookResponses {
@@ -40,7 +40,7 @@ public final class PspWebhookResponses {
       case INVALID_SIGNATURE -> HttpStatus.UNAUTHORIZED;
       case INVALID_PAYLOAD -> HttpStatus.BAD_REQUEST;
       // An authenticated event that matches no stored payment is acknowledged as processed with a
-      // negative result, so the PSP does not redeliver it; it is never recorded.
+      // negative result, so the PSP does not redeliver it; it is never queued.
       case UNKNOWN_PAYMENT, FOREIGN_PAYMENT, PSP_REFERENCE_MISMATCH -> HttpStatus.OK;
     };
   }

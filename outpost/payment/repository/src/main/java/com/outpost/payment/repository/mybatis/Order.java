@@ -21,7 +21,6 @@ record Order(
     long grossAmount,
     String idempotencyKey,
     String requestFingerprint,
-    String paymentReference,
     long pspAccountId,
     @Nullable String pspReference,
     @Nullable String paymentLink,

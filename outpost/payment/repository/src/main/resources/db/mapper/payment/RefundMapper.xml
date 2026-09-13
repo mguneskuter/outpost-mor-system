@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.payment.repository.mybatis.RefundMapper">
+  <resultMap id="refund" type="com.outpost.payment.refund.Refund">
+    <constructor>
+      <idArg column="refund_id" javaType="long"/>
+      <arg column="refund_reference" javaType="string"/>
+      <arg column="order_id" javaType="_long"/>
+      <arg column="original_reference" javaType="string"/>
+      <arg column="merchant_reference" javaType="string"/>
+      <arg column="idempotency_key" javaType="string"/>
+      <arg column="psp_refund_reference" javaType="string"/>
+      <arg column="created_ts" javaType="java.time.Instant"/>
+    </constructor>
+  </resultMap>
+
+  <select id="insertRefund" resultMap="refund">
+    INSERT INTO merchant_refund (
+      refund_reference, order_id, original_reference, merchant_reference, idempotency_key,
+      psp_refund_reference, created_ts
+    )
+    VALUES (
+      #{refundReference}, #{orderId}, #{originalReference}, #{merchantReference},
+      #{idempotencyKey}, #{pspRefundReference}, now()
+    )
+    RETURNING refund_id, refund_reference, order_id, original_reference, merchant_reference,
+              idempotency_key, psp_refund_reference, created_ts
+  </select>
+</mapper>

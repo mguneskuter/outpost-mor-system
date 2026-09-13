@@ -5,13 +5,22 @@ import com.outpost.accounting.journalentry.repository.mybatis.JournalEntryMapper
 import com.outpost.accounting.journalentry.repository.mybatis.MyBatisJournalEntryRepository;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
 import com.outpost.accounting.payment.PaymentLifecycle;
+import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
+import com.outpost.accounting.transactionlock.repository.mybatis.MyBatisTransactionLockRepository;
+import com.outpost.accounting.transactionlock.repository.mybatis.TransactionLockMapper;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.framework.queue.QueueProcessor;
+import com.outpost.framework.queue.QueueProcessorSettings;
+import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.fx.FxFee;
 import com.outpost.fx.provider.FxRateProvider;
 import com.outpost.fx.provider.cached.CachedFxRateProvider;
 import com.outpost.fx.repository.FxFeeRepository;
 import com.outpost.fx.repository.FxRateRepository;
+import com.outpost.ledger.accountingrequest.service.AccountingQueueProcessor;
+import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
+import com.outpost.ledger.accountingrequest.service.LockedAccountingQueueRequest;
 import com.outpost.ledger.fx.repository.mybatis.FxFeeMapper;
 import com.outpost.ledger.fx.repository.mybatis.FxRateMapper;
 import com.outpost.ledger.fx.repository.mybatis.MyBatisFxFeeRepository;
@@ -20,10 +29,11 @@ import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventService;
-import com.outpost.ledger.payment.service.RefundReservationService;
+import com.outpost.ledger.payment.service.RefundService;
 import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.ledger.report.service.BalanceReportService;
 import com.outpost.ledger.security.LedgerAuthenticationProperties;
+import java.time.Clock;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -33,9 +43,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.transaction.PlatformTransactionManager;
 
-/** Wires the Ledger's application services and FX persistence. */
+/** Wires the Ledger's application services, accounting queue, and FX persistence. */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(LedgerAuthenticationProperties.class)
+@EnableConfigurationProperties({
+  LedgerAuthenticationProperties.class,
+  LedgerAccountingQueueProperties.class
+})
 public class ApplicationBeanConfiguration {
 
   /** The in-memory FX rate bound is sized as ordered currency pairs times this many days. */
@@ -82,8 +95,53 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  RefundReservationService refundReservationService(PaymentRepository repository) {
-    return new RefundReservationService(repository);
+  RefundService refundService(
+      PaymentRepository repository, JournalEntryRepository journalEntryRepository) {
+    return new RefundService(repository, journalEntryRepository);
+  }
+
+  @Bean
+  TransactionLockRepository transactionLockRepository(TransactionLockMapper mapper) {
+    return new MyBatisTransactionLockRepository(mapper);
+  }
+
+  @Bean
+  TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue() {
+    return new TimeOrderedQueue<>(Clock.systemUTC());
+  }
+
+  @Bean
+  AccountingRequestService accountingRequestService(
+      TransactionLockRepository transactionLocks,
+      TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue,
+      LedgerAccountingQueueProperties properties) {
+    return new AccountingRequestService(
+        transactionLocks, accountingQueue, properties.transactionLockLease());
+  }
+
+  @Bean
+  AccountingQueueProcessor accountingQueueProcessor(
+      PaymentCreationService paymentCreation,
+      PaymentEventService paymentEvents,
+      CaptureService captures,
+      RefundService refunds,
+      TransactionLockRepository transactionLocks) {
+    return new AccountingQueueProcessor(
+        paymentCreation, paymentEvents, captures, refunds, transactionLocks);
+  }
+
+  /** The processor never retries a booking, so one attempt is the ceiling. */
+  @Bean(initMethod = "start", destroyMethod = "stop")
+  QueueProcessor<LockedAccountingQueueRequest> accountingQueueWorkers(
+      TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue,
+      AccountingQueueProcessor processor,
+      LedgerAccountingQueueProperties properties) {
+    return new QueueProcessor<>(
+        "ledger-accounting-queue",
+        accountingQueue,
+        processor,
+        new QueueProcessorSettings(
+            properties.workerCount(), properties.pollInterval(), properties.pollInterval(), 1));
   }
 
   @Bean

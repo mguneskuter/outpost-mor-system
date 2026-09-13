@@ -401,8 +401,6 @@ class AccountingSchemaIntegrationTest {
           "INSERT INTO account_type VALUES (20, 'MERCHANT'), (40, 'PSP'), (50, 'TAX_AUTHORITY')");
       execute(
           connection, "INSERT INTO country VALUES (1, 'NL', 'Netherlands'), (2, 'DE', 'Germany')");
-      execute(connection, "INSERT INTO psp_event_code VALUES (1, 'AUTHORISATION')");
-      execute(connection, "INSERT INTO psp_event_status VALUES (1, 'RECEIVED')");
       execute(
           connection,
           "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
@@ -423,12 +421,6 @@ class AccountingSchemaIntegrationTest {
           connection,
           "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
               + "VALUES (1, 102, 50)");
-      execute(
-          connection,
-          "INSERT INTO psp_event_queue "
-              + "(created_ts, status_id, type_id, reference, original_reference, account_id, "
-              + "account_type_id, psp_account_id, psp_account_type_id, payload) VALUES "
-              + "(now(), 1, 1, 'event-1', 'payment-1', 100, 20, 101, 40, '{}'::jsonb)");
       connection.commit();
 
       assertRejected(
@@ -445,121 +437,54 @@ class AccountingSchemaIntegrationTest {
           connection,
           "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
               + "VALUES (2, 100, 20)");
-      assertRejected(
-          connection,
-          "INSERT INTO psp_event_queue "
-              + "(created_ts, status_id, type_id, reference, original_reference, account_id, "
-              + "account_type_id, psp_account_id, psp_account_type_id, payload) VALUES "
-              + "(now(), 1, 1, 'event-2', 'payment-2', 101, 40, 100, 20, '{}'::jsonb)");
     }
   }
 
   @Test
-  void pspEventCompletionResolvesDoneStatusByCodeRegardlessOfSeededIdentifiers()
-      throws SQLException {
+  void transactionLockRejectsLeaseThatEndsBeforeItsLock() throws SQLException {
     try (Connection connection = database.createConnection("")) {
-      connection.setAutoCommit(false);
-      execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (4, 'PSP')");
-      execute(connection, "INSERT INTO psp_event_code VALUES (1, 'AUTHORISATION')");
       execute(
           connection,
-          "INSERT INTO psp_event_status VALUES (3, 'RECEIVED'), (1, 'IN_PROGRESS'), (2, 'DONE')");
-      execute(connection, "INSERT INTO psp_event_result VALUES (1, 'SUCCESS')");
+          "INSERT INTO transaction_lock (original_reference, locked_ts, lease_until_ts) "
+              + "VALUES ('order-1', now(), now() + interval '5 minutes')");
+
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO transaction_lock (original_reference, locked_ts, "
+                          + "lease_until_ts) VALUES ('order-2', now(), now())"))
+          .isInstanceOf(SQLException.class);
+    }
+  }
+
+  @Test
+  void refundDetailIsAppendOnly() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(connection, "INSERT INTO account_type VALUES (20, 'MERCHANT')");
+      execute(connection, "INSERT INTO transaction_type VALUES (40, 'PAYMENT'), (41, 'REFUND')");
+      execute(connection, "INSERT INTO currency VALUES (1, 'EUR', 2)");
       execute(
           connection,
           "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
-              + "VALUES (100, 2, 'merchant', 'Merchant', true, now()), "
-              + "(101, 4, 'psp', 'PSP', true, now())");
+              + "VALUES (100, 20, 'merchant', 'Merchant', true, now())");
       execute(
           connection,
-          "INSERT INTO psp_event_queue "
-              + "(created_ts, status_id, type_id, reference, original_reference, account_id, "
-              + "account_type_id, psp_account_id, psp_account_type_id, payload) VALUES "
-              + "(now(), 3, 1, 'event-1', 'payment-1', 100, 2, 101, 4, '{}'::jsonb)");
+          "INSERT INTO transaction "
+              + "(transaction_id, transaction_type_id, account_id, reference, quantity, "
+              + "currency_id, created_ts) VALUES "
+              + "(200, 40, 100, 'payment-ref', 1000, 1, now()), "
+              + "(201, 41, 100, 'refund-ref', 200, 1, now())");
       execute(
           connection,
-          "UPDATE psp_event_queue SET status_id = 2, done = true, done_ts = now(), result_id = 1 "
-              + "WHERE reference = 'event-1'");
+          "INSERT INTO refund_detail (transaction_id, transaction_type_id, net_quantity, "
+              + "tax_quantity) VALUES (201, 41, 180, 20)");
       connection.commit();
 
       assertRejected(
-          connection,
-          "INSERT INTO psp_event_queue "
-              + "(created_ts, done, done_ts, result_id, status_id, type_id, reference, "
-              + "original_reference, account_id, account_type_id, psp_account_id, "
-              + "psp_account_type_id, payload) VALUES "
-              + "(now(), true, now(), 1, 3, 1, 'event-2', 'payment-2', 100, 2, 101, 4, "
-              + "'{}'::jsonb)");
-    }
-  }
-
-  @Test
-  void enforcesPspEventQueueKeysReferencesUniquenessAndCompletionRules() throws SQLException {
-    try (Connection connection = database.createConnection("")) {
-      execute(connection, "INSERT INTO psp_event_code VALUES (1, 'AUTHORISATION')");
-      execute(connection, "INSERT INTO psp_event_status VALUES (1, 'RECEIVED'), (3, 'DONE')");
-      execute(connection, "INSERT INTO psp_event_result VALUES (1, 'SUCCESS')");
-      execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (4, 'PSP')");
-      execute(
-          connection,
-          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
-              + "VALUES (100, 2, 'merchant', 'Merchant', true, now()), "
-              + "(101, 4, 'psp', 'PSP', true, now())");
-
-      execute(
-          connection,
-          "INSERT INTO psp_event_queue "
-              + "(created_ts, status_id, type_id, reference, original_reference, account_id, "
-              + "account_type_id, psp_account_id, psp_account_type_id, payload) VALUES "
-              + "(now(), 1, 1, 'event-1', 'payment-1', 100, 2, 101, 4, '{}'::jsonb)");
-      assertThatThrownBy(
-              () ->
-                  execute(
-                      connection,
-                      "INSERT INTO psp_event_queue "
-                          + "(created_ts, status_id, type_id, reference, original_reference, "
-                          + "account_id, account_type_id, psp_account_id, psp_account_type_id, "
-                          + "payload) VALUES "
-                          + "(now(), 1, 1, 'event-1', 'payment-2', 100, 2, 101, 4, '{}'::jsonb)"))
-          .isInstanceOf(SQLException.class);
-      assertThatThrownBy(
-              () ->
-                  execute(
-                      connection,
-                      "INSERT INTO psp_event_queue "
-                          + "(created_ts, status_id, type_id, reference, original_reference, "
-                          + "account_id, account_type_id, psp_account_id, psp_account_type_id, "
-                          + "payload) VALUES "
-                          + "(now(), 1, 1, 'event-2', 'payment-2', 101, 2, 101, 4, '{}'::jsonb)"))
-          .isInstanceOf(SQLException.class);
-      assertThatThrownBy(
-              () ->
-                  execute(
-                      connection,
-                      "INSERT INTO psp_event_queue "
-                          + "(created_ts, status_id, type_id, reference, original_reference, "
-                          + "account_id, account_type_id, psp_account_id, psp_account_type_id, "
-                          + "payload) VALUES "
-                          + "(now(), 3, 1, 'event-3', 'payment-3', 100, 2, 101, 4, '{}'::jsonb)"))
-          .isInstanceOf(SQLException.class);
-      assertThatThrownBy(
-              () ->
-                  execute(
-                      connection,
-                      "UPDATE psp_event_queue SET done = true WHERE reference = 'event-1'"))
-          .isInstanceOf(SQLException.class);
-      assertThatThrownBy(
-              () ->
-                  execute(
-                      connection,
-                      "UPDATE psp_event_queue SET done_ts = now() WHERE reference = 'event-1'"))
-          .isInstanceOf(SQLException.class);
-
-      execute(
-          connection,
-          "UPDATE psp_event_queue SET status_id = 3, done = true, done_ts = now(), result_id = 1 "
-              + "WHERE reference = 'event-1'");
-      assertThat(queryLong(connection, "SELECT COUNT(*) FROM psp_event_queue")).isEqualTo(1);
+          connection, "UPDATE refund_detail SET net_quantity = 1 WHERE transaction_id = 201");
+      assertRejected(connection, "DELETE FROM refund_detail WHERE transaction_id = 201");
     }
   }
 

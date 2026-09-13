@@ -1,38 +1,42 @@
 package com.outpost.gateway.order.service;
 
-import com.outpost.accounting.queue.AccountingRequest;
-import com.outpost.accounting.queue.AccountingRequestLine;
-import com.outpost.accounting.queue.AccountingRequestQueue;
-import com.outpost.accounting.queue.AccountingRequestTypes;
-import com.outpost.accounting.queue.SubmitAccountingRequestCommand;
+import com.outpost.account.Account;
+import com.outpost.account.repository.AccountRepository;
+import com.outpost.integration.psp.service.PspClient;
+import com.outpost.integration.psp.service.RefundRequest;
+import com.outpost.integration.psp.service.RefundResult;
 import com.outpost.payment.order.Order;
-import com.outpost.payment.order.OrderItem;
 import com.outpost.payment.order.repository.OrderRepository;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
+import com.outpost.payment.refund.Refund;
+import com.outpost.payment.refund.repository.RefundRepository;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 
-/** Validates and submits merchant order modification requests. */
+/** Refunds a merchant's order in full at its PSP and stores the accepted refund. */
 public final class OrderModificationService {
   private static final String REFUND_TYPE = "REFUND";
   private final OrderRepository orders;
-  private final AccountingRequestQueue queue;
+  private final AccountRepository accounts;
+  private final PspClient psp;
+  private final RefundRepository refunds;
 
-  /** Creates a service backed by order lookup and the accounting request queue. */
-  public OrderModificationService(OrderRepository orders, AccountingRequestQueue queue) {
+  /** Creates a service over the order and refund stores, the accounts, and the PSP. */
+  public OrderModificationService(
+      OrderRepository orders, AccountRepository accounts, PspClient psp, RefundRepository refunds) {
     this.orders = orders;
-    this.queue = queue;
+    this.accounts = accounts;
+    this.psp = psp;
+    this.refunds = refunds;
   }
 
-  /** Submits one modification request for an order owned by the caller. */
+  /**
+   * Refunds one order owned by the caller in full.
+   *
+   * @throws ModifyOrderException 400 for an invalid request, 404 ORDER_NOT_FOUND, 409
+   *     ORDER_NOT_PAID, 422 REFUND_REJECTED, 503 PSP_RETRYABLE
+   */
   public ModifyOrderResult request(long merchantAccountId, ModifyOrderCommand command) {
     String type = required(command.type(), "type");
     if (!REFUND_TYPE.equals(type)) {
@@ -44,72 +48,47 @@ public final class OrderModificationService {
 
     Order order =
         orders
-            .findOrderByOrderReference(merchantAccountId, orderReference)
+            .findOrderByOrderReference(orderReference)
+            .filter(found -> found.getAccountId() == merchantAccountId)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND.value(), "ORDER_NOT_FOUND"));
-    List<AccountingRequestLine> lines = resolveLines(order, command.refundLines());
-
+    String pspReference =
+        order
+            .getPspReference()
+            .orElseThrow(() -> failure(HttpStatus.CONFLICT.value(), "ORDER_NOT_PAID"));
+    String pspCode =
+        accounts
+            .findAccountById(order.getPspAccountId())
+            .map(Account::getCode)
+            .orElseThrow(() -> new IllegalStateException("order PSP account is not stored"));
     String refundReference = "refund-" + UUID.randomUUID();
-    AccountingRequest stored =
-        queue.submit(
-            new SubmitAccountingRequestCommand(
-                AccountingRequestTypes.REFUND_REQUEST,
+
+    RefundResult pspResult;
+    try {
+      pspResult = psp.refund(new RefundRequest(pspCode, pspReference, refundReference));
+    } catch (RuntimeException exception) {
+      throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
+    }
+    return switch (pspResult.resultCode()) {
+      case ACCEPTED -> {
+        String pspRefundReference = pspResult.pspRefundReference();
+        if (pspRefundReference == null || pspRefundReference.isBlank()) {
+          throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
+        }
+        refunds.insertRefund(
+            new Refund(
+                null,
                 refundReference,
-                order.getPaymentReference(),
-                merchantAccountId,
-                null,
-                idempotencyKey,
+                order.getOrderId().orElseThrow(),
+                order.getOrderReference(),
                 merchantReference,
-                null,
-                null,
-                null,
-                null,
-                lines));
-    return new ModifyOrderResult(stored.getReference(), stored.getStatus().name());
-  }
-
-  private static List<AccountingRequestLine> resolveLines(
-      Order order, @Nullable List<ModifyOrderCommand.RefundLineCommand> requested) {
-    if (requested == null || requested.isEmpty()) {
-      return List.of();
-    }
-    Map<String, OrderItem> byOrderLineReference =
-        order.getItems().stream()
-            .collect(Collectors.toMap(OrderItem::getOrderLineReference, Function.identity()));
-    Map<String, OrderItem> byMerchantLineReference =
-        order.getItems().stream()
-            .collect(Collectors.toMap(OrderItem::getMerchantLineReference, Function.identity()));
-    List<AccountingRequestLine> resolved = new ArrayList<>();
-    Set<String> seen = new HashSet<>();
-    for (ModifyOrderCommand.RefundLineCommand line : requested) {
-      if (line == null) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "INVALID_REFUND_LINE");
+                idempotencyKey,
+                pspRefundReference,
+                null));
+        yield new ModifyOrderResult(refundReference);
       }
-      boolean hasOrderLineReference = isPresent(line.orderLineReference());
-      boolean hasMerchantLineReference = isPresent(line.merchantLineReference());
-      if (hasOrderLineReference == hasMerchantLineReference) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "AMBIGUOUS_LINE_REFERENCE");
-      }
-      OrderItem matched =
-          hasOrderLineReference
-              ? byOrderLineReference.get(line.orderLineReference())
-              : byMerchantLineReference.get(line.merchantLineReference());
-      if (matched == null) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "UNKNOWN_ORDER_LINE");
-      }
-      Long amount = line.amount();
-      if (amount != null && amount <= 0) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "LINE_AMOUNT_MUST_BE_POSITIVE");
-      }
-      if (!seen.add(matched.getOrderLineReference())) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "DUPLICATE_LINE_REFERENCE");
-      }
-      resolved.add(new AccountingRequestLine(matched.getOrderLineReference(), amount));
-    }
-    return resolved;
-  }
-
-  private static boolean isPresent(@Nullable String value) {
-    return value != null && !value.isBlank();
+      case REJECTED -> throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "REFUND_REJECTED");
+      case UNKNOWN -> throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
+    };
   }
 
   private static String required(@Nullable String value, String field) {
