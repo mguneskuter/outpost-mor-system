@@ -17,6 +17,8 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +30,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /** The guided session asks step by step, runs the chosen command, and asks again. */
 class GuidedShellTest {
+  private static final String REPORT_ID = "3f1c2a54-9b0e-4d6f-8a7b-1c2d3e4f5a6b";
 
   private StubGateway gateway;
   private MerchantCliProperties properties;
@@ -44,7 +47,13 @@ class GuidedShellTest {
         "POST /v1/order/modification",
         new StubGateway.Answer(202, "{\"refund_reference\":\"refund-9\"}"));
     answers.put(
-        "GET /v1/report/balance/merchant", new StubGateway.Answer(200, "{\"accounts\":[]}"));
+        "GET /v1/report",
+        new StubGateway.Answer(
+            200, "{\"report_url\":\"" + gateway.baseUrl() + "/v1/report/" + REPORT_ID + "\"}"));
+    answers.put(
+        "GET /v1/report/" + REPORT_ID,
+        new StubGateway.Answer(
+            200, "{\"from\":\"2026-09-14\",\"to\":\"2026-09-14\",\"accounts\":[]}"));
     answers.put("POST /v1/DEMO_PSP/payment", new StubGateway.Answer(202, ""));
     properties =
         new MerchantCliProperties(
@@ -105,7 +114,7 @@ class GuidedShellTest {
         .contains("Which test card?")
         .contains("payment submitted for order-1")
         .contains("refund accepted: refund-9")
-        .contains("nothing owed")
+        .contains("report " + gateway.baseUrl() + "/v1/report/" + REPORT_ID)
         .contains("Bye.");
     List<String> paths = gateway.received().stream().map(StubGateway.Received::path).toList();
     assertThat(paths)
@@ -113,7 +122,10 @@ class GuidedShellTest {
             "/v1/order",
             "/v1/DEMO_PSP/payment",
             "/v1/order/modification",
-            "/v1/report/balance/merchant");
+            "/v1/report",
+            "/v1/report/" + REPORT_ID);
+    String today = LocalDate.now(ZoneOffset.UTC).toString();
+    assertThat(gateway.received().get(3).query()).isEqualTo("from=" + today + "&to=" + today);
     assertThat(gateway.received().get(2).body()).contains("\"order_reference\":\"order-1\"");
   }
 

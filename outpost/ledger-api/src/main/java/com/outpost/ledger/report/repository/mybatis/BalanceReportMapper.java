@@ -1,18 +1,21 @@
 package com.outpost.ledger.report.repository.mybatis;
 
 import com.outpost.framework.persistence.RegisteredMapper;
+import com.outpost.ledger.report.repository.RegisterBalance;
+import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Param;
 
-/** MyBatis queries for Ledger balance reports. */
+/** MyBatis queries for the balance reports. */
 @RegisteredMapper
 public interface BalanceReportMapper {
-  /** Reads balances on tax-authority TAX_PAYABLE registers. */
-  List<BalanceRow> findTaxBalances();
+  /** Reads the registers of every merchant, tax authority, and platform account. */
+  List<RegisterBalance> findPlatformRegisterBalances(
+      @Param("postedFrom") Instant postedFrom, @Param("postedBefore") Instant postedBefore);
 
-  /** Reads balances on every merchant's MERCHANT_PAYABLE registers. */
-  List<BalanceRow> findMerchantBalances();
-
-  /** Reads balances on the MERCHANT_PAYABLE registers of the merchant with this account code. */
-  List<BalanceRow> findMerchantBalancesByMerchantCode(@Param("merchantCode") String merchantCode);
+  /** Reads the registers of the merchant account with this code. */
+  List<RegisterBalance> findMerchantRegisterBalances(
+      @Param("merchantCode") String merchantCode,
+      @Param("postedFrom") Instant postedFrom,
+      @Param("postedBefore") Instant postedBefore);
 }

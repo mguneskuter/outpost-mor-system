@@ -1,50 +1,73 @@
 package com.outpost.gateway.report.service;
 
-import com.outpost.gateway.report.client.BalanceReport;
+import com.outpost.accounting.report.BalanceReport;
+import com.outpost.accounting.report.InvalidReportPeriodException;
+import com.outpost.accounting.report.ReportPeriod;
 import com.outpost.gateway.report.client.LedgerReportClient;
 import com.outpost.gateway.report.repository.ReportRepository;
 import com.outpost.gateway.security.GatewayPrincipal;
+import java.time.LocalDate;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 
-/** Scopes Ledger's balance reports to the calling principal. */
+/**
+ * Builds balance reports scoped to the calling principal and keeps them for reading. A merchant's
+ * report covers the account its key authenticated, never an account the request names; the
+ * operator's report covers every merchant, tax authority, and platform account.
+ */
 public final class ReportService {
   private final LedgerReportClient ledger;
   private final ReportRepository repository;
+  private final GeneratedReports reports;
 
-  /** Creates a service backed by the Ledger report client and merchant lookup. */
-  public ReportService(LedgerReportClient ledger, ReportRepository repository) {
+  /** Creates a service over the Ledger report client, the merchant lookup, and the report store. */
+  public ReportService(
+      LedgerReportClient ledger, ReportRepository repository, GeneratedReports reports) {
     this.ledger = ledger;
     this.repository = repository;
-  }
-
-  /** Returns tax-authority balances, restricted to the operator. */
-  public BalanceReport tax(GatewayPrincipal principal) {
-    requireOperator(principal);
-    return ledger.taxBalances();
+    this.reports = reports;
   }
 
   /**
-   * Returns merchant balances: every merchant for the operator, only itself for a merchant. The
-   * merchant's code comes from its authenticated account, never from the request, and the Ledger
-   * reads only that merchant's rows.
+   * Builds the caller's report over the period and returns the identifier it can be read under.
+   *
+   * @throws BalanceReportException 400 INVALID_REPORT_PERIOD before the Ledger is called when the
+   *     dates do not form a valid period; 401 MERCHANT_NOT_FOUND when the merchant key's account is
+   *     not active
    */
-  public BalanceReport merchant(GatewayPrincipal principal) {
-    if (principal.type() == GatewayPrincipal.Type.OPERATOR) {
-      return ledger.merchantBalances();
+  public UUID createReport(GatewayPrincipal principal, LocalDate from, LocalDate to) {
+    ReportPeriod period;
+    try {
+      period = new ReportPeriod(from, to);
+    } catch (InvalidReportPeriodException invalid) {
+      throw new BalanceReportException(HttpStatus.BAD_REQUEST.value(), "INVALID_REPORT_PERIOD");
     }
-    String merchantCode =
-        repository
-            .findMerchantCode(principal.accountId())
-            .orElseThrow(
-                () ->
-                    new BalanceReportException(
-                        HttpStatus.UNAUTHORIZED.value(), "MERCHANT_NOT_FOUND"));
-    return ledger.merchantBalances(merchantCode);
+    BalanceReport report =
+        switch (principal.type()) {
+          case OPERATOR -> ledger.platformReport(period);
+          case MERCHANT -> ledger.merchantReport(merchantCode(principal), period);
+        };
+    return reports.add(report);
   }
 
-  private static void requireOperator(GatewayPrincipal principal) {
-    if (principal.type() != GatewayPrincipal.Type.OPERATOR) {
-      throw new BalanceReportException(HttpStatus.FORBIDDEN.value(), "OPERATOR_REQUIRED");
-    }
+  /**
+   * Reads a stored report; any authenticated key may read any stored report.
+   *
+   * @throws BalanceReportException 404 REPORT_NOT_FOUND when no report is stored under the
+   *     identifier
+   */
+  public BalanceReport findReport(UUID reportId) {
+    return reports
+        .find(reportId)
+        .orElseThrow(
+            () -> new BalanceReportException(HttpStatus.NOT_FOUND.value(), "REPORT_NOT_FOUND"));
+  }
+
+  private String merchantCode(GatewayPrincipal principal) {
+    return repository
+        .findMerchantCode(principal.accountId())
+        .orElseThrow(
+            () ->
+                new BalanceReportException(HttpStatus.UNAUTHORIZED.value(), "MERCHANT_NOT_FOUND"));
   }
 }

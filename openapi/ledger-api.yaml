@@ -52,38 +52,27 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
-  /v1/report/balance/tax:
+  /v1/report/balance:
     get:
       tags: [Reports]
-      summary: What Outpost owes each tax authority
-      operationId: taxBalances
+      summary: The platform's balance report over a period
+      description: |
+        Every merchant, tax authority, and platform account with every one of its balance accounts
+        and the balance posted to each in the period, per currency. Both dates are inclusive
+        calendar days in UTC, and the period spans at most thirty days.
+      operationId: platformReport
+      parameters:
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
       responses:
         "200":
-          description: One account per tax authority with a balance per currency
+          description: The report
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BalanceReportResponse"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "413":
-          $ref: "#/components/responses/BodyTooLarge"
-        "500":
-          $ref: "#/components/responses/InternalError"
-  /v1/report/balance/merchant:
-    get:
-      tags: [Reports]
-      summary: What Outpost owes every merchant
-      operationId: merchantBalances
-      responses:
-        "200":
-          description: One account per merchant with a balance per currency
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BalanceReportResponse"
+                $ref: "#/components/schemas/BalanceReport"
+        "400":
+          $ref: "#/components/responses/InvalidPeriod"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -95,22 +84,26 @@ paths:
   /v1/report/balance/merchant/{merchantCode}:
     get:
       tags: [Reports]
-      summary: What Outpost owes one merchant
-      description: Reads only the rows of the named merchant account.
-      operationId: merchantBalancesByCode
+      summary: One merchant's balance report over a period
+      description: The named merchant account alone; no account when the code names no merchant.
+      operationId: merchantReport
       parameters:
         - name: merchantCode
           in: path
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
       responses:
         "200":
-          description: At most one account, with a balance per currency; no account when nothing is booked for it
+          description: The report
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BalanceReportResponse"
+                $ref: "#/components/schemas/BalanceReport"
+        "400":
+          $ref: "#/components/responses/InvalidPeriod"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
@@ -126,7 +119,30 @@ components:
       in: header
       name: X-Outpost-Signature
       description: Base64 HMAC-SHA-256 of the exact raw request body under the Gateway's key; an empty body is signed as zero bytes
+  parameters:
+    From:
+      name: from
+      in: query
+      required: true
+      description: The first day of the period, inclusive, in UTC
+      schema:
+        type: string
+        format: date
+    To:
+      name: to
+      in: query
+      required: true
+      description: The last day of the period, inclusive, in UTC; at most 29 days after `from`
+      schema:
+        type: string
+        format: date
   responses:
+    InvalidPeriod:
+      description: "`INVALID_REQUEST`: a date is absent or unreadable, `to` is before `from`, or the period is longer than thirty days"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerErrorResponse"
     Unauthenticated:
       description: "`UNAUTHENTICATED`: no signature verifies"
       content:
@@ -229,29 +245,45 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Amount"
             - type: "null"
-    BalanceReportResponse:
+    BalanceReport:
       type: object
-      required: [accounts]
+      required: [from, to, accounts]
       properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
         accounts:
           type: array
+          description: Ordered by account code
           items:
             type: object
-            required: [account_code, name, balances]
+            required: [account_code, balance_accounts]
             properties:
               account_code:
                 type: string
-              name:
-                type: string
-              balances:
+              balance_accounts:
                 type: array
+                description: Every register of the account, ordered by register type code, even without balances
                 items:
                   type: object
-                  required: [currency, amount]
+                  required: [balance_account_code, balances]
                   properties:
-                    currency:
+                    balance_account_code:
                       type: string
-                    amount:
-                      type: integer
-                      format: int64
-                      description: What Outpost owes the account, in minor units
+                      description: The register type code
+                    balances:
+                      type: array
+                      description: One per currency posted in the period, ordered by currency code
+                      items:
+                        type: object
+                        required: [currency, balance]
+                        properties:
+                          currency:
+                            type: string
+                          balance:
+                            type: string
+                            description: The sum of the register's line quantities in the period, in major units as a decimal string, positive on the register's normal side
+                            examples: ["76.00"]

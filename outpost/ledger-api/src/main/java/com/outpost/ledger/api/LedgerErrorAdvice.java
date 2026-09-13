@@ -3,6 +3,7 @@ package com.outpost.ledger.api;
 import com.outpost.accounting.api.AccountingQueueResult;
 import com.outpost.accounting.api.AccountingRequestErrorTypes;
 import com.outpost.accounting.api.LedgerErrorResponse;
+import com.outpost.accounting.report.InvalidReportPeriodException;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
@@ -12,8 +13,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * Answers every controller failure with {@link LedgerErrorResponse}, except an accounting request
@@ -46,6 +49,19 @@ public final class LedgerErrorAdvice {
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<LedgerErrorResponse> unreadable(HttpMessageNotReadableException exception) {
     LOGGER.warn("Request body could not be read", exception);
+    return invalidRequest();
+  }
+
+  @ExceptionHandler({
+    MissingServletRequestParameterException.class,
+    MethodArgumentTypeMismatchException.class,
+    InvalidReportPeriodException.class
+  })
+  ResponseEntity<LedgerErrorResponse> invalidParameter(Exception exception) {
+    return invalidRequest();
+  }
+
+  private static ResponseEntity<LedgerErrorResponse> invalidRequest() {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
         .body(LedgerErrorResponse.of(LedgerErrorResponse.INVALID_REQUEST));
   }

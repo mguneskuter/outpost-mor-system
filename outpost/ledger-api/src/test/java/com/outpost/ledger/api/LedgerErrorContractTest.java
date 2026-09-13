@@ -19,8 +19,8 @@ import com.outpost.ledger.accountingrequest.api.AccountingRequestController;
 import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
 import com.outpost.ledger.accountingrequest.service.LockedAccountingQueueRequest;
 import com.outpost.ledger.report.api.BalanceReportController;
-import com.outpost.ledger.report.repository.BalanceLine;
 import com.outpost.ledger.report.repository.BalanceReportRepository;
+import com.outpost.ledger.report.repository.RegisterBalance;
 import com.outpost.ledger.report.service.BalanceReportService;
 import java.time.Clock;
 import java.time.Duration;
@@ -99,7 +99,22 @@ class LedgerErrorContractTest {
             """
             {"success":false,"result_code":"TRANSACTION_LOCKED","type":"CAPTURE",
             "original_reference":"locked-order"}
-            """));
+            """),
+        Arguments.of(
+            "a report without its start date",
+            get("/v1/report/balance?to=2026-09-30"),
+            400,
+            "{\"code\":\"INVALID_REQUEST\"}"),
+        Arguments.of(
+            "a report with an unreadable date",
+            get("/v1/report/balance?from=yesterday&to=2026-09-30"),
+            400,
+            "{\"code\":\"INVALID_REQUEST\"}"),
+        Arguments.of(
+            "a report over more than thirty days",
+            get("/v1/report/balance/merchant/DEMO?from=2026-09-01&to=2026-10-01"),
+            400,
+            "{\"code\":\"INVALID_REQUEST\"}"));
   }
 
   @Test
@@ -154,11 +169,11 @@ class LedgerErrorContractTest {
   static Stream<Arguments> everyRoute() {
     return Stream.of(
         Arguments.of("POST /v1/accounting-request", accountingRequest(CAPTURE_REQUEST)),
-        Arguments.of("GET /v1/report/balance/tax", get("/v1/report/balance/tax")),
-        Arguments.of("GET /v1/report/balance/merchant", get("/v1/report/balance/merchant")),
+        Arguments.of(
+            "GET /v1/report/balance", get("/v1/report/balance?from=2026-09-01&to=2026-09-30")),
         Arguments.of(
             "GET /v1/report/balance/merchant/{merchantCode}",
-            get("/v1/report/balance/merchant/DEMO")));
+            get("/v1/report/balance/merchant/DEMO?from=2026-09-01&to=2026-09-30")));
   }
 
   private static MockHttpServletRequestBuilder accountingRequest(String body) {
@@ -199,17 +214,14 @@ class LedgerErrorContractTest {
 
   private static final class FailingBalances implements BalanceReportRepository {
     @Override
-    public List<BalanceLine> findTaxBalances() {
+    public List<RegisterBalance> findPlatformRegisterBalances(
+        Instant postedFrom, Instant postedBefore) {
       throw new IllegalStateException("database unreachable");
     }
 
     @Override
-    public List<BalanceLine> findMerchantBalances() {
-      throw new IllegalStateException("database unreachable");
-    }
-
-    @Override
-    public List<BalanceLine> findMerchantBalancesByMerchantCode(String merchantCode) {
+    public List<RegisterBalance> findMerchantRegisterBalances(
+        String merchantCode, Instant postedFrom, Instant postedBefore) {
       throw new IllegalStateException("database unreachable");
     }
   }

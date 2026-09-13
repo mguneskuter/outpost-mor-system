@@ -19,6 +19,7 @@ final class StubGateway implements AutoCloseable {
   record Received(
       String method,
       String path,
+      @Nullable String query,
       @Nullable String apiKey,
       @Nullable String signature,
       String body) {}
@@ -52,6 +53,7 @@ final class StubGateway implements AutoCloseable {
         new Received(
             exchange.getRequestMethod(),
             exchange.getRequestURI().getPath(),
+            exchange.getRequestURI().getQuery(),
             exchange.getRequestHeaders().getFirst("X-Outpost-Api-Key"),
             exchange.getRequestHeaders().getFirst("X-Outpost-Signature"),
             body));

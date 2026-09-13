@@ -1,15 +1,18 @@
 package com.outpost.ledger.report.repository;
 
+import java.time.Instant;
 import java.util.List;
 
-/** Reads the balance reports owned by Ledger. */
+/**
+ * Reads register balances for the balance reports. Every register of every account in scope is
+ * returned, ordered by account code, register type code, and currency code; a line counts when its
+ * entry was posted at or after {@code postedFrom} and before {@code postedBefore}.
+ */
 public interface BalanceReportRepository {
-  /** Reads balances held for tax authorities. */
-  List<BalanceLine> findTaxBalances();
+  /** Reads the registers of every merchant, tax authority, and platform account. */
+  List<RegisterBalance> findPlatformRegisterBalances(Instant postedFrom, Instant postedBefore);
 
-  /** Reads balances owed to every merchant. */
-  List<BalanceLine> findMerchantBalances();
-
-  /** Reads balances owed to the merchant with this account code. */
-  List<BalanceLine> findMerchantBalancesByMerchantCode(String merchantCode);
+  /** Reads the registers of the merchant account with this code. */
+  List<RegisterBalance> findMerchantRegisterBalances(
+      String merchantCode, Instant postedFrom, Instant postedBefore);
 }

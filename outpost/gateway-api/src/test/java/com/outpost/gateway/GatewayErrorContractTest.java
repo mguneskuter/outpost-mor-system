@@ -12,6 +12,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.outpost.account.Account;
 import com.outpost.account.configuration.repository.MerchantPspRepository;
+import com.outpost.accounting.report.BalanceReport;
+import com.outpost.accounting.report.ReportPeriod;
 import com.outpost.gateway.api.ErrorResponse;
 import com.outpost.gateway.api.GatewayErrorAdvice;
 import com.outpost.gateway.order.api.OrderController;
@@ -20,14 +22,15 @@ import com.outpost.gateway.order.service.ModifyOrderException;
 import com.outpost.gateway.order.service.OrderCreationException;
 import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.gateway.psp.api.PspController;
-import com.outpost.gateway.report.api.BalanceReportController;
-import com.outpost.gateway.report.client.BalanceReport;
+import com.outpost.gateway.report.api.ReportController;
 import com.outpost.gateway.report.client.LedgerReportClient;
+import com.outpost.gateway.report.service.GeneratedReports;
 import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.GatewayPrincipal;
 import com.outpost.gateway.security.GatewayPrincipalArgumentResolver;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -47,6 +50,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 class GatewayErrorContractTest {
   private static final ObjectMapper JSON = new ObjectMapper();
+  private static final String PERIOD = "?from=2026-09-01&to=2026-09-30";
   private static final String VALID_ORDER =
       """
       {"merchant_reference":"m-1","idempotency_key":"k-1","psp_code":"PSP",
@@ -71,8 +75,9 @@ class GatewayErrorContractTest {
                       refund -> {
                         throw new UnsupportedOperationException();
                       })),
-              new BalanceReportController(
-                  new ReportService(new FailingLedger(), new FailingMerchants())),
+              new ReportController(
+                  new ReportService(
+                      new FailingLedger(), new FailingMerchants(), new GeneratedReports(1))),
               new PspController(new FailingMerchantPsps()))
           .setControllerAdvice(new GatewayErrorAdvice())
           .setCustomArgumentResolvers(new GatewayPrincipalArgumentResolver())
@@ -110,17 +115,23 @@ class GatewayErrorContractTest {
             409,
             "ORDER_NOT_PAID"),
         Arguments.of(
-            "GET /v1/report/balance/tax as a merchant",
-            merchantGet("/v1/report/balance/tax"),
-            new IllegalStateException("not reached: the service refuses a merchant first"),
-            403,
-            "OPERATOR_REQUIRED"),
-        Arguments.of(
-            "GET /v1/report/balance/merchant without an active merchant account",
-            merchantGet("/v1/report/balance/merchant"),
+            "GET /v1/report without an active merchant account",
+            merchantGet("/v1/report" + PERIOD),
             new IllegalStateException("not reached: the merchant lookup answers first"),
             401,
-            "MERCHANT_NOT_FOUND"));
+            "MERCHANT_NOT_FOUND"),
+        Arguments.of(
+            "GET /v1/report over more than thirty days",
+            operatorGet("/v1/report?from=2026-09-01&to=2026-10-01"),
+            new IllegalStateException("not reached: the period is refused first"),
+            400,
+            "INVALID_REPORT_PERIOD"),
+        Arguments.of(
+            "GET /v1/report/{reportId} for a report never built",
+            merchantGet("/v1/report/" + UUID.randomUUID()),
+            new IllegalStateException("not reached: the report store answers first"),
+            404,
+            "REPORT_NOT_FOUND"));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -136,6 +147,23 @@ class GatewayErrorContractTest {
     return Stream.of(
         Arguments.of("POST /v1/order", "/v1/order"),
         Arguments.of("POST /v1/order/modification", "/v1/order/modification"));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unreadableParameters")
+  void answersAnAbsentOrUnreadableParameterWithInvalidRequest(String route, String path)
+      throws Exception {
+    mockMvc
+        .perform(operatorGet(path))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().json("{\"code\":\"INVALID_REQUEST\"}"));
+  }
+
+  static Stream<Arguments> unreadableParameters() {
+    return Stream.of(
+        Arguments.of("GET /v1/report without from", "/v1/report?to=2026-09-30"),
+        Arguments.of("GET /v1/report with an unreadable date", "/v1/report?from=today&to=today"),
+        Arguments.of("GET /v1/report/{reportId} with an unreadable id", "/v1/report/latest"));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -170,8 +198,7 @@ class GatewayErrorContractTest {
     return Stream.of(
         Arguments.of("POST /v1/order", order(VALID_ORDER)),
         Arguments.of("POST /v1/order/modification", modification(VALID_MODIFICATION)),
-        Arguments.of("GET /v1/report/balance/tax", operatorGet("/v1/report/balance/tax")),
-        Arguments.of("GET /v1/report/balance/merchant", operatorGet("/v1/report/balance/merchant")),
+        Arguments.of("GET /v1/report", operatorGet("/v1/report" + PERIOD)),
         Arguments.of("GET /v1/psps", merchantGet("/v1/psps")));
   }
 
@@ -218,17 +245,12 @@ class GatewayErrorContractTest {
 
   private static final class FailingLedger implements LedgerReportClient {
     @Override
-    public BalanceReport taxBalances() {
+    public BalanceReport platformReport(ReportPeriod period) {
       throw new IllegalStateException("Ledger unreachable");
     }
 
     @Override
-    public BalanceReport merchantBalances() {
-      throw new IllegalStateException("Ledger unreachable");
-    }
-
-    @Override
-    public BalanceReport merchantBalances(String merchantCode) {
+    public BalanceReport merchantReport(String merchantCode, ReportPeriod period) {
       throw new IllegalStateException("Ledger unreachable");
     }
   }

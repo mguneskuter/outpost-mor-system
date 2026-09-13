@@ -1,6 +1,7 @@
 package com.outpost.ledger.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -8,16 +9,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.outpost.accounting.report.BalanceReport;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.web.SizeBoundedRequestBody;
 import com.outpost.ledger.accountingrequest.api.AccountingRequestController;
 import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
 import com.outpost.ledger.report.api.BalanceReportController;
-import com.outpost.ledger.report.service.BalanceReport;
 import com.outpost.ledger.report.service.BalanceReportService;
 import jakarta.servlet.Filter;
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,6 +56,7 @@ class LedgerSecurityConfigurationTest {
   static final String GATEWAY_SECRET = "gateway-secret";
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8(GATEWAY_SECRET);
   private static final String UNAUTHENTICATED = "{\"code\":\"UNAUTHENTICATED\"}";
+  private static final String PERIOD = "?from=2026-09-01&to=2026-09-30";
 
   @Autowired private WebApplicationContext context;
 
@@ -103,10 +106,10 @@ class LedgerSecurityConfigurationTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"/v1/report/balance/merchant", "/v1/report/balance/merchant/DEMO"})
-  void rejectsUnsignedMerchantReports(String path) throws Exception {
+  @ValueSource(strings = {"/v1/report/balance", "/v1/report/balance/merchant/DEMO"})
+  void rejectsUnsignedReports(String path) throws Exception {
     mockMvc
-        .perform(request(HttpMethod.GET, URI.create(path)))
+        .perform(request(HttpMethod.GET, URI.create(path + PERIOD)))
         .andExpect(status().isUnauthorized())
         .andExpect(content().json(UNAUTHENTICATED));
   }
@@ -159,9 +162,9 @@ class LedgerSecurityConfigurationTest {
   static Stream<CallerRoute> callerRoutes() {
     return Stream.of(
         new CallerRoute(HttpMethod.POST, "/v1/accounting-request", "{}", GATEWAY_KEY, 202),
-        new CallerRoute(HttpMethod.GET, "/v1/report/balance/tax", "", GATEWAY_KEY, 200),
-        new CallerRoute(HttpMethod.GET, "/v1/report/balance/merchant", "", GATEWAY_KEY, 200),
-        new CallerRoute(HttpMethod.GET, "/v1/report/balance/merchant/DEMO", "", GATEWAY_KEY, 200));
+        new CallerRoute(HttpMethod.GET, "/v1/report/balance" + PERIOD, "", GATEWAY_KEY, 200),
+        new CallerRoute(
+            HttpMethod.GET, "/v1/report/balance/merchant/DEMO" + PERIOD, "", GATEWAY_KEY, 200));
   }
 
   /** A route, the caller granted it, and the status its controller returns on success. */
@@ -201,9 +204,10 @@ class LedgerSecurityConfigurationTest {
     @Bean
     BalanceReportService balanceReportService() {
       BalanceReportService service = mock(BalanceReportService.class);
-      when(service.tax()).thenReturn(new BalanceReport(List.of()));
-      when(service.merchant()).thenReturn(new BalanceReport(List.of()));
-      when(service.merchant(anyString())).thenReturn(new BalanceReport(List.of()));
+      BalanceReport empty =
+          new BalanceReport(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), List.of());
+      when(service.platform(any())).thenReturn(empty);
+      when(service.merchant(anyString(), any())).thenReturn(empty);
       return service;
     }
 

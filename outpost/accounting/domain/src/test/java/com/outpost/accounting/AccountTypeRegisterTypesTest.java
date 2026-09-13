@@ -7,6 +7,7 @@ import com.outpost.account.AccountTypes;
 import com.outpost.accounting.AccountTypeRegisterTypes.AccountTypeRegisterType;
 import com.outpost.accounting.RegisterTypes.RegisterType;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,27 @@ class AccountTypeRegisterTypesTest {
                 constant ->
                     constant.getValue().getAccountType().equals(AccountTypes.PLATFORM.getValue()))
             .count());
+  }
+
+  @Test
+  void findsThePairOfAnAccountTypeAndRegisterType() {
+    assertEquals(
+        Optional.of(AccountTypeRegisterTypes.PLATFORM_PENDING_FEE),
+        AccountTypeRegisterTypes.fromAccountTypeAndRegisterType(
+            AccountTypes.PLATFORM.getValue(), RegisterTypes.PENDING_FEE.getValue()));
+    assertEquals(
+        Optional.empty(),
+        AccountTypeRegisterTypes.fromAccountTypeAndRegisterType(
+            AccountTypes.PSP.getValue(), RegisterTypes.PENDING_FEE.getValue()));
+  }
+
+  @Test
+  void payablesAreCreditNormalAndReceivablesDebitNormal() {
+    assertEquals(
+        NormalBalances.CREDIT, AccountTypeRegisterTypes.MERCHANT_MERCHANT_PAYABLE.normalBalance());
+    assertEquals(NormalBalances.DEBIT, AccountTypeRegisterTypes.PSP_PSP_RECEIVABLE.normalBalance());
+    assertEquals(
+        NormalBalances.DEBIT, AccountTypeRegisterTypes.PLATFORM_FX_CLEARING.normalBalance());
   }
 
   private static Pair pair(AccountTypeRegisterTypes constant) {

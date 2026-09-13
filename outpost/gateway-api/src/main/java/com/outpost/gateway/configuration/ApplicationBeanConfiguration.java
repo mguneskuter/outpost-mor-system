@@ -27,6 +27,7 @@ import com.outpost.gateway.report.client.ledger.LedgerReportHttpClient;
 import com.outpost.gateway.report.repository.ReportRepository;
 import com.outpost.gateway.report.repository.mybatis.MyBatisReportRepository;
 import com.outpost.gateway.report.repository.mybatis.ReportMapper;
+import com.outpost.gateway.report.service.GeneratedReports;
 import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.AesGcmSecretAdapter;
 import com.outpost.gateway.security.GatewayPrincipalArgumentResolver;
@@ -237,7 +238,15 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  ReportService reportService(LedgerReportClient ledgerReportClient, ReportRepository repository) {
-    return new ReportService(ledgerReportClient, repository);
+  GeneratedReports generatedReports() {
+    return new GeneratedReports(100);
+  }
+
+  @Bean
+  ReportService reportService(
+      LedgerReportClient ledgerReportClient,
+      ReportRepository repository,
+      GeneratedReports generatedReports) {
+    return new ReportService(ledgerReportClient, repository, generatedReports);
   }
 }

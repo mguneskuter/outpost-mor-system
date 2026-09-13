@@ -7,13 +7,17 @@ import com.outpost.merchant.cli.gateway.GatewayException;
 import com.outpost.merchant.cli.merchant.Merchant;
 import com.outpost.merchant.cli.merchant.MerchantRepository;
 import com.outpost.merchant.cli.merchant.Psp;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.StringJoiner;
+import java.util.function.BiFunction;
 import org.springframework.dao.DataAccessException;
 import org.springframework.shell.core.command.annotation.Argument;
 import org.springframework.shell.core.command.annotation.Command;
+import org.springframework.shell.core.command.annotation.Option;
 
-/** Commands about who the shell acts as and what Outpost owes. */
+/** Commands about who the shell acts as and the balance reports. */
 public class MerchantCommands {
   private final MerchantRepository merchants;
   private final GatewayClient gateway;
@@ -87,41 +91,75 @@ public class MerchantCommands {
     return lines.toString();
   }
 
-  /** What Outpost owes the current merchant. */
+  /** The current merchant's balance report over a period: what was posted to its account. */
   @Command(
       group = "Merchant",
-      name = "balance-merchant",
-      description = "What Outpost owes the current merchant")
-  public String balanceMerchant() {
+      name = "report",
+      description = "Balance report of the current merchant over a period of at most 30 days")
+  public String report(
+      @Option(longName = "from", required = true, description = "first day, YYYY-MM-DD")
+          String from,
+      @Option(longName = "to", required = true, description = "last day, YYYY-MM-DD") String to) {
+    return readReport(
+        from,
+        to,
+        (fromDate, toDate) -> {
+          String reportUrl = gateway.requestMerchantReport(session.credentials(), fromDate, toDate);
+          return format(reportUrl, gateway.readMerchantReport(session.credentials(), reportUrl));
+        });
+  }
+
+  /** The platform's balance report over a period, read with the operator key. */
+  @Command(
+      group = "Merchant",
+      name = "report-platform",
+      description =
+          "Balance report of every merchant, tax authority, and the platform over a period of at"
+              + " most 30 days (operator)")
+  public String reportPlatform(
+      @Option(longName = "from", required = true, description = "first day, YYYY-MM-DD")
+          String from,
+      @Option(longName = "to", required = true, description = "last day, YYYY-MM-DD") String to) {
+    return readReport(
+        from,
+        to,
+        (fromDate, toDate) -> {
+          String reportUrl = gateway.requestPlatformReport(operatorApiKey, fromDate, toDate);
+          return format(reportUrl, gateway.readPlatformReport(operatorApiKey, reportUrl));
+        });
+  }
+
+  private static String readReport(
+      String from, String to, BiFunction<LocalDate, LocalDate, String> read) {
+    LocalDate fromDate;
+    LocalDate toDate;
     try {
-      return format(gateway.merchantBalances(session.credentials()));
+      fromDate = LocalDate.parse(from);
+      toDate = LocalDate.parse(to);
+    } catch (DateTimeParseException invalid) {
+      return "invalid date " + invalid.getParsedString() + "; use YYYY-MM-DD";
+    }
+    try {
+      return read.apply(fromDate, toDate);
     } catch (GatewayException refused) {
       return refused.describe();
     }
   }
 
-  /** What Outpost owes each tax authority, read with the operator key. */
-  @Command(
-      group = "Merchant",
-      name = "balance-tax",
-      description = "What Outpost owes each tax authority (operator)")
-  public String balanceTax() {
-    try {
-      return format(gateway.taxBalances(operatorApiKey));
-    } catch (GatewayException refused) {
-      return refused.describe();
-    }
-  }
-
-  private static String format(BalanceReport report) {
-    if (report.accounts().isEmpty()) {
-      return "nothing owed";
-    }
+  private static String format(String reportUrl, BalanceReport report) {
     StringJoiner lines = new StringJoiner("\n");
+    lines.add("report " + reportUrl);
     for (BalanceReport.Account account : report.accounts()) {
-      lines.add(account.accountCode() + "  " + account.name());
-      for (BalanceReport.Balance balance : account.balances()) {
-        lines.add("  " + Money.format(balance.amount(), balance.currency()));
+      lines.add(account.accountCode());
+      for (BalanceReport.BalanceAccount balanceAccount : account.balanceAccounts()) {
+        if (balanceAccount.balances().isEmpty()) {
+          lines.add("  " + balanceAccount.balanceAccountCode() + "  (no balances)");
+          continue;
+        }
+        lines.add("  " + balanceAccount.balanceAccountCode());
+        for (BalanceReport.Balance balance : balanceAccount.balances()) {
+          lines.add("    " + balance.balance() + " " + balance.currency());
+        }
       }
     }
     return lines.toString();

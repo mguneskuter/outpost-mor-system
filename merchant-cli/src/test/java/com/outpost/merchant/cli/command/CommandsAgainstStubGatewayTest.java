@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,10 +43,13 @@ class CommandsAgainstStubGatewayTest {
        {"order_line_reference":"line-2","merchant_line_reference":"TSHIRT",
        "amount":2500,"tax_amount":525,"total_amount":3025,"tax_rate":"0.2100"}]}
       """;
-  private static final String MERCHANT_BALANCES =
+  private static final String REPORT_ID = "3f1c2a54-9b0e-4d6f-8a7b-1c2d3e4f5a6b";
+  private static final String REPORT =
       """
-      {"accounts":[{"account_code":"DEMO_MERCHANT","name":"Demo Merchant",
-       "balances":[{"currency":"EUR","amount":7600}]}]}
+      {"from":"2026-09-01","to":"2026-09-30","accounts":[{"account_code":"DEMO_MERCHANT",
+       "balance_accounts":[{"balance_account_code":"MERCHANT_PAYABLE",
+       "balances":[{"currency":"EUR","balance":"76.00"}]},
+       {"balance_account_code":"PENDING_FEE","balances":[]}]}]}
       """;
 
   private StubGateway gateway;
@@ -54,23 +58,16 @@ class CommandsAgainstStubGatewayTest {
 
   @BeforeEach
   void startStub() throws Exception {
-    gateway =
-        new StubGateway(
-            Map.of(
-                "POST /v1/order",
-                new StubGateway.Answer(201, ORDER),
-                "POST /v1/order/modification",
-                new StubGateway.Answer(202, "{\"refund_reference\":\"refund-9\"}"),
-                "GET /v1/report/balance/merchant",
-                new StubGateway.Answer(200, MERCHANT_BALANCES),
-                "GET /v1/report/balance/tax",
-                new StubGateway.Answer(
-                    200,
-                    "{\"accounts\":[{\"account_code\":\"TAX_AUTHORITY_NL\","
-                        + "\"name\":\"Netherlands Tax Authority\","
-                        + "\"balances\":[{\"currency\":\"EUR\",\"amount\":1680}]}]}"),
-                "POST /v1/DEMO_PSP/payment",
-                new StubGateway.Answer(202, "")));
+    Map<String, StubGateway.Answer> answers = new HashMap<>();
+    gateway = new StubGateway(answers);
+    answers.put("POST /v1/order", new StubGateway.Answer(201, ORDER));
+    answers.put(
+        "POST /v1/order/modification",
+        new StubGateway.Answer(202, "{\"refund_reference\":\"refund-9\"}"));
+    answers.put(
+        "GET /v1/report", new StubGateway.Answer(200, "{\"report_url\":\"" + reportUrl() + "\"}"));
+    answers.put("GET /v1/report/" + REPORT_ID, new StubGateway.Answer(200, REPORT));
+    answers.put("POST /v1/DEMO_PSP/payment", new StubGateway.Answer(202, ""));
     MerchantCliProperties properties =
         new MerchantCliProperties(
             gateway.baseUrl(),
@@ -250,19 +247,47 @@ class CommandsAgainstStubGatewayTest {
   }
 
   @Test
-  void readsTheMerchantBalancesWithTheMerchantSignatureAndTheTaxBalancesWithTheOperatorKey() {
-    assertThat(merchantCommands.balanceMerchant())
-        .isEqualTo("DEMO_MERCHANT  Demo Merchant\n  76.00 EUR");
-    assertThat(merchantCommands.balanceTax())
-        .isEqualTo("TAX_AUTHORITY_NL  Netherlands Tax Authority\n  16.80 EUR");
+  void requestsTheReportThenReadsItAtItsUrlAsTheMerchantOrAsTheOperator() {
+    String printed =
+        """
+        report %s
+        DEMO_MERCHANT
+          MERCHANT_PAYABLE
+            76.00 EUR
+          PENDING_FEE  (no balances)"""
+            .formatted(reportUrl())
+            .stripIndent();
+
+    assertThat(merchantCommands.report("2026-09-01", "2026-09-30")).isEqualTo(printed);
+    assertThat(merchantCommands.reportPlatform("2026-09-01", "2026-09-30")).isEqualTo(printed);
 
     List<StubGateway.Received> requests = gateway.received();
-    assertThat(requests.get(0).path()).isEqualTo("/v1/report/balance/merchant");
+    assertThat(requests).hasSize(4);
+    assertThat(requests.get(0).path()).isEqualTo("/v1/report");
+    assertThat(requests.get(0).query()).isEqualTo("from=2026-09-01&to=2026-09-30");
     assertThat(requests.get(0).apiKey()).isEqualTo(API_KEY);
     assertThat(requests.get(0).signature()).isEqualTo(signature(""));
-    assertThat(requests.get(1).path()).isEqualTo("/v1/report/balance/tax");
-    assertThat(requests.get(1).apiKey()).isEqualTo(OPERATOR_KEY);
-    assertThat(requests.get(1).signature()).isNull();
+    assertThat(requests.get(1).path()).isEqualTo("/v1/report/" + REPORT_ID);
+    assertThat(requests.get(1).apiKey()).isEqualTo(API_KEY);
+    assertThat(requests.get(1).signature()).isEqualTo(signature(""));
+    assertThat(requests.get(2).path()).isEqualTo("/v1/report");
+    assertThat(requests.get(2).query()).isEqualTo("from=2026-09-01&to=2026-09-30");
+    assertThat(requests.get(2).apiKey()).isEqualTo(OPERATOR_KEY);
+    assertThat(requests.get(2).signature()).isNull();
+    assertThat(requests.get(3).path()).isEqualTo("/v1/report/" + REPORT_ID);
+    assertThat(requests.get(3).apiKey()).isEqualTo(OPERATOR_KEY);
+    assertThat(requests.get(3).signature()).isNull();
+  }
+
+  @Test
+  void refusesAnUnreadableDateWithoutCallingTheGateway() {
+    assertThat(merchantCommands.report("2026-09-01", "yesterday"))
+        .isEqualTo("invalid date yesterday; use YYYY-MM-DD");
+    assertThat(gateway.received()).isEmpty();
+  }
+
+  private String reportUrl() {
+    return gateway.baseUrl() + "/v1/report/" + REPORT_ID;
   }
 
   private static String signature(String body) {

@@ -14,8 +14,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * Answers every controller failure with {@link ErrorResponse}. A controlled failure carries its own
@@ -57,6 +59,14 @@ public final class GatewayErrorAdvice {
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<ErrorResponse> unreadable(HttpMessageNotReadableException exception) {
     LOGGER.warn("Request body could not be read", exception);
+    return respond(HttpStatus.BAD_REQUEST.value(), ErrorResponse.INVALID_REQUEST);
+  }
+
+  @ExceptionHandler({
+    MissingServletRequestParameterException.class,
+    MethodArgumentTypeMismatchException.class
+  })
+  ResponseEntity<ErrorResponse> invalidParameter(Exception exception) {
     return respond(HttpStatus.BAD_REQUEST.value(), ErrorResponse.INVALID_REQUEST);
   }
 

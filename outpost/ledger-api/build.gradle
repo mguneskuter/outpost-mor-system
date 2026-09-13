@@ -22,6 +22,7 @@ dependencies {
     implementation project(':merchant-configuration:domain')
     implementation project(':tax')
     implementation project(':fx')
+    implementation project(':accounting:report')
     implementation project(':accounting:api')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
