@@ -35,14 +35,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentEventService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
+  private final PaymentLifecycle lifecycle;
   private final Clock clock;
-  private final PaymentLifecycle lifecycle = new PaymentLifecycle();
 
-  /** Creates a service using the ledger clock and persistence seams. */
+  /** Creates a service using the ledger clock, persistence seams, and payment lifecycle. */
   public PaymentEventService(
-      PaymentRepository repository, JournalEntryRepository journalEntryRepository, Clock clock) {
+      PaymentRepository repository,
+      JournalEntryRepository journalEntryRepository,
+      PaymentLifecycle lifecycle,
+      Clock clock) {
     this.repository = repository;
     this.journalEntryRepository = journalEntryRepository;
+    this.lifecycle = lifecycle;
     this.clock = clock;
   }
 

@@ -12,6 +12,7 @@ import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.api.CaptureRequest;
 import com.outpost.accounting.api.CaptureResponse;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
+import com.outpost.accounting.payment.PaymentLifecycle;
 import com.outpost.accounting.templates.CaptureJournalTemplates;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Currencies;
@@ -33,15 +34,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class CaptureService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
+  private final PaymentLifecycle lifecycle;
   private final Clock clock;
-  private final com.outpost.accounting.payment.PaymentLifecycle lifecycle =
-      new com.outpost.accounting.payment.PaymentLifecycle();
 
-  /** Creates a service using the ledger clock and persistence seams. */
+  /** Creates a service using the ledger clock, persistence seams, and payment lifecycle. */
   public CaptureService(
-      PaymentRepository repository, JournalEntryRepository journalEntryRepository, Clock clock) {
+      PaymentRepository repository,
+      JournalEntryRepository journalEntryRepository,
+      PaymentLifecycle lifecycle,
+      Clock clock) {
     this.repository = repository;
     this.journalEntryRepository = journalEntryRepository;
+    this.lifecycle = lifecycle;
     this.clock = clock;
   }
 
@@ -200,10 +204,9 @@ public class CaptureService {
         && fee.currencyId() == payment.currencyId();
   }
 
-  private static TransactionEventType fold(List<PaymentEvent> events) {
+  private TransactionEventType fold(List<PaymentEvent> events) {
     try {
-      return new com.outpost.accounting.payment.PaymentLifecycle()
-          .fold(events.stream().map(CaptureService::eventType).toList());
+      return lifecycle.fold(events.stream().map(CaptureService::eventType).toList());
     } catch (IllegalArgumentException exception) {
       throw internal();
     }
