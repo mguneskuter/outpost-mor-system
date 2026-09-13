@@ -54,6 +54,7 @@ sourceSets {
 tasks.named('test') {
     useJUnitPlatform()
     systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
+    systemProperty 'outpost.control.location', rootProject.file('db/control').absolutePath
 }
 
 // Resolves the narrow Flyway CLI classpath to a file so `make migrate` can run the
