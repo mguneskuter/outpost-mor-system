@@ -18,6 +18,7 @@ import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
+import com.outpost.accounting.payment.PaymentLifecycle;
 import com.outpost.common.iso.Currencies;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
@@ -66,7 +67,11 @@ class PaymentEventServiceTest {
           10_000L,
           2_000L);
   private final PaymentEventService service =
-      new PaymentEventService(repository, journalEntryRepository, Clock.fixed(NOW, ZoneOffset.UTC));
+      new PaymentEventService(
+          repository,
+          journalEntryRepository,
+          new PaymentLifecycle(),
+          Clock.fixed(NOW, ZoneOffset.UTC));
 
   @ParameterizedTest
   @EnumSource(

@@ -4,6 +4,7 @@ import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.journalentry.repository.mybatis.JournalEntryMapper;
 import com.outpost.accounting.journalentry.repository.mybatis.MyBatisJournalEntryRepository;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
+import com.outpost.accounting.payment.PaymentLifecycle;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.fx.FxFee;
@@ -52,6 +53,11 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
+  PaymentLifecycle paymentLifecycle() {
+    return new PaymentLifecycle();
+  }
+
+  @Bean
   JournalEntryRepository journalEntryRepository(
       JournalEntryMapper mapper, PlatformTransactionManager transactionManager) {
     return new MyBatisJournalEntryRepository(mapper, transactionManager);
@@ -68,14 +74,20 @@ public class ApplicationBeanConfiguration {
 
   @Bean
   PaymentEventService paymentEventService(
-      PaymentRepository repository, JournalEntryRepository journalEntryRepository, Clock clock) {
-    return new PaymentEventService(repository, journalEntryRepository, clock);
+      PaymentRepository repository,
+      JournalEntryRepository journalEntryRepository,
+      PaymentLifecycle lifecycle,
+      Clock clock) {
+    return new PaymentEventService(repository, journalEntryRepository, lifecycle, clock);
   }
 
   @Bean
   CaptureService captureService(
-      PaymentRepository repository, JournalEntryRepository journalEntryRepository, Clock clock) {
-    return new CaptureService(repository, journalEntryRepository, clock);
+      PaymentRepository repository,
+      JournalEntryRepository journalEntryRepository,
+      PaymentLifecycle lifecycle,
+      Clock clock) {
+    return new CaptureService(repository, journalEntryRepository, lifecycle, clock);
   }
 
   @Bean
