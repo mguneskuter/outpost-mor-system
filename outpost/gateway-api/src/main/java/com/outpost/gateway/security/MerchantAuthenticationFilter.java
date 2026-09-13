@@ -68,6 +68,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     }
     String presented = request.getHeader("X-Outpost-Api-Key");
     if (presented == null || presented.isBlank()) {
+      rejected("MISSING_API_KEY");
       unauthenticated(response);
       return;
     }
@@ -104,11 +105,13 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       return;
     }
     if (credentials.isEmpty()) {
+      rejected("UNKNOWN_API_KEY");
       unauthenticated(response);
       return;
     }
     String signature = request.getHeader("X-Outpost-Signature");
     if (signature == null || signature.isBlank()) {
+      rejected("MISSING_SIGNATURE");
       unauthenticated(response);
       return;
     }
@@ -148,6 +151,11 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     HttpServletRequest wrapped = new BodyRequest(request, body);
     wrapped.setAttribute(PRINCIPAL_ATTRIBUTE, GatewayPrincipal.merchant(key.accountId()));
     chain.doFilter(wrapped, response);
+  }
+
+  private static void rejected(String failure) {
+    LOGGER.warn(
+        "Merchant authentication rejected", new StructuredLogField(LogField.FAILURE, failure));
   }
 
   private void unauthenticated(HttpServletResponse response) throws IOException {

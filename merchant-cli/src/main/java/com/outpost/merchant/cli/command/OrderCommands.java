@@ -7,9 +7,11 @@ import com.outpost.merchant.cli.gateway.CreatedOrder;
 import com.outpost.merchant.cli.gateway.GatewayClient;
 import com.outpost.merchant.cli.gateway.GatewayException;
 import com.outpost.merchant.cli.merchant.MerchantRepository;
+import com.outpost.merchant.cli.merchant.OrderEvent;
 import com.outpost.merchant.cli.merchant.OrderPayment;
 import com.outpost.merchant.cli.psp.PspPaymentClient;
 import com.outpost.merchant.cli.psp.PspPaymentException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,19 +31,26 @@ public class OrderCommands {
   /** The simulator's approved test card. */
   static final String APPROVED_CARD = "4111111111111111";
 
+  private static final Duration OUTCOME_POLL_INTERVAL = Duration.ofMillis(500);
+
   private final Map<String, CatalogueItem> catalogue;
   private final GatewayClient gateway;
   private final PspPaymentClient psp;
   private final MerchantRepository merchants;
   private final ShellSession session;
+  private final Duration outcomeWait;
 
-  /** Creates the commands over the catalogue, the Gateway, the PSP, and the session. */
+  /**
+   * Creates the commands over the catalogue, the Gateway, the PSP, and the session; {@code pay}
+   * waits up to {@code outcomeWait} for the Ledger to book the payment's outcome.
+   */
   public OrderCommands(
       MerchantCliProperties properties,
       GatewayClient gateway,
       PspPaymentClient psp,
       MerchantRepository merchants,
-      ShellSession session) {
+      ShellSession session,
+      Duration outcomeWait) {
     this.catalogue =
         properties.catalogue().stream()
             .collect(Collectors.toMap(CatalogueItem::sku, Function.identity()));
@@ -49,6 +58,7 @@ public class OrderCommands {
     this.psp = psp;
     this.merchants = merchants;
     this.session = session;
+    this.outcomeWait = outcomeWait;
   }
 
   /** Lists what the merchant sells. */
@@ -121,8 +131,14 @@ public class OrderCommands {
     return format(order);
   }
 
-  /** Pays an order at the PSP with a test card. */
-  @Command(group = "Order", name = "pay", description = "Pay an order at its PSP with a test card")
+  /**
+   * Pays an order at the PSP with a test card, then reports the outcome the Ledger books: the PSP
+   * answers by webhook, so the outcome is what Outpost booked for the order once it arrived.
+   */
+  @Command(
+      group = "Order",
+      name = "pay",
+      description = "Pay an order at its PSP with a test card and report the booked outcome")
   public String pay(
       @Argument(index = 0, description = "order reference") String orderReference,
       @Option(
@@ -146,7 +162,73 @@ public class OrderCommands {
     } catch (PspPaymentException refused) {
       return "payment not accepted: " + refused.reason();
     }
-    return "payment submitted for " + orderReference + "; the PSP reports the outcome by webhook";
+    return "payment submitted for " + orderReference + "; " + awaitOutcome(orderReference);
+  }
+
+  /** Lists what the Ledger booked for an order so far. */
+  @Command(
+      group = "Order",
+      name = "status",
+      description = "List what Outpost booked for an order: payment, capture, and refund events")
+  public String status(
+      @Argument(index = 0, description = "order reference") String orderReference) {
+    List<OrderEvent> events;
+    try {
+      events = merchants.findOrderEvents(orderReference);
+    } catch (DataAccessException unreadable) {
+      return Database.unreadable(unreadable);
+    }
+    if (events.isEmpty()) {
+      return "nothing booked yet for " + orderReference;
+    }
+    StringJoiner lines = new StringJoiner("\n");
+    for (OrderEvent event : events) {
+      lines.add(event.transactionType() + "  " + event.eventType() + "  " + event.occurredAt());
+    }
+    return lines.toString();
+  }
+
+  /**
+   * Waits for the Ledger to book the PSP's authorisation outcome and, when authorised, the capture.
+   */
+  private String awaitOutcome(String orderReference) {
+    long deadline = System.nanoTime() + outcomeWait.toNanos();
+    boolean authorised = false;
+    while (true) {
+      List<OrderEvent> events;
+      try {
+        events = merchants.findOrderEvents(orderReference);
+      } catch (DataAccessException unreadable) {
+        return Database.unreadable(unreadable);
+      }
+      if (has(events, "REFUSED")) {
+        return "refused by the PSP";
+      }
+      if (has(events, "CAPTURED")) {
+        return "authorised and captured";
+      }
+      if (has(events, "CAPTURE_FAILED")) {
+        return "authorised, but the capture failed";
+      }
+      authorised = has(events, "AUTHORISED");
+      if (System.nanoTime() >= deadline) {
+        break;
+      }
+      try {
+        Thread.sleep(OUTCOME_POLL_INTERVAL);
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        return "interrupted while waiting for the outcome; see status " + orderReference;
+      }
+    }
+    String waited = "within " + outcomeWait.toMillis() + " ms";
+    return authorised
+        ? "authorised; the capture was not booked " + waited + "; see status " + orderReference
+        : "no outcome booked " + waited + "; see status " + orderReference;
+  }
+
+  private static boolean has(List<OrderEvent> events, String eventType) {
+    return events.stream().anyMatch(event -> event.eventType().equals(eventType));
   }
 
   /** Refunds the whole order. */

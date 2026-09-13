@@ -13,6 +13,8 @@ import com.outpost.common.iso.CountrySubdivisions;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
@@ -100,6 +102,7 @@ public final class OrderService {
     Checkout checkout = checkout(merchantAccountId, command);
     Optional<Order> created =
         orders.insertOrder(checkout.shopper(), unsavedOrder(idempotencyKey, fingerprint, checkout));
+    created.ifPresent(order -> LOGGER.info("Order created", orderFields(order, checkout)));
     if (created.isEmpty()) {
       Order winner =
           orders
@@ -116,6 +119,9 @@ public final class OrderService {
     if (!order.getRequestFingerprint().equals(fingerprint)) {
       throw failure(HttpStatus.CONFLICT.value(), "IDEMPOTENCY_CONFLICT");
     }
+    LOGGER.info(
+        "Order creation repeated",
+        new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()));
     if (order.getPspReference().isPresent()) {
       return result(order);
     }
@@ -148,6 +154,11 @@ public final class OrderService {
     PspOrder pspOrder = createPspOrder(order, checkout.psp().getCode());
     orders.updateOrderPspReferenceAndPaymentLink(
         order.getOrderReference(), pspOrder.pspReference(), pspOrder.paymentLink());
+    LOGGER.info(
+        "Payment created at the PSP",
+        new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
+        new StructuredLogField(LogField.PSP_CODE, checkout.psp().getCode()),
+        new StructuredLogField(LogField.PSP_REFERENCE, pspOrder.pspReference()));
     AccountingQueueRequest orderCreated = orderCreated(order, checkout, pspOrder);
     try {
       accountingQueue.add(orderCreated);
@@ -188,6 +199,11 @@ public final class OrderService {
           psp.createOrder(
               new CreateOrderRequest(pspCode, order.getOrderReference(), order.getGrossAmount()));
     } catch (RuntimeException exception) {
+      LOGGER.warn(
+          "PSP order creation failed",
+          exception,
+          new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
+          new StructuredLogField(LogField.PSP_CODE, pspCode));
       throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     }
     String pspReference = pspResult.pspReference();
@@ -197,6 +213,11 @@ public final class OrderService {
         || pspReference.isBlank()
         || paymentLink == null
         || paymentLink.isBlank()) {
+      LOGGER.warn(
+          "PSP did not accept the order",
+          new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
+          new StructuredLogField(LogField.PSP_CODE, pspCode),
+          new StructuredLogField(LogField.PSP_RESULT, pspResult.resultCode().name()));
       throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     }
     return new PspOrder(pspReference, paymentLink);
@@ -358,6 +379,19 @@ public final class OrderService {
     return new OrderCreationException(status, code);
   }
 
+  private static StructuredLogField[] orderFields(Order order, Checkout checkout) {
+    return new StructuredLogField[] {
+      new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
+      new StructuredLogField(LogField.MERCHANT_CODE, checkout.merchant().getCode()),
+      new StructuredLogField(LogField.PSP_CODE, checkout.psp().getCode()),
+      new StructuredLogField(LogField.CURRENCY, order.getNetAmount().currency().getCurrencyCode()),
+      new StructuredLogField(LogField.NET_AMOUNT, Long.toString(order.getNetAmount().quantity())),
+      new StructuredLogField(LogField.TAX_AMOUNT, Long.toString(order.getTaxAmount().quantity())),
+      new StructuredLogField(
+          LogField.GROSS_AMOUNT, Long.toString(order.getGrossAmount().quantity()))
+    };
+  }
+
   private static CreateOrderResult result(Order order) {
     return new CreateOrderResult(
         order.getOrderReference(),
@@ -397,4 +431,27 @@ public final class OrderService {
 
   /** The order a PSP created for a payment reference. */
   private record PspOrder(String pspReference, String paymentLink) {}
+
+  private enum LogField implements LogFields {
+    ORDER_REFERENCE("order_reference"),
+    MERCHANT_CODE("merchant_code"),
+    PSP_CODE("psp_code"),
+    PSP_REFERENCE("psp_reference"),
+    PSP_RESULT("psp_result"),
+    CURRENCY("currency"),
+    NET_AMOUNT("net_amount"),
+    TAX_AMOUNT("tax_amount"),
+    GROSS_AMOUNT("gross_amount");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
+  }
 }

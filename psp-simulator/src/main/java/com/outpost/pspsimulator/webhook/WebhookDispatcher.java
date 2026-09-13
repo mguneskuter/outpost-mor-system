@@ -7,6 +7,7 @@ import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -56,15 +57,25 @@ public final class WebhookDispatcher {
                 () -> new IllegalStateException("PSP is not configured: " + payload.pspCode()));
     byte[] body = serialize(payload);
     try {
-      restClient
-          .post()
-          .uri("/v1/psp/{pspCode}/webhook", payload.pspCode())
-          .contentType(MediaType.APPLICATION_JSON)
-          .header(API_KEY_HEADER, account.apiKey())
-          .header(SIGNATURE_HEADER, signer.signBase64(account.hmacSecret(), body))
-          .body(body)
-          .retrieve()
-          .toBodilessEntity();
+      ResponseEntity<Void> answer =
+          restClient
+              .post()
+              .uri("/v1/psp/{pspCode}/webhook", payload.pspCode())
+              .contentType(MediaType.APPLICATION_JSON)
+              .header(API_KEY_HEADER, account.apiKey())
+              .header(SIGNATURE_HEADER, signer.signBase64(account.hmacSecret(), body))
+              .body(body)
+              .retrieve()
+              .toBodilessEntity();
+      LOGGER.info(
+          "webhook delivered pspCode={} eventCode={} pspReference={} success={} resultCode={} "
+              + "status={}",
+          payload.pspCode(),
+          payload.eventCode().getCode(),
+          payload.pspReference(),
+          payload.success(),
+          payload.resultCode().getCode(),
+          answer.getStatusCode().value());
     } catch (RestClientException exception) {
       LOGGER.warn(
           "webhook delivery failed pspCode={} eventCode={} pspReference={}",

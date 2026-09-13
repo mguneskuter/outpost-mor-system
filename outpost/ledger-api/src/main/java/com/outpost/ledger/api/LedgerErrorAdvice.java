@@ -8,6 +8,8 @@ import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.ledger.accountingrequest.service.AccountingRequestRefusedException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,10 @@ public final class LedgerErrorAdvice {
   @ExceptionHandler(AccountingRequestRefusedException.class)
   ResponseEntity<AccountingQueueResult> refused(AccountingRequestRefusedException exception) {
     AccountingRequestErrorTypes error = exception.getError();
+    List<StructuredLogField> fields = new ArrayList<>();
+    fields.add(new StructuredLogField(LogField.ERROR, error.name()));
+    exception.getRequest().ifPresent(request -> fields.addAll(List.of(request.logFields())));
+    LOGGER.info("Accounting request refused", fields.toArray(StructuredLogField[]::new));
     HttpStatus status =
         switch (error) {
           case INVALID_REQUEST -> HttpStatus.BAD_REQUEST;
@@ -78,7 +84,8 @@ public final class LedgerErrorAdvice {
   }
 
   private enum LogField implements LogFields {
-    CORRELATION_ID("correlation_id");
+    CORRELATION_ID("correlation_id"),
+    ERROR("error");
 
     private final String jsonKey;
 

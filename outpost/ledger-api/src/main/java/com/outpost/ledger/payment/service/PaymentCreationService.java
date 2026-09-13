@@ -17,12 +17,16 @@ import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
 import java.util.Objects;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -30,6 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
  * entry.
  */
 public class PaymentCreationService {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(PaymentCreationService.class));
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
   private final PaymentFeeCalculator feeCalculator;
@@ -125,6 +131,14 @@ public class PaymentCreationService {
               orderCreatedEvent.occurredAt());
       journalEntryRepository.insertJournalEntry(
           pendingFeeEntry(orderCreated, merchantPendingFee, platformPendingFee, fee));
+      LOGGER.info(
+          "Payment booked with its pending fee",
+          new StructuredLogField(LogField.ORIGINAL_REFERENCE, request.originalReference()),
+          new StructuredLogField(LogField.MERCHANT_CODE, merchant.getCode()),
+          new StructuredLogField(LogField.PSP_CODE, psp.getCode()),
+          new StructuredLogField(LogField.CURRENCY, currency.getCurrencyCode()),
+          new StructuredLogField(LogField.GROSS_AMOUNT, Long.toString(grossAmount.quantity())),
+          new StructuredLogField(LogField.FEE_AMOUNT, Long.toString(fee.quantity())));
     } catch (PaymentCreationException e) {
       throw e;
     } catch (IllegalArgumentException | ArithmeticException e) {
@@ -184,6 +198,9 @@ public class PaymentCreationService {
         && Objects.equals(
             e.shopperCountrySubdivisionId(),
             subdivision == null ? null : subdivision.getCountrySubdivisionId())) {
+      LOGGER.info(
+          "Payment already booked",
+          new StructuredLogField(LogField.ORIGINAL_REFERENCE, r.originalReference()));
       return;
     }
     throw new PaymentCreationException(409, "REFERENCE_CONFLICT");
@@ -229,5 +246,25 @@ public class PaymentCreationService {
 
   private static PaymentCreationException internal() {
     return new PaymentCreationException(500, "INTERNAL_ERROR");
+  }
+
+  private enum LogField implements LogFields {
+    ORIGINAL_REFERENCE("original_reference"),
+    MERCHANT_CODE("merchant_code"),
+    PSP_CODE("psp_code"),
+    CURRENCY("currency"),
+    GROSS_AMOUNT("gross_amount"),
+    FEE_AMOUNT("fee_amount");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
   }
 }

@@ -15,6 +15,9 @@ import com.outpost.accounting.templates.CaptureJournalTemplates;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.ledger.payment.repository.CaptureChild;
 import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentRepository;
@@ -26,10 +29,13 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Books one PSP capture outcome on an authorised payment and its accounting evidence. */
 public class CaptureService {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(CaptureService.class));
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
   private final PaymentProcessorStateMachine stateMachine;
@@ -66,6 +72,10 @@ public class CaptureService {
     if (existing != null) {
       if (existing.eventTypeId() != null
           && existing.eventTypeId() == candidate.getTransactionEventTypeId()) {
+        LOGGER.info(
+            "Capture outcome already booked",
+            new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
+            new StructuredLogField(LogField.EVENT, candidate.getCode()));
         return;
       }
       throw new CaptureException(409, "CAPTURE_CONFLICT");
@@ -120,6 +130,13 @@ public class CaptureService {
       throw internal();
     }
     journalEntryRepository.insertJournalEntry(journalEntry(payment, pendingFee, transactionEvent));
+    LOGGER.info(
+        success
+            ? "Capture booked: net to the merchant, tax to the tax authority, fee to Outpost"
+            : "Capture failure booked and the pending fee released",
+        new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
+        new StructuredLogField(LogField.CAPTURE_REFERENCE, captureReference),
+        new StructuredLogField(LogField.EVENT, candidate.getCode()));
   }
 
   private JournalEntry journalEntry(
@@ -211,5 +228,22 @@ public class CaptureService {
 
   private static CaptureException internal() {
     return new CaptureException(500, "INTERNAL_ERROR");
+  }
+
+  private enum LogField implements LogFields {
+    ORIGINAL_REFERENCE("original_reference"),
+    CAPTURE_REFERENCE("capture_reference"),
+    EVENT("event");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
   }
 }

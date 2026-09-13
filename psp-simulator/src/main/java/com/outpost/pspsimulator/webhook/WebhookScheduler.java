@@ -10,12 +10,15 @@ import com.outpost.pspsimulator.refund.Refund;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ThreadLocalRandom;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
 
 /** Schedules webhook events after their configured delays. */
 @Component
 public final class WebhookScheduler {
+  private static final Logger LOGGER = LoggerFactory.getLogger(WebhookScheduler.class);
 
   private final TaskScheduler taskScheduler;
   private final WebhookDispatcher dispatcher;
@@ -42,14 +45,33 @@ public final class WebhookScheduler {
     boolean approved = outcome == ResultCodes.APPROVED;
     Instant authorisationAt = Instant.now().plus(authorisationDelay());
     taskScheduler.schedule(authorisationEvent(order, outcome), authorisationAt);
+    LOGGER.info(
+        "authorisation webhook scheduled pspCode={} pspReference={} outcome={} at={}",
+        order.pspCode(),
+        order.pspReference(),
+        outcome.getCode(),
+        authorisationAt);
     if (approved) {
-      taskScheduler.schedule(captureEvent(order), authorisationAt.plus(delays.capture()));
+      Instant captureAt = authorisationAt.plus(delays.capture());
+      taskScheduler.schedule(captureEvent(order), captureAt);
+      LOGGER.info(
+          "capture webhook scheduled pspCode={} pspReference={} at={}",
+          order.pspCode(),
+          order.pspReference(),
+          captureAt);
     }
   }
 
   /** Schedules the REFUND webhook for an accepted refund. */
   public void scheduleRefund(Order order, Refund refund) {
-    taskScheduler.schedule(refundEvent(order, refund), Instant.now().plus(delays.refund()));
+    Instant refundAt = Instant.now().plus(delays.refund());
+    taskScheduler.schedule(refundEvent(order, refund), refundAt);
+    LOGGER.info(
+        "refund webhook scheduled pspCode={} pspReference={} pspRefundReference={} at={}",
+        order.pspCode(),
+        order.pspReference(),
+        refund.pspRefundReference(),
+        refundAt);
   }
 
   private Runnable authorisationEvent(Order order, ResultCodes outcome) {
@@ -66,6 +88,11 @@ public final class WebhookScheduler {
               OrderStatuses.CAPTURED);
       if (captured) {
         dispatcher.dispatch(eventPayload(order, WebhookEventCodes.CAPTURE, ResultCodes.APPROVED));
+      } else {
+        LOGGER.info(
+            "capture skipped: order is no longer authorised pspCode={} pspReference={}",
+            order.pspCode(),
+            order.pspReference());
       }
     };
   }
