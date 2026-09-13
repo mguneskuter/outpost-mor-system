@@ -35,15 +35,11 @@ public final class AccountingFixtures {
         301L, AccountTypes.PLATFORM.getValue(), "PLATFORM", "Platform", true, CREATED, root);
   }
 
-  static JournalEntry journalEntry(long journalEntryId) {
+  static JournalEntry journalEntry(long sourceId) {
     TransactionEvent event =
         new TransactionEvent(
-            journalEntryId,
-            payment(journalEntryId),
-            TransactionEventTypes.CAPTURED.getValue(),
-            CREATED);
-    return new JournalEntry(
-        journalEntryId, event, JournalEntryTypes.CAPTURE.getValue(), CREATED, CREATED);
+            sourceId, payment(sourceId), TransactionEventTypes.CAPTURED.getValue(), CREATED);
+    return new JournalEntry(event, JournalEntryTypes.CAPTURE.getValue(), CREATED, CREATED);
   }
 
   /** Returns a PAYMENT transaction owned by the fixture merchant account. */

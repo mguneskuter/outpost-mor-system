@@ -21,13 +21,10 @@ public interface PaymentRepository {
   MerchantFeeConfiguration findFee(long accountId, long currencyId);
 
   /** Finds the active tax authority account for a country. */
-  Long findTaxAuthority(long countryId);
+  Account findTaxAuthorityAccountByCountryId(long countryId);
 
   /** Finds the platform account. */
-  Long findPlatform();
-
-  /** Finds a pending-fee register for an account. */
-  Long findPendingRegister(long accountId);
+  Account findPlatformAccount();
 
   /** Inserts a transaction and returns its generated id, or null for a duplicate reference. */
   Long insertTransaction(
@@ -40,19 +37,13 @@ public interface PaymentRepository {
   /** Inserts the order-created event. */
   long insertEvent(long transactionId, Instant at);
 
-  /** Inserts the pending-fee journal entry. */
-  long insertEntry(long eventId, Instant at);
-
-  /** Inserts a journal line. */
-  long insertLine(long entryId, long registerId, long currencyId, long quantity);
-
   /** Locks and returns the payment family root for a payment reference. */
   PaymentFamily findPaymentFamilyForUpdate(String reference);
 
   /** Reads payment events in their append order. */
   List<PaymentEvent> findPaymentEvents(long transactionId);
 
-  /** Reads the payment's capture child and its outcome, if one exists. */
+  /** Reads the payment's capture child and its capture event type, if one exists. */
   CaptureChild findCaptureChild(long paymentTransactionId);
 
   /** Reads a capture by its unique reference. */
@@ -75,12 +66,6 @@ public interface PaymentRepository {
 
   /** Reads the pending-fee lines that a refusal or cancellation must reverse. */
   PendingFee findPendingFee(long transactionId);
-
-  /** Inserts a fee-release journal entry. */
-  long insertFeeReleaseEntry(long eventId, long entryTypeId, Instant at);
-
-  /** Inserts the REFUND journal entry. */
-  long insertRefundEntry(long eventId, long entryTypeId, Instant at);
 
   /** Returns whether the payment has exactly one successful capture for its full amount. */
   boolean hasExactlyOneSuccessfulFullCapture(

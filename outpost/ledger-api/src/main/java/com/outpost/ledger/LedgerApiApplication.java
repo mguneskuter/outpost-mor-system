@@ -10,7 +10,11 @@ import org.springframework.context.annotation.Import;
 
 /** Configures the Ledger application and its startup reference-data checks. */
 @SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
-@EnableOutpostPersistence(mapperPackages = "com.outpost.accounting.repository.sanity")
+@EnableOutpostPersistence(
+    mapperPackages = {
+      "com.outpost.accounting.repository.sanity",
+      "com.outpost.accounting.journalentry.repository.mybatis"
+    })
 @EnableSystemSanityCheck
 @Import(AccountingStaticDataRepositories.class)
 public class LedgerApiApplication {

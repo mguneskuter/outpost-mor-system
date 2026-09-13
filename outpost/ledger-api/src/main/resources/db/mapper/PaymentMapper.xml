@@ -5,11 +5,11 @@
     SELECT COUNT(*) = 1
        AND COALESCE(BOOL_AND(child.quantity = #{gross} AND child.currency_id = #{currencyId}), false)
       FROM transaction child
-      JOIN transaction_event outcome ON outcome.transaction_id = child.transaction_id
+      JOIN transaction_event capture_event ON capture_event.transaction_id = child.transaction_id
      WHERE child.parent_transaction_id = #{paymentTransactionId}
        AND child.transaction_type_id =
            (SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE')
-       AND outcome.transaction_event_type_id =
+       AND capture_event.transaction_event_type_id =
            (SELECT transaction_event_type_id FROM transaction_event_type WHERE code = 'CAPTURED')
   </select>
 
@@ -62,7 +62,7 @@
            detail.net_quantity AS "netQuantity",
            detail.tax_quantity AS "taxQuantity",
            child.created_ts AS "createdTs",
-           outcome.transaction_event_type_id AS "eventTypeId"
+           refund_event.transaction_event_type_id AS "eventTypeId"
       FROM transaction child
       JOIN refund_detail detail ON detail.transaction_id = child.transaction_id
       LEFT JOIN LATERAL (
@@ -71,7 +71,7 @@
            WHERE transaction_id = child.transaction_id
            ORDER BY transaction_event_id DESC
            LIMIT 1
-      ) outcome ON true
+      ) refund_event ON true
      WHERE child.parent_transaction_id = #{paymentTransactionId}
        AND child.transaction_type_id =
            (SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND')
@@ -88,7 +88,7 @@
            detail.net_quantity AS "netQuantity",
            detail.tax_quantity AS "taxQuantity",
            child.created_ts AS "createdTs",
-           outcome.transaction_event_type_id AS "eventTypeId"
+           refund_event.transaction_event_type_id AS "eventTypeId"
       FROM transaction child
       JOIN refund_detail detail ON detail.transaction_id = child.transaction_id
       LEFT JOIN LATERAL (
@@ -97,7 +97,7 @@
            WHERE transaction_id = child.transaction_id
            ORDER BY transaction_event_id DESC
            LIMIT 1
-      ) outcome ON true
+      ) refund_event ON true
      WHERE child.reference = #{reference}
        AND child.transaction_type_id =
            (SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND')

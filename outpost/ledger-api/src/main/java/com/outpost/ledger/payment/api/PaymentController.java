@@ -1,13 +1,13 @@
 package com.outpost.ledger.payment.api;
 
 import com.outpost.framework.logging.StructuredLogger;
+import com.outpost.ledger.payment.service.AppendPaymentEventCommand;
 import com.outpost.ledger.payment.service.CaptureException;
 import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationException;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventException;
 import com.outpost.ledger.payment.service.PaymentEventService;
-import com.outpost.ledger.payment.service.RecordPaymentEventCommand;
 import com.outpost.ledger.payment.service.RefundReservationService;
 import com.outpost.ledger.payment.service.ReserveRefundCommand;
 import com.outpost.ledger.payment.service.ReserveRefundException;
@@ -51,18 +51,18 @@ public final class PaymentController {
     return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
   }
 
-  /** Records a Worker-observed payment lifecycle event. */
+  /** Appends a Worker-observed payment lifecycle event. */
   @PostMapping("/event")
-  public ResponseEntity<Void> recordEvent(@RequestBody PaymentEventRequest request) {
-    eventService.record(
+  public ResponseEntity<Void> appendPaymentEvent(@RequestBody PaymentEventRequest request) {
+    eventService.appendPaymentEvent(
         request == null
             ? null
-            : new RecordPaymentEventCommand(
+            : new AppendPaymentEventCommand(
                 request.paymentReference(), request.refundReference(), request.event()));
     return ResponseEntity.noContent().build();
   }
 
-  /** Records a Worker-observed capture outcome. */
+  /** Stores a capture the Worker observed as succeeded or failed. */
   @PostMapping("/capture")
   public ResponseEntity<CaptureResponse> capture(@RequestBody CaptureRequest request) {
     return ResponseEntity.status(HttpStatus.CREATED).body(captureService.capture(request));
