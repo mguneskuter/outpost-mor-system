@@ -23,11 +23,10 @@ import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.ledger.payment.repository.ExistingPayment;
+import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,18 +35,15 @@ public class PaymentCreationService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
   private final PaymentFeeCalculator feeCalculator;
-  private final Clock clock;
 
-  /** Creates a service using the ledger clock and persistence seams. */
+  /** Creates a service using the persistence seams. */
   public PaymentCreationService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentFeeCalculator feeCalculator,
-      Clock clock) {
+      PaymentFeeCalculator feeCalculator) {
     this.repository = repository;
     this.journalEntryRepository = journalEntryRepository;
     this.feeCalculator = feeCalculator;
-    this.clock = clock;
   }
 
   /** Creates a payment and its pending-fee journal atomically. */
@@ -93,17 +89,13 @@ public class PaymentCreationService {
       } catch (IllegalArgumentException | ArithmeticException e) {
         throw unprocessable("FEE_ABOVE_NET");
       }
-      Instant createdAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
-      Long transactionId =
+      StoredTransaction payment =
           repository.insertTransaction(
-              merchant.getAccountId(),
-              request.paymentReference(),
-              gross,
-              currency.getCurrencyId(),
-              createdAt);
-      if (transactionId == null) {
+              merchant.getAccountId(), request.paymentReference(), gross, currency.getCurrencyId());
+      if (payment == null) {
         return existingOrConflict(request, currency, merchant, psp, country, subdivision);
       }
+      long transactionId = payment.transactionId();
       Account taxAuthorityAccount =
           repository.findTaxAuthorityAccountByCountryId(country.getCountryId());
       Account platformAccount = repository.findPlatformAccount();
@@ -119,22 +111,22 @@ public class PaymentCreationService {
           psp.getAccountId(),
           request.netAmount(),
           request.taxAmount());
-      long eventId = repository.insertEvent(transactionId, createdAt);
+      PaymentEvent orderCreatedEvent = repository.insertEvent(transactionId);
       TransactionEvent orderCreated =
           new TransactionEvent(
-              eventId,
+              orderCreatedEvent.transactionEventId(),
               Transaction.of(
                   transactionId,
                   TransactionTypes.PAYMENT.getValue(),
                   merchant,
                   request.paymentReference(),
                   new Amount(currency, gross),
-                  createdAt),
+                  payment.createdAt()),
               TransactionEventTypes.ORDER_CREATED.getValue(),
-              createdAt);
+              orderCreatedEvent.occurredAt());
       journalEntryRepository.insertJournalEntry(
           pendingFeeEntry(orderCreated, merchantPendingFee, platformPendingFee, fee));
-      return new PaymentResponse(request.paymentReference(), createdAt);
+      return new PaymentResponse(request.paymentReference(), payment.createdAt());
     } catch (PaymentCreationException e) {
       throw e;
     } catch (IllegalArgumentException | ArithmeticException e) {

@@ -7,24 +7,21 @@ import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionTypes;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.RefundChild;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Reserves a refundable amount without creating an accounting entry. */
 public class RefundReservationService {
   private final PaymentRepository repository;
-  private final Clock clock;
 
-  /** Creates a service using the ledger clock and persistence seam. */
-  public RefundReservationService(PaymentRepository repository, Clock clock) {
+  /** Creates a service using the persistence seam. */
+  public RefundReservationService(PaymentRepository repository) {
     this.repository = repository;
-    this.clock = clock;
   }
 
   /** Reserves a refund, or returns the existing result for an exact replay. */
@@ -90,29 +87,26 @@ public class RefundReservationService {
       throw invalidRefund();
     }
 
-    Instant createdAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
-    Long refundId =
+    StoredTransaction refund =
         repository.insertRefundTransaction(
             payment.transactionId(),
             payment.merchantAccountId(),
             command.refundReference(),
             gross,
-            currency.getCurrencyId(),
-            createdAt);
-    if (refundId == null) {
+            currency.getCurrencyId());
+    if (refund == null) {
       throw conflict();
     }
-    createDomainDetail(payment, command, currency, gross, refundId, createdAt);
-    repository.insertRefundDetail(refundId, command.netAmount(), command.taxAmount());
-    Long eventId =
+    createDomainDetail(payment, command, currency, gross, refund);
+    repository.insertRefundDetail(refund.transactionId(), command.netAmount(), command.taxAmount());
+    PaymentEvent event =
         repository.insertPaymentEvent(
-            refundId,
-            TransactionEventTypes.REFUND_REQUESTED.getValue().getTransactionEventTypeId(),
-            createdAt);
-    if (eventId == null) {
+            refund.transactionId(),
+            TransactionEventTypes.REFUND_REQUESTED.getValue().getTransactionEventTypeId());
+    if (event == null) {
       throw internal();
     }
-    return new ReserveRefundResult(command.refundReference(), createdAt);
+    return new ReserveRefundResult(command.refundReference(), refund.createdAt());
   }
 
   private void createDomainDetail(
@@ -120,8 +114,7 @@ public class RefundReservationService {
       ReserveRefundCommand command,
       Currency currency,
       long gross,
-      long refundId,
-      Instant createdAt) {
+      StoredTransaction refund) {
     try {
       Account merchant = repository.findAccountById(payment.merchantAccountId());
       if (merchant == null) {
@@ -134,16 +127,16 @@ public class RefundReservationService {
               merchant,
               command.paymentReference(),
               new Amount(currency, payment.grossQuantity()),
-              createdAt);
+              refund.createdAt());
       Transaction refundTransaction =
           Transaction.childOf(
               paymentTransaction,
-              refundId,
+              refund.transactionId(),
               TransactionTypes.REFUND.getValue(),
               merchant,
               command.refundReference(),
               new Amount(currency, gross),
-              createdAt);
+              refund.createdAt());
       new RefundDetail(
           refundTransaction,
           new Amount(currency, command.netAmount()),

@@ -24,9 +24,6 @@ import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.PendingFee;
 import com.outpost.ledger.payment.repository.RefundChild;
 import com.outpost.payment.common.Amount;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,18 +33,15 @@ public class PaymentEventService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
   private final PaymentLifecycle lifecycle;
-  private final Clock clock;
 
-  /** Creates a service using the ledger clock, persistence seams, and payment lifecycle. */
+  /** Creates a service using the persistence seams and payment lifecycle. */
   public PaymentEventService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle,
-      Clock clock) {
+      PaymentLifecycle lifecycle) {
     this.repository = repository;
     this.journalEntryRepository = journalEntryRepository;
     this.lifecycle = lifecycle;
-    this.clock = clock;
   }
 
   /** Appends one valid lifecycle event, or returns without writing for an exact duplicate. */
@@ -79,15 +73,14 @@ public class PaymentEventService {
       throw new PaymentEventException(409, "INVALID_TRANSITION");
     }
 
-    Instant occurredAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
-    Long eventId =
+    PaymentEvent event =
         repository.insertPaymentEvent(
-            payment.transactionId(), candidate.getTransactionEventTypeId(), occurredAt);
-    if (eventId == null) {
+            payment.transactionId(), candidate.getTransactionEventTypeId());
+    if (event == null) {
       return;
     }
     if (releasesPendingFee(candidate)) {
-      appendFeeRelease(payment, request.paymentReference(), candidate, eventId, occurredAt);
+      appendFeeRelease(payment, request.paymentReference(), candidate, event);
     }
   }
 
@@ -112,15 +105,14 @@ public class PaymentEventService {
       throw new PaymentEventException(409, "INVALID_TRANSITION");
     }
 
-    Instant occurredAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
-    Long eventId =
+    PaymentEvent event =
         repository.insertPaymentEvent(
-            refund.transactionId(), candidate.getTransactionEventTypeId(), occurredAt);
-    if (eventId == null) {
+            refund.transactionId(), candidate.getTransactionEventTypeId());
+    if (event == null) {
       return;
     }
     if (candidate.equals(TransactionEventTypes.REFUNDED.getValue())) {
-      appendRefundEntry(payment, request.paymentReference(), refund, eventId, occurredAt);
+      appendRefundEntry(payment, request.paymentReference(), refund, event);
     }
   }
 
@@ -128,8 +120,7 @@ public class PaymentEventService {
       PaymentFamily payment,
       String paymentReference,
       TransactionEventType candidate,
-      long eventId,
-      Instant occurredAt) {
+      PaymentEvent event) {
     try {
       PendingFee pendingFee = repository.findPendingFee(payment.transactionId());
       Account platformAccount = repository.findPlatformAccount();
@@ -148,14 +139,17 @@ public class PaymentEventService {
               pendingFee.platformRegisterId());
       TransactionEvent releaseEvent =
           new TransactionEvent(
-              eventId, buildTransaction(payment, paymentReference), candidate, occurredAt);
+              event.transactionEventId(),
+              buildTransaction(payment, paymentReference),
+              candidate,
+              event.occurredAt());
       JournalEntry release =
           PendingFeeJournalTemplates.FEE_RELEASE.build(
               releaseEvent,
               merchantPending,
               platformPending,
               new Amount(currency(pendingFee.currencyId()), pendingFee.fee()),
-              occurredAt);
+              event.occurredAt());
       journalEntryRepository.insertJournalEntry(release);
     } catch (IllegalArgumentException | ArithmeticException exception) {
       throw new PaymentEventException(500, "INTERNAL_ERROR");
@@ -163,11 +157,7 @@ public class PaymentEventService {
   }
 
   private void appendRefundEntry(
-      PaymentFamily payment,
-      String paymentReference,
-      RefundChild refund,
-      long eventId,
-      Instant occurredAt) {
+      PaymentFamily payment, String paymentReference, RefundChild refund, PaymentEvent event) {
     try {
       CapturePosting posting = repository.findCapturePosting(payment.transactionId());
       Currency currency = currency(payment.currencyId());
@@ -204,7 +194,10 @@ public class PaymentEventService {
           new Amount(currency, refund.taxQuantity()));
       TransactionEvent refundEvent =
           new TransactionEvent(
-              eventId, refundTransaction, TransactionEventTypes.REFUNDED.getValue(), occurredAt);
+              event.transactionEventId(),
+              refundTransaction,
+              TransactionEventTypes.REFUNDED.getValue(),
+              event.occurredAt());
       JournalEntry refundEntry =
           RefundJournalTemplates.REFUND.build(
               refundEvent,
@@ -214,7 +207,7 @@ public class PaymentEventService {
               new Amount(currency, refund.quantity()),
               new Amount(currency, refund.netQuantity()),
               new Amount(currency, refund.taxQuantity()),
-              occurredAt);
+              event.occurredAt());
       journalEntryRepository.insertJournalEntry(refundEntry);
     } catch (IllegalArgumentException | ArithmeticException exception) {
       throw new PaymentEventException(500, "INTERNAL_ERROR");

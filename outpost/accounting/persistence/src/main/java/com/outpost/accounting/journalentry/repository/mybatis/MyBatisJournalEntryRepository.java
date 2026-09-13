@@ -24,6 +24,15 @@ public final class MyBatisJournalEntryRepository implements JournalEntryReposito
     this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>The entry is stored booked and posted at the time of the database transaction that stores
+   * it, which is the time of its event when both are written in one transaction.
+   *
+   * @throws IllegalStateException if the entry's booked or posted time differs from that
+   *     transaction time; nothing is stored
+   */
   @Override
   public JournalEntry insertJournalEntry(JournalEntry journalEntry) {
     return Objects.requireNonNull(
@@ -35,6 +44,11 @@ public final class MyBatisJournalEntryRepository implements JournalEntryReposito
     List<Long> journalEntryLineIds = new ArrayList<>();
     for (JournalEntryLine line : journalEntry.getJournalEntryLines()) {
       journalEntryLineIds.add(mapper.insertJournalEntryLine(journalEntryId, line));
+    }
+    if (!mapper.hasJournalEntryBookedAndPostedAt(
+        journalEntryId, journalEntry.getBooked(), journalEntry.getPosted())) {
+      throw new IllegalStateException(
+          "journal entry is not booked and posted at the time of the transaction storing it");
     }
     return journalEntry.withIds(journalEntryId, journalEntryLineIds);
   }

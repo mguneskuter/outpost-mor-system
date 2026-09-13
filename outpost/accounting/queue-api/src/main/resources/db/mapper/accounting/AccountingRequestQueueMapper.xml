@@ -51,7 +51,7 @@
        FROM accounting_request_status_type
        WHERE accounting_request_status_type_code = 'RECEIVED'),
       #{typeId}, #{reference}, #{originalReference}, #{accountId},
-      (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), #{createdTs},
+      (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), now(),
       #{pspEventQueueId}, #{idempotencyKey}, #{merchantReference}, #{success},
       #{amount}, #{currencyId}, #{pspReference}
     )
@@ -102,7 +102,7 @@
           SELECT 1
           FROM payment_lock live_lock
           WHERE live_lock.transaction_id = t.transaction_id
-            AND live_lock.lease_until_ts &gt; #{now}
+            AND live_lock.lease_until_ts &gt; now()
         )
       )
     ORDER BY q.created_ts, q.queue_id
@@ -120,7 +120,7 @@
 
   <insert id="takePaymentLock">
     INSERT INTO payment_lock (transaction_id, queue_id, locked_ts, lease_until_ts)
-    VALUES (#{transactionId}, #{queueId}, #{lockedTs}, #{leaseUntilTs})
+    VALUES (#{transactionId}, #{queueId}, now(), now() + #{leaseMicros} * INTERVAL '1 microsecond')
     ON CONFLICT (transaction_id) DO UPDATE
       SET queue_id = EXCLUDED.queue_id,
           locked_ts = EXCLUDED.locked_ts,
@@ -130,7 +130,7 @@
 
   <update id="markMissingPaymentFailed">
     UPDATE accounting_request_queue
-    SET done = TRUE, done_ts = #{doneTs},
+    SET done = TRUE, done_ts = now(),
         status_id = (SELECT accounting_request_status_type_id
                      FROM accounting_request_status_type
                      WHERE accounting_request_status_type_code = 'DONE'),
@@ -142,7 +142,7 @@
 
   <update id="markDone">
     UPDATE accounting_request_queue
-    SET done = TRUE, done_ts = #{doneTs},
+    SET done = TRUE, done_ts = now(),
         status_id = (SELECT accounting_request_status_type_id
                      FROM accounting_request_status_type
                      WHERE accounting_request_status_type_code = 'DONE'),

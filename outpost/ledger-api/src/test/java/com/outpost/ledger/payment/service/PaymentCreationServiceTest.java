@@ -19,16 +19,17 @@ import com.outpost.accounting.JournalEntryLine;
 import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
+import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.api.CreatePaymentRequest;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Currencies;
+import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -58,11 +59,7 @@ class PaymentCreationServiceTest {
   private final Register platformPendingFee =
       new Register(10008L, platform, RegisterTypes.PENDING_FEE.getValue());
   private final PaymentCreationService service =
-      new PaymentCreationService(
-          repository,
-          journalEntryRepository,
-          new PaymentFeeCalculator(),
-          Clock.fixed(NOW, ZoneOffset.UTC));
+      new PaymentCreationService(repository, journalEntryRepository, new PaymentFeeCalculator());
 
   @Test
   void booksPendingFeeAsFivePercentOfNetNotGross() {
@@ -101,7 +98,7 @@ class PaymentCreationServiceTest {
             PaymentCreationException.class, () -> service.create(request(10_000L, 2_000L)));
 
     assertThat(failure.code()).isEqualTo("FEE_ABOVE_NET");
-    verify(repository, never()).insertTransaction(anyLong(), any(), anyLong(), anyLong(), any());
+    verify(repository, never()).insertTransaction(anyLong(), any(), anyLong(), anyLong());
     verify(journalEntryRepository, never()).insertJournalEntry(any());
   }
 
@@ -156,8 +153,8 @@ class PaymentCreationServiceTest {
     when(repository.findAccount(merchant.getCode())).thenReturn(merchant);
     when(repository.findAccount(psp.getCode())).thenReturn(psp);
     when(repository.findFee(merchant.getAccountId(), EUR)).thenReturn(feeConfiguration);
-    when(repository.insertTransaction(merchant.getAccountId(), "payment-1", 12_000L, EUR, NOW))
-        .thenReturn(TRANSACTION_ID);
+    when(repository.insertTransaction(merchant.getAccountId(), "payment-1", 12_000L, EUR))
+        .thenReturn(new StoredTransaction(TRANSACTION_ID, NOW));
     when(repository.findTaxAuthorityAccountByCountryId(Countries.GERMANY.getValue().getCountryId()))
         .thenReturn(taxAuthority);
     when(repository.findPlatformAccount()).thenReturn(platform);
@@ -165,7 +162,12 @@ class PaymentCreationServiceTest {
         .thenReturn(merchantPendingFee);
     when(repository.findRegister(platform.getAccountId(), PENDING_FEE))
         .thenReturn(platformPendingFee);
-    when(repository.insertEvent(TRANSACTION_ID, NOW)).thenReturn(EVENT_ID);
+    when(repository.insertEvent(TRANSACTION_ID))
+        .thenReturn(
+            new PaymentEvent(
+                EVENT_ID,
+                TransactionEventTypes.ORDER_CREATED.getValue().getTransactionEventTypeId(),
+                NOW));
   }
 
   private MerchantFeeConfiguration percentage(int feeRateBps) {

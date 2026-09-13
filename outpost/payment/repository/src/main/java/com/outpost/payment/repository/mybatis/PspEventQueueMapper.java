@@ -2,7 +2,6 @@ package com.outpost.payment.repository.mybatis;
 
 import com.outpost.framework.persistence.RegisteredMapper;
 import com.outpost.payment.repository.PspEventRepository.PaymentAccounts;
-import java.time.Instant;
 import org.apache.ibatis.annotations.Param;
 import org.jspecify.annotations.Nullable;
 
@@ -22,8 +21,5 @@ public interface PspEventQueueMapper {
   int markInProgress(@Param("queueId") long queueId);
 
   /** Records a terminal processing result. */
-  int markDone(
-      @Param("queueId") long queueId,
-      @Param("resultId") long resultId,
-      @Param("doneTs") Instant doneTs);
+  int markDone(@Param("queueId") long queueId, @Param("resultId") long resultId);
 }

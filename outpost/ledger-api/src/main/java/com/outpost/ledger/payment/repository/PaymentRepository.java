@@ -3,7 +3,6 @@ package com.outpost.ledger.payment.repository;
 import com.outpost.account.Account;
 import com.outpost.account.configuration.MerchantFeeConfiguration;
 import com.outpost.accounting.Register;
-import java.time.Instant;
 import java.util.List;
 
 /** Persistence operations required by payment lifecycle commands. */
@@ -26,16 +25,16 @@ public interface PaymentRepository {
   /** Finds the platform account. */
   Account findPlatformAccount();
 
-  /** Inserts a transaction and returns its generated id, or null for a duplicate reference. */
-  Long insertTransaction(
-      long merchantId, String reference, long gross, long currencyId, Instant createdAt);
+  /** Inserts a payment transaction, or returns null for a duplicate reference. */
+  StoredTransaction insertTransaction(
+      long merchantId, String reference, long gross, long currencyId);
 
   /** Inserts the payment detail. */
   void insertPaymentDetail(
       long transactionId, long countryId, Long subdivisionId, long pspId, long net, long tax);
 
-  /** Inserts the order-created event. */
-  long insertEvent(long transactionId, Instant at);
+  /** Inserts the order-created event, dated by the database transaction that stores it. */
+  PaymentEvent insertEvent(long transactionId);
 
   /** Locks and returns the payment family root for a payment reference. */
   PaymentFamily findPaymentFamilyForUpdate(String reference);
@@ -52,17 +51,19 @@ public interface PaymentRepository {
   /** Finds a register for an account and accounting purpose. */
   Register findRegister(long accountId, long registerTypeId);
 
-  /** Inserts a CAPTURE child transaction, or null for a duplicate reference. */
-  Long insertCaptureTransaction(
+  /** Inserts a CAPTURE child transaction, or returns null for a duplicate reference. */
+  StoredTransaction insertCaptureTransaction(
       long paymentTransactionId,
       long merchantAccountId,
       String reference,
       long amount,
-      long currencyId,
-      Instant createdAt);
+      long currencyId);
 
-  /** Inserts a lifecycle event and returns its id, or null when it already exists. */
-  Long insertPaymentEvent(long transactionId, long eventTypeId, Instant occurredAt);
+  /**
+   * Inserts a lifecycle event dated by the database transaction that stores it, or returns null
+   * when the transaction already has an event of that type.
+   */
+  PaymentEvent insertPaymentEvent(long transactionId, long eventTypeId);
 
   /** Reads the pending-fee lines that a refusal or cancellation must reverse. */
   PendingFee findPendingFee(long transactionId);
@@ -80,14 +81,13 @@ public interface PaymentRepository {
   /** Reads a refund by its unique reference. */
   RefundChild findRefundByReference(String reference);
 
-  /** Inserts a REFUND child transaction, or null for a duplicate reference. */
-  Long insertRefundTransaction(
+  /** Inserts a REFUND child transaction, or returns null for a duplicate reference. */
+  StoredTransaction insertRefundTransaction(
       long paymentTransactionId,
       long merchantAccountId,
       String reference,
       long gross,
-      long currencyId,
-      Instant createdAt);
+      long currencyId);
 
   /** Inserts immutable refund detail. */
   void insertRefundDetail(long transactionId, long net, long tax);

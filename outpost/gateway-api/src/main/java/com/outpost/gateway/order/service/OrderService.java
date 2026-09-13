@@ -29,9 +29,6 @@ import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
@@ -53,7 +50,6 @@ public final class OrderService {
   private final PspClient psp;
   private final TaxRateProvider taxRates;
   private final LineTaxCalculator lineTaxCalculator;
-  private final Clock clock;
 
   /** Creates an order service from its persistence and external boundaries. */
   public OrderService(
@@ -64,8 +60,7 @@ public final class OrderService {
       LedgerClient ledger,
       PspClient psp,
       TaxRateProvider taxRates,
-      LineTaxCalculator lineTaxCalculator,
-      Clock clock) {
+      LineTaxCalculator lineTaxCalculator) {
     this.orders = orders;
     this.accounts = accounts;
     this.merchantPsps = merchantPsps;
@@ -74,7 +69,6 @@ public final class OrderService {
     this.psp = psp;
     this.taxRates = taxRates;
     this.lineTaxCalculator = lineTaxCalculator;
-    this.clock = clock;
   }
 
   /**
@@ -143,7 +137,7 @@ public final class OrderService {
         checkout.psp().getAccountId(),
         null,
         null,
-        Instant.now(clock).truncatedTo(ChronoUnit.MICROS),
+        null,
         checkout.items());
   }
 
@@ -410,7 +404,9 @@ public final class OrderService {
   private static CreateOrderResult result(Order order) {
     return new CreateOrderResult(
         order.getOrderReference(),
-        order.getCreatedAt(),
+        order
+            .getCreatedAt()
+            .orElseThrow(() -> new IllegalStateException("order has no stored creation time")),
         order.getNetAmount().quantity(),
         order.getNetAmount().currency().getCurrencyCode(),
         order.getTaxAmount().quantity(),

@@ -7,11 +7,8 @@ import com.outpost.accounting.queue.configuration.AccountingRequestQueueConfigur
 import com.outpost.framework.persistence.EnableOutpostPersistence;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import java.sql.Timestamp;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -28,9 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -42,7 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class AccountingRequestQueueIntegrationTest {
 
   private static final Instant START = Instant.parse("2026-09-12T10:00:00Z");
-  private static final MutableClock CLOCK = new MutableClock(START);
+  private static final Duration CONFIGURED_LEASE = Duration.ofMinutes(5);
 
   @org.springframework.beans.factory.annotation.Autowired private JdbcTemplate jdbcTemplate;
   @org.springframework.beans.factory.annotation.Autowired private AccountingRequestQueue queue;
@@ -69,7 +64,6 @@ class AccountingRequestQueueIntegrationTest {
         .locations("filesystem:" + System.getProperty("outpost.migration.location"))
         .load()
         .migrate();
-    CLOCK.setInstant(START);
     seedReferenceData();
   }
 
@@ -115,7 +109,6 @@ class AccountingRequestQueueIntegrationTest {
                 "payment-1",
                 "same-key",
                 List.of(new AccountingRequestLine("line-1"))));
-    CLOCK.advance(Duration.ofSeconds(1));
     AccountingRequest duplicate =
         queue.submit(
             command(
@@ -206,7 +199,6 @@ class AccountingRequestQueueIntegrationTest {
   void claimNextReturnsOldestRequestAndCompletionReleasesPayment() {
     insertPayment(2001L, "payment-1");
     AccountingRequest oldest = queue.submit(command("request-1", "payment-1", "key-1", List.of()));
-    CLOCK.advance(Duration.ofSeconds(1));
     final AccountingRequest next =
         queue.submit(command("request-2", "payment-1", "key-2", List.of()));
 
@@ -229,31 +221,99 @@ class AccountingRequestQueueIntegrationTest {
   }
 
   @Test
-  void claimNextSkipsLiveLockAndTakesOverExpiredLock() {
+  void claimNextSkipsPaymentWhoseLeaseEndsAfterTheDatabaseTime() {
     insertPayment(2002L, "payment-1");
     AccountingRequest request = queue.submit(command("request-1", "payment-1", "key-1", List.of()));
-    jdbcTemplate.update(
-        "INSERT INTO payment_lock (transaction_id, queue_id, locked_ts, lease_until_ts) "
-            + "VALUES (?, ?, ?, ?)",
-        2002L,
-        request.getQueueId(),
-        timestamp(START),
-        timestamp(START.plus(Duration.ofHours(1))));
+    insertLockEndingRelativeToDatabaseTime(2002L, request.getQueueId(), "1 hour");
 
     assertThat(queue.claimNext()).isEmpty();
+  }
 
-    CLOCK.advance(Duration.ofHours(1));
+  @Test
+  void claimNextTakesOverPaymentWhoseLeaseEndedBeforeTheDatabaseTime() {
+    insertPayment(2002L, "payment-1");
+    AccountingRequest request = queue.submit(command("request-1", "payment-1", "key-1", List.of()));
+    insertLockEndingRelativeToDatabaseTime(2002L, request.getQueueId(), "-1 second");
 
-    assertThat(queue.claimNext())
-        .get()
-        .extracting(AccountingRequest::getQueueId)
-        .isEqualTo(request.getQueueId());
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT lease_until_ts FROM payment_lock WHERE transaction_id = ?",
-                Instant.class,
-                2002L))
-        .isEqualTo(START.plus(Duration.ofHours(1)).plus(Duration.ofMinutes(5)));
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              assertThat(queue.claimNext())
+                  .get()
+                  .extracting(AccountingRequest::getQueueId)
+                  .isEqualTo(request.getQueueId());
+
+              Instant transactionTime = databaseTime();
+              assertThat(
+                      storedTime(
+                          "SELECT locked_ts FROM payment_lock WHERE transaction_id = ?", 2002L))
+                  .isEqualTo(transactionTime);
+              assertThat(
+                      storedTime(
+                          "SELECT lease_until_ts FROM payment_lock WHERE transaction_id = ?",
+                          2002L))
+                  .isEqualTo(transactionTime.plus(CONFIGURED_LEASE));
+            });
+  }
+
+  @Test
+  void submitStoresTheRequestAtTheWritingTransactionTime() {
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              AccountingRequest request =
+                  queue.submit(command("request-1", "payment-1", "key-1", List.of()));
+
+              Instant transactionTime = databaseTime();
+              assertThat(
+                      storedTime(
+                          "SELECT created_ts FROM accounting_request_queue WHERE queue_id = ?",
+                          request.getQueueId()))
+                  .isEqualTo(transactionTime);
+              assertThat(request.getCreatedAt()).isEqualTo(transactionTime);
+            });
+  }
+
+  @Test
+  void claimNextLocksThePaymentAtTheWritingTransactionTimeForTheConfiguredLease() {
+    insertPayment(2004L, "payment-1");
+    queue.submit(command("request-1", "payment-1", "key-1", List.of()));
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              assertThat(queue.claimNext()).isPresent();
+
+              Instant transactionTime = databaseTime();
+              assertThat(
+                      storedTime(
+                          "SELECT locked_ts FROM payment_lock WHERE transaction_id = ?", 2004L))
+                  .isEqualTo(transactionTime);
+              assertThat(
+                      storedTime(
+                          "SELECT lease_until_ts FROM payment_lock WHERE transaction_id = ?",
+                          2004L))
+                  .isEqualTo(transactionTime.plus(CONFIGURED_LEASE));
+            });
+  }
+
+  @Test
+  void completeStoresTheDoneTimeAtTheWritingTransactionTime() {
+    insertPayment(2005L, "payment-1");
+    AccountingRequest request = queue.submit(command("request-1", "payment-1", "key-1", List.of()));
+    assertThat(queue.claimNext()).isPresent();
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(
+            status -> {
+              queue.complete(request.getQueueId(), AccountingRequestResults.SUCCESS);
+
+              assertThat(
+                      storedTime(
+                          "SELECT done_ts FROM accounting_request_queue WHERE queue_id = ?",
+                          request.getQueueId()))
+                  .isEqualTo(databaseTime());
+            });
   }
 
   @Test
@@ -332,13 +392,7 @@ class AccountingRequestQueueIntegrationTest {
   @EnableAutoConfiguration
   @EnableOutpostPersistence
   @Import(AccountingRequestQueueConfiguration.class)
-  static class TestApplication {
-    @Bean
-    @Primary
-    Clock accountingRequestQueueTestClock() {
-      return CLOCK;
-    }
-  }
+  static class TestApplication {}
 
   private void seedReferenceData() {
     jdbcTemplate.update(
@@ -451,6 +505,24 @@ class AccountingRequestQueueIntegrationTest {
         timestamp(START));
   }
 
+  private void insertLockEndingRelativeToDatabaseTime(
+      long transactionId, long queueId, String leaseEndOffset) {
+    jdbcTemplate.update(
+        "INSERT INTO payment_lock (transaction_id, queue_id, locked_ts, lease_until_ts) "
+            + "VALUES (?, ?, now() - INTERVAL '2 hours', now() + CAST(? AS INTERVAL))",
+        transactionId,
+        queueId,
+        leaseEndOffset);
+  }
+
+  private Instant databaseTime() {
+    return Objects.requireNonNull(jdbcTemplate.queryForObject("SELECT now()", Instant.class));
+  }
+
+  private Instant storedTime(String sql, long id) {
+    return Objects.requireNonNull(jdbcTemplate.queryForObject(sql, Instant.class, id));
+  }
+
   private static Timestamp timestamp(Instant instant) {
     return Timestamp.from(instant);
   }
@@ -497,36 +569,5 @@ class AccountingRequestQueueIntegrationTest {
                 + "WHERE q.queue_id = ?",
             String.class,
             queueId));
-  }
-
-  private static final class MutableClock extends Clock {
-    private volatile Instant instant;
-
-    private MutableClock(Instant instant) {
-      this.instant = instant;
-    }
-
-    @Override
-    public ZoneId getZone() {
-      return ZoneOffset.UTC;
-    }
-
-    @Override
-    public Clock withZone(ZoneId zone) {
-      return this;
-    }
-
-    @Override
-    public Instant instant() {
-      return instant;
-    }
-
-    private void setInstant(Instant instant) {
-      this.instant = instant;
-    }
-
-    private void advance(Duration duration) {
-      instant = instant.plus(duration);
-    }
   }
 }

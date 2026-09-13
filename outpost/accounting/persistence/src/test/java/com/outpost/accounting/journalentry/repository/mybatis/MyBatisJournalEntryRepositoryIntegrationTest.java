@@ -86,7 +86,8 @@ class MyBatisJournalEntryRepositoryIntegrationTest {
             .execute(
                 status -> {
                   insertPaymentWithOrderCreatedEvent();
-                  return repository.insertJournalEntry(pendingFeeEntry(merchantPendingFee));
+                  return repository.insertJournalEntry(
+                      pendingFeeEntry(merchantPendingFee, databaseTime()));
                 });
 
     Long storedEntryId =
@@ -121,7 +122,7 @@ class MyBatisJournalEntryRepositoryIntegrationTest {
       Register missingRegister =
           new Register(99_999L, merchant, RegisterTypes.PENDING_FEE.getValue());
 
-      assertThatThrownBy(() -> repository.insertJournalEntry(pendingFeeEntry(missingRegister)))
+      assertThatThrownBy(() -> repository.insertJournalEntry(pendingFeeEntry(missingRegister, NOW)))
           .isInstanceOf(DataAccessException.class);
 
       assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM journal_entry", Long.class))
@@ -132,7 +133,32 @@ class MyBatisJournalEntryRepositoryIntegrationTest {
     }
   }
 
-  private JournalEntry pendingFeeEntry(Register merchantRegister) {
+  @Test
+  void entryBookedAtAnotherTimeThanTheTransactionStoringItIsNotStored() {
+    // The event commits before its entry exists; with the event-side entry-count check off, only
+    // the repository call decides whether an entry row survives.
+    jdbcTemplate.execute(
+        "ALTER TABLE transaction_event DISABLE TRIGGER transaction_event_entry_coupling");
+    try {
+      insertPaymentWithOrderCreatedEvent();
+
+      assertThatThrownBy(
+              () -> repository.insertJournalEntry(pendingFeeEntry(merchantPendingFee, NOW)))
+          .isInstanceOf(IllegalStateException.class);
+
+      assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM journal_entry", Long.class))
+          .isZero();
+    } finally {
+      jdbcTemplate.execute(
+          "ALTER TABLE transaction_event ENABLE TRIGGER transaction_event_entry_coupling");
+    }
+  }
+
+  private Instant databaseTime() {
+    return Objects.requireNonNull(jdbcTemplate.queryForObject("SELECT now()", Instant.class));
+  }
+
+  private JournalEntry pendingFeeEntry(Register merchantRegister, Instant bookedAndPosted) {
     Transaction payment =
         Transaction.of(
             PAYMENT_ID,
@@ -143,13 +169,16 @@ class MyBatisJournalEntryRepositoryIntegrationTest {
             NOW);
     TransactionEvent orderCreated =
         new TransactionEvent(
-            ORDER_CREATED_EVENT_ID, payment, TransactionEventTypes.ORDER_CREATED.getValue(), NOW);
+            ORDER_CREATED_EVENT_ID,
+            payment,
+            TransactionEventTypes.ORDER_CREATED.getValue(),
+            bookedAndPosted);
     return PendingFeeJournalTemplates.FEE_PENDING.build(
         orderCreated,
         merchantRegister,
         platformPendingFee,
         new Amount(Currencies.EUR.getValue(), 500L),
-        NOW);
+        bookedAndPosted);
   }
 
   private void seedAccountsAndRegisters() {

@@ -4,36 +4,40 @@ import com.outpost.accounting.queue.repository.mybatis.AccountingRequestLineRow;
 import com.outpost.accounting.queue.repository.mybatis.AccountingRequestQueueMapper;
 import com.outpost.accounting.queue.repository.mybatis.AccountingRequestRow;
 import com.outpost.accounting.queue.repository.mybatis.NewAccountingRequestRow;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Transactional boundary for submitting and processing accounting requests. */
+/**
+ * Transactional boundary for submitting and processing accounting requests. Request and lock times
+ * are the database transaction's time, so every deployable leases payments by one clock.
+ */
 public class AccountingRequestQueue {
   private final AccountingRequestQueueMapper mapper;
-  private final Clock clock;
-  private final Duration leaseDuration;
+  private final long leaseMicros;
 
-  /** Creates a queue using a clock and the configured payment-lock lease. */
-  public AccountingRequestQueue(
-      AccountingRequestQueueMapper mapper, Clock clock, Duration leaseDuration) {
+  /**
+   * Creates a queue with the configured payment-lock lease.
+   *
+   * @throws IllegalArgumentException when the lease is not a positive whole number of microseconds,
+   *     the precision of a stored lease end
+   */
+  public AccountingRequestQueue(AccountingRequestQueueMapper mapper, Duration leaseDuration) {
     this.mapper = mapper;
-    this.clock = clock;
-    if (leaseDuration.isZero() || leaseDuration.isNegative()) {
-      throw new IllegalArgumentException("leaseDuration must be positive");
+    Duration microsecond = ChronoUnit.MICROS.getDuration();
+    this.leaseMicros = leaseDuration.dividedBy(microsecond);
+    if (leaseMicros <= 0 || !microsecond.multipliedBy(leaseMicros).equals(leaseDuration)) {
+      throw new IllegalArgumentException(
+          "leaseDuration must be a positive whole number of microseconds");
     }
-    this.leaseDuration = leaseDuration;
   }
 
   /** Submits work, returning the existing request when either idempotency key is duplicated. */
   @Transactional
   public AccountingRequest submit(SubmitAccountingRequestCommand command) {
-    Instant createdAt = now();
     AccountingRequestRow existing =
         mapper.findExisting(
             command.getType().getValue().accountingRequestTypeId(),
@@ -50,7 +54,6 @@ public class AccountingRequestQueue {
             command.getReference(),
             command.getOriginalReference(),
             command.getAccountId(),
-            createdAt,
             command.getPspEventQueueId(),
             command.getIdempotencyKey(),
             command.getMerchantReference(),
@@ -81,21 +84,18 @@ public class AccountingRequestQueue {
   /** Claims the oldest unfinished request whose payment is not currently leased. */
   @Transactional
   public Optional<AccountingRequest> claimNext() {
-    Instant lockedAt = now();
-    AccountingRequestRow candidate = mapper.claimCandidate(lockedAt);
+    AccountingRequestRow candidate = mapper.claimCandidate();
     if (candidate == null) {
       return Optional.empty();
     }
     if (candidate.transactionId() == null) {
-      mapper.markMissingPaymentFailed(candidate.queueId(), lockedAt);
+      mapper.markMissingPaymentFailed(candidate.queueId());
       return Optional.empty();
     }
     if (mapper.markInProgress(candidate.queueId()) != 1) {
       throw new IllegalStateException("Could not mark request in progress: " + candidate.queueId());
     }
-    Instant leaseUntil = lockedAt.plus(leaseDuration);
-    if (mapper.takePaymentLock(candidate.transactionId(), candidate.queueId(), lockedAt, leaseUntil)
-        != 1) {
+    if (mapper.takePaymentLock(candidate.transactionId(), candidate.queueId(), leaseMicros) != 1) {
       throw new IllegalStateException(
           "Could not acquire payment lock: " + candidate.transactionId());
     }
@@ -111,7 +111,7 @@ public class AccountingRequestQueue {
   /** Completes a claimed request and releases its payment lock. */
   @Transactional
   public void complete(long queueId, AccountingRequestResults result) {
-    if (mapper.markDone(queueId, result.getValue().accountingRequestResultId(), now()) != 1) {
+    if (mapper.markDone(queueId, result.getValue().accountingRequestResultId()) != 1) {
       throw new IllegalStateException("Request is not an unfinished request: " + queueId);
     }
     mapper.deletePaymentLock(queueId);
@@ -172,9 +172,5 @@ public class AccountingRequestQueue {
       case AccountingRequestResults result -> result.getValue().accountingRequestResultId();
       default -> throw new IllegalArgumentException("Unsupported request enum: " + value);
     };
-  }
-
-  private Instant now() {
-    return Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
   }
 }

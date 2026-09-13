@@ -25,9 +25,7 @@ import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.PendingFee;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -67,11 +65,7 @@ class PaymentEventServiceTest {
           10_000L,
           2_000L);
   private final PaymentEventService service =
-      new PaymentEventService(
-          repository,
-          journalEntryRepository,
-          new PaymentLifecycle(),
-          Clock.fixed(NOW, ZoneOffset.UTC));
+      new PaymentEventService(repository, journalEntryRepository, new PaymentLifecycle());
 
   @ParameterizedTest
   @EnumSource(
@@ -156,8 +150,10 @@ class PaymentEventServiceTest {
                 ? List.of(orderCreated, event(2L, TransactionEventTypes.AUTHORISED))
                 : List.of(orderCreated));
     when(repository.insertPaymentEvent(
-            PAYMENT_ID, transactionEventType.getValue().getTransactionEventTypeId(), NOW))
-        .thenReturn(EVENT_ID);
+            PAYMENT_ID, transactionEventType.getValue().getTransactionEventTypeId()))
+        .thenReturn(
+            new PaymentEvent(
+                EVENT_ID, transactionEventType.getValue().getTransactionEventTypeId(), NOW));
     when(repository.findPendingFee(PAYMENT_ID)).thenReturn(pendingFee);
     when(repository.findAccountById(merchant.getAccountId())).thenReturn(merchant);
     when(repository.findPlatformAccount()).thenReturn(platform);

@@ -10,10 +10,16 @@
     VALUES (
       #{transactionEvent.transactionEventId},
       (SELECT journal_entry_type_id FROM journal_entry_type WHERE code = #{journalEntryType.code}),
-      #{booked},
-      #{posted}
+      now(),
+      now()
     )
     RETURNING journal_entry_id
+  </select>
+
+  <select id="hasJournalEntryBookedAndPostedAt" resultType="boolean" flushCache="true" useCache="false">
+    SELECT booked = #{booked} AND posted = #{posted}
+      FROM journal_entry
+     WHERE journal_entry_id = #{journalEntryId}
   </select>
 
   <select id="insertJournalEntryLine" resultType="long" flushCache="true" useCache="false">

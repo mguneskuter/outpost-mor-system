@@ -9,7 +9,6 @@ import com.outpost.integration.psp.simulator.repository.PspConfiguration;
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
 import com.outpost.payment.repository.PspEventRepository;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -126,6 +125,6 @@ class PspWebhookServiceTest {
     }
 
     @Override
-    public void complete(long queueId, PspEventResults result, Instant completedAt) {}
+    public void complete(long queueId, PspEventResults result) {}
   }
 }

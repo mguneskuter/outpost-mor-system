@@ -176,7 +176,7 @@
             AND subdivision.code = #{shopperCountrySubdivision,jdbcType=VARCHAR}),
         (SELECT currency_id FROM currency WHERE currency_code = #{currency}),
         #{netAmount}, #{taxAmount}, #{grossAmount}, #{idempotencyKey}, #{requestFingerprint},
-        #{paymentReference}, #{pspAccountId}, #{createdAt}
+        #{paymentReference}, #{pspAccountId}, now()
       )
       ON CONFLICT (account_id, idempotency_key) DO NOTHING
       RETURNING *

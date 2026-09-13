@@ -33,15 +33,15 @@ public final class Order {
   private final long pspAccountId;
   @Nullable private final String pspReference;
   @Nullable private final String paymentLink;
-  private final Instant createdAt;
+  @Nullable private final Instant createdAt;
   private final List<OrderItem> items;
 
   /**
    * Creates an order with its lines. {@code shopperCountry} and {@code shopperCountrySubdivision}
    * are the jurisdiction the order was sold under; a null subdivision means a country-level
    * jurisdiction. {@code pspReference} and {@code paymentLink} are absent until the PSP has created
-   * its order for {@code paymentReference}. {@code orderId}, {@code shopperId}, and the lines' ids
-   * are absent until the order is stored.
+   * its order for {@code paymentReference}. {@code orderId}, {@code shopperId}, {@code createdAt},
+   * and the lines' ids are absent until the order is stored.
    *
    * @throws IllegalArgumentException when a text value is blank, the subdivision is not in the
    *     shopper country, a line uses a different currency than the order, two lines share a
@@ -64,7 +64,7 @@ public final class Order {
       long pspAccountId,
       @Nullable String pspReference,
       @Nullable String paymentLink,
-      Instant createdAt,
+      @Nullable Instant createdAt,
       List<OrderItem> items) {
     if (orderId != null && orderId <= 0) {
       throw new IllegalArgumentException("orderId must be positive: " + orderId);
@@ -115,7 +115,7 @@ public final class Order {
       throw new IllegalArgumentException("paymentLink must not be blank when supplied");
     }
     this.paymentLink = paymentLink;
-    this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
+    this.createdAt = createdAt;
     Objects.requireNonNull(items, "items");
     if (items.isEmpty()) {
       throw new IllegalArgumentException("an order must carry at least one line");
@@ -256,9 +256,9 @@ public final class Order {
     return Optional.ofNullable(paymentLink);
   }
 
-  /** Returns when the order was created. */
-  public Instant getCreatedAt() {
-    return createdAt;
+  /** Returns when the order was stored; empty until the order is stored. */
+  public Optional<Instant> getCreatedAt() {
+    return Optional.ofNullable(createdAt);
   }
 
   /** Returns the order's immutable lines. */

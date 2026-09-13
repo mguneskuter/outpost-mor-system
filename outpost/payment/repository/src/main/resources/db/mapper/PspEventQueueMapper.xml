@@ -43,7 +43,7 @@
   </update>
   <update id="markDone">
     UPDATE psp_event_queue
-    SET done = TRUE, done_ts = #{doneTs},
+    SET done = TRUE, done_ts = now(),
         status_id = (SELECT psp_event_status_id FROM psp_event_status WHERE code = 'DONE'),
         result_id = #{resultId}
     WHERE queue_id = #{queueId} AND NOT done

@@ -52,7 +52,6 @@ import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.time.Clock;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -136,11 +135,6 @@ public class ApplicationBeanConfiguration {
   @Bean
   TaxRateProvider taxRateProvider(TaxRateRepository repository) {
     return new CachedTaxRateProvider(repository);
-  }
-
-  @Bean
-  Clock gatewayClock() {
-    return Clock.systemUTC();
   }
 
   @Bean

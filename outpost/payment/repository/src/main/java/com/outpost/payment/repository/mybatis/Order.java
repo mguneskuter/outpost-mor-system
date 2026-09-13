@@ -25,4 +25,4 @@ record Order(
     long pspAccountId,
     @Nullable String pspReference,
     @Nullable String paymentLink,
-    Instant createdAt) {}
+    @Nullable Instant createdAt) {}

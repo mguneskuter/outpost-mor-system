@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.EnableOutpostPersistence;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
+import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.RefundChild;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.ledger.payment.repository.mybatis.MyBatisPaymentRepository;
 import com.outpost.ledger.payment.repository.mybatis.PaymentMapper;
 import java.time.Instant;
@@ -35,7 +37,6 @@ class MyBatisPaymentRepositoryIntegrationTest {
   private static final long PSP_ACCOUNT_ID = 101L;
   private static final long COUNTRY_ID = 1L;
   private static final long COUNTRY_SUBDIVISION_ID = 1L;
-  private static final Instant CREATED = Instant.parse("2026-09-13T00:00:00Z");
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_payment_repository", "outpost_payment_repository", "outpost_payment_repository");
@@ -71,17 +72,38 @@ class MyBatisPaymentRepositoryIntegrationTest {
   }
 
   @Test
+  @Transactional
+  void createdPaymentAndItsOrderCreatedEventCarryTheWritingTransactionTime() {
+    StoredTransaction payment =
+        repository.insertTransaction(
+            MERCHANT_ACCOUNT_ID, "payment-dated", 1000L, Currencies.EUR.getValue().getCurrencyId());
+    PaymentEvent orderCreated = repository.insertEvent(payment.transactionId());
+
+    Instant transactionTime =
+        Objects.requireNonNull(jdbcTemplate.queryForObject("SELECT now()", Instant.class));
+    assertThat(payment.createdAt()).isEqualTo(transactionTime);
+    assertThat(orderCreated.occurredAt()).isEqualTo(transactionTime);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT created_ts FROM transaction WHERE transaction_id = ?",
+                Instant.class,
+                payment.transactionId()))
+        .isEqualTo(transactionTime);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT event_ts FROM transaction_event WHERE transaction_event_id = ?",
+                Instant.class,
+                orderCreated.transactionEventId()))
+        .isEqualTo(transactionTime);
+  }
+
+  @Test
   void refundChildIsFoundByTransactionTypeCodeRegardlessOfSeededIdentifier() {
     long eurCurrencyId = Currencies.EUR.getValue().getCurrencyId();
-    Long refundId =
+    StoredTransaction refund =
         repository.insertRefundTransaction(
-            PAYMENT_TRANSACTION_ID,
-            MERCHANT_ACCOUNT_ID,
-            "refund-ref",
-            200L,
-            eurCurrencyId,
-            Instant.now());
-    repository.insertRefundDetail(refundId, 180L, 20L);
+            PAYMENT_TRANSACTION_ID, MERCHANT_ACCOUNT_ID, "refund-ref", 200L, eurCurrencyId);
+    repository.insertRefundDetail(refund.transactionId(), 180L, 20L);
 
     List<RefundChild> children = repository.findRefundChildren(PAYMENT_TRANSACTION_ID);
 
@@ -93,20 +115,18 @@ class MyBatisPaymentRepositoryIntegrationTest {
   @Transactional
   void paymentCaptureAndOrderCreatedStatementsResolveTypesByCodeRegardlessOfSeededIdentifiers() {
     long eurCurrencyId = Currencies.EUR.getValue().getCurrencyId();
-    Long paymentTransactionId =
-        repository.insertTransaction(
-            MERCHANT_ACCOUNT_ID, "payment-by-code", 1000L, eurCurrencyId, CREATED);
+    long paymentTransactionId =
+        repository
+            .insertTransaction(MERCHANT_ACCOUNT_ID, "payment-by-code", 1000L, eurCurrencyId)
+            .transactionId();
     repository.insertPaymentDetail(
         paymentTransactionId, COUNTRY_ID, COUNTRY_SUBDIVISION_ID, PSP_ACCOUNT_ID, 900L, 100L);
-    long orderCreatedEventId = repository.insertEvent(paymentTransactionId, CREATED);
-    Long captureTransactionId =
-        repository.insertCaptureTransaction(
-            paymentTransactionId,
-            MERCHANT_ACCOUNT_ID,
-            "capture-by-code",
-            1000L,
-            eurCurrencyId,
-            CREATED);
+    long orderCreatedEventId = repository.insertEvent(paymentTransactionId).transactionEventId();
+    long captureTransactionId =
+        repository
+            .insertCaptureTransaction(
+                paymentTransactionId, MERCHANT_ACCOUNT_ID, "capture-by-code", 1000L, eurCurrencyId)
+            .transactionId();
 
     assertThat(eventTypeCodeOf(orderCreatedEventId)).isEqualTo("ORDER_CREATED");
     assertThat(repository.findPaymentFamilyForUpdate("payment-by-code").transactionId())
