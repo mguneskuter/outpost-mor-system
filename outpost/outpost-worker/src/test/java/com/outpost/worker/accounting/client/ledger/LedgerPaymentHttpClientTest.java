@@ -35,6 +35,14 @@ class LedgerPaymentHttpClientTest {
   }
 
   @Test
+  void sendsPaymentEventWithoutRefundReference() {
+    client.appendPaymentEvent("payment-1", null, TransactionEventTypes.AUTHORISED.getValue());
+
+    assertThat(ledger.requests)
+        .containsExactly(new PaymentEventRequest("payment-1", null, "AUTHORISED"));
+  }
+
+  @Test
   void sendsCapture() {
     client.recordCapture("payment-1", "capture-1", true, 1250, "EUR");
 
