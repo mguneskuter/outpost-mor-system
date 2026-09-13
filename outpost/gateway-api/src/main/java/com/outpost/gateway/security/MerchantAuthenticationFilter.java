@@ -16,6 +16,8 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Optional;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -59,7 +61,8 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       chain.doFilter(request, response);
       return;
     }
-    Optional<MerchantApiKeyCredentials> credentials = merchantApiKeys.findActiveByHash(presented);
+    Optional<MerchantApiKeyCredentials> credentials =
+        merchantApiKeys.findActiveByHash(sha256Hex(presented));
     if (credentials.isEmpty()) {
       response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
       return;
@@ -70,20 +73,31 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       return;
     }
     byte[] body = request.getInputStream().readAllBytes();
+    MerchantApiKeyCredentials key = credentials.orElseThrow();
+    HmacKey hmacKey = HmacKey.fromUtf8(secrets.decrypt(key.encryptedHmacSecret()));
+    boolean validSignature;
     try {
-      MerchantApiKeyCredentials key = credentials.orElseThrow();
-      if (!HmacSha256.verify(
-          HmacKey.fromUtf8(secrets.decrypt(key.encryptedHmacSecret())),
-          body,
-          HmacSignature.fromBase64(signature))) {
-        response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
-        return;
-      }
-      HttpServletRequest wrapped = new BodyRequest(request, body);
-      wrapped.setAttribute(PRINCIPAL_ATTRIBUTE, GatewayPrincipal.merchant(key.accountId()));
-      chain.doFilter(wrapped, response);
-    } catch (RuntimeException e) {
+      validSignature = HmacSha256.verify(hmacKey, body, HmacSignature.fromBase64(signature));
+    } catch (IllegalArgumentException exception) {
       response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+      return;
+    }
+    if (!validSignature) {
+      response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+      return;
+    }
+    HttpServletRequest wrapped = new BodyRequest(request, body);
+    wrapped.setAttribute(PRINCIPAL_ATTRIBUTE, GatewayPrincipal.merchant(key.accountId()));
+    chain.doFilter(wrapped, response);
+  }
+
+  private static String sha256Hex(String value) {
+    try {
+      return HexFormat.of()
+          .formatHex(
+              MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 is unavailable", exception);
     }
   }
 

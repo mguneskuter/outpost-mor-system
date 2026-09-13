@@ -18,6 +18,12 @@ INNER JOIN account_type AS psp_type
         psp.account_type_id = psp_type.account_type_id
         AND psp_type.code = 'PSP';
 
+INSERT INTO merchant_psp (account_id, psp_account_id)
+SELECT
+    account_id,
+    psp_account_id
+FROM seed_merchant_psp
+ON CONFLICT (account_id, psp_account_id) DO NOTHING;
 DO $$
 BEGIN
     IF EXISTS (
@@ -30,10 +36,4 @@ BEGIN
     END IF;
 END
 $$;
-INSERT INTO merchant_psp (account_id, psp_account_id)
-SELECT
-    account_id,
-    psp_account_id
-FROM seed_merchant_psp
-ON CONFLICT (account_id, psp_account_id) DO NOTHING;
 DROP TABLE seed_merchant_psp;

@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.outpost.gateway.security.repository.mybatis.MerchantApiKeyMapper">
-  <resultMap id="merchantApiKeyRow" type="com.outpost.gateway.security.repository.mybatis.MerchantApiKeyRow">
-    <result property="accountId" column="account_id" />
-    <result property="encryptedHmacSecret" column="hmac_secret" />
+  <resultMap id="merchantApiKeyCredentials" type="com.outpost.gateway.security.repository.MerchantApiKeyCredentials">
+    <constructor>
+      <idArg column="account_id" javaType="_long" />
+      <arg column="hmac_secret" javaType="string" />
+    </constructor>
   </resultMap>
-  <select id="findActiveByHash" resultMap="merchantApiKeyRow">
+  <select id="findActiveByHash" resultMap="merchantApiKeyCredentials">
     SELECT account_id, hmac_secret
     FROM merchant_api_key
-    WHERE api_key_hash = encode(digest(#{apiKeyHash}, 'sha256'), 'hex')
+    WHERE api_key_hash = #{apiKeyHashHex}
       AND is_active
   </select>
 </mapper>

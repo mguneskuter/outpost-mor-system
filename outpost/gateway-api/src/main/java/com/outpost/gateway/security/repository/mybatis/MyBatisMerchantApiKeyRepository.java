@@ -16,10 +16,7 @@ public final class MyBatisMerchantApiKeyRepository implements MerchantApiKeyRepo
   }
 
   @Override
-  public Optional<MerchantApiKeyCredentials> findActiveByHash(String apiKeyHash) {
-    MerchantApiKeyRow row = mapper.findActiveByHash(apiKeyHash);
-    return Optional.ofNullable(row)
-        .map(
-            value -> new MerchantApiKeyCredentials(value.accountId(), value.encryptedHmacSecret()));
+  public Optional<MerchantApiKeyCredentials> findActiveByHash(String apiKeyHashHex) {
+    return Optional.ofNullable(mapper.findActiveByHash(apiKeyHashHex));
   }
 }

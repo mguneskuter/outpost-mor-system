@@ -6,5 +6,5 @@ import java.util.Optional;
 public interface MerchantApiKeyRepository {
 
   /** Finds the active credentials for an API-key hash. */
-  Optional<MerchantApiKeyCredentials> findActiveByHash(String apiKeyHash);
+  Optional<MerchantApiKeyCredentials> findActiveByHash(String apiKeyHashHex);
 }

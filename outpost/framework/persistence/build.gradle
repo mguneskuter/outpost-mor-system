@@ -27,6 +27,9 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation project(':account:domain')
+    testImplementation project(':common-iso:domain')
+    testImplementation project(':accounting:domain')
+    testImplementation project(':merchant-configuration:domain')
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
