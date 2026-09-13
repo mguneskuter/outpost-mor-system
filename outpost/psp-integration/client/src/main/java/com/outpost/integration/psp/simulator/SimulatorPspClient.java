@@ -13,11 +13,14 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /** Calls the simulator protocol and translates transport failures into outcomes. */
 public final class SimulatorPspClient implements PspClient {
+  private static final Logger LOGGER = LoggerFactory.getLogger(SimulatorPspClient.class);
   private final PspConfigurationRepository configurations;
 
   /** Creates a client backed by the supplied configuration lookup. */
@@ -89,8 +92,10 @@ public final class SimulatorPspClient implements PspClient {
               .body(type));
     } catch (RuntimeException ex) {
       if (isTimeout(ex)) {
+        LOGGER.warn("PSP call timed out pspCode={} route={}", configuration.code(), route, ex);
         throw new SimulatorTimeoutException();
       }
+      LOGGER.warn("PSP call failed pspCode={} route={}", configuration.code(), route, ex);
       return null;
     }
   }

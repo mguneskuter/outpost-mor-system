@@ -5,9 +5,12 @@ import com.outpost.pspsimulator.NotFoundException;
 import com.outpost.pspsimulator.configuration.SimulatorProperties;
 import com.outpost.pspsimulator.webhook.WebhookScheduler;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Drives an order through creation and payment. */
 public final class OrderService {
+  private static final Logger LOGGER = LoggerFactory.getLogger(OrderService.class);
 
   private final OrderRepository orderRepository;
   private final WebhookScheduler webhookScheduler;
@@ -34,6 +37,13 @@ public final class OrderService {
             pspCode, command.paymentReference(), command.amountMinor(), command.currencyCode());
     if (inserted.isPresent()) {
       Order order = inserted.get();
+      LOGGER.info(
+          "order created pspCode={} pspReference={} paymentReference={} amount={} currency={}",
+          pspCode,
+          order.pspReference(),
+          order.paymentReference(),
+          order.amountMinor(),
+          order.currencyCode());
       return new CreateOrderResult(order, paymentUrl(pspCode), true);
     }
     Order existing =
@@ -49,6 +59,11 @@ public final class OrderService {
       throw new ConflictException(
           "payment reference " + command.paymentReference() + " was used with different data");
     }
+    LOGGER.info(
+        "order repeated pspCode={} pspReference={} paymentReference={}",
+        pspCode,
+        existing.pspReference(),
+        existing.paymentReference());
     return new CreateOrderResult(existing, paymentUrl(pspCode), false);
   }
 
@@ -80,6 +95,12 @@ public final class OrderService {
     if (!transitioned) {
       throw new ConflictException("order no longer awaits payment: " + command.pspReference());
     }
+    LOGGER.info(
+        "payment submitted pspCode={} pspReference={} paymentReference={} outcome={}",
+        pspCode,
+        order.pspReference(),
+        order.paymentReference(),
+        outcome.getCode());
     webhookScheduler.scheduleAuthorisation(order, outcome);
   }
 

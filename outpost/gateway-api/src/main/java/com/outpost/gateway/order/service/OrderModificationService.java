@@ -1,5 +1,8 @@
 package com.outpost.gateway.order.service;
 
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.service.RefundRequest;
 import com.outpost.integration.psp.service.RefundResult;
@@ -8,10 +11,13 @@ import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.payment.refund.Refund;
 import com.outpost.payment.refund.repository.RefundRepository;
 import java.util.UUID;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 
 /** Refunds a merchant's order in full at its PSP and stores the accepted refund. */
 public final class OrderModificationService {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(OrderModificationService.class));
   private static final String REFUND_TYPE = "REFUND";
   private final OrderRepository orders;
   private final PspClient psp;
@@ -44,6 +50,13 @@ public final class OrderModificationService {
             .getPspReference()
             .orElseThrow(() -> failure(HttpStatus.CONFLICT.value(), "ORDER_NOT_PAID"));
     String refundReference = "refund-" + UUID.randomUUID();
+    StructuredLogField[] refundFields = {
+      new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
+      new StructuredLogField(LogField.REFUND_REFERENCE, refundReference),
+      new StructuredLogField(LogField.PSP_CODE, order.getPspAccount().getCode()),
+      new StructuredLogField(LogField.PSP_REFERENCE, pspReference)
+    };
+    LOGGER.info("Refund requested", refundFields);
 
     RefundResult pspResult;
     try {
@@ -51,8 +64,14 @@ public final class OrderModificationService {
           psp.refund(
               new RefundRequest(order.getPspAccount().getCode(), pspReference, refundReference));
     } catch (RuntimeException exception) {
+      LOGGER.warn("PSP refund failed", exception, refundFields);
       throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     }
+    LOGGER.info(
+        "PSP answered the refund",
+        new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
+        new StructuredLogField(LogField.REFUND_REFERENCE, refundReference),
+        new StructuredLogField(LogField.PSP_RESULT, pspResult.resultCode().name()));
     return switch (pspResult.resultCode()) {
       case ACCEPTED -> {
         String pspRefundReference = pspResult.pspRefundReference();
@@ -78,5 +97,24 @@ public final class OrderModificationService {
 
   private static ModifyOrderException failure(int status, String code) {
     return new ModifyOrderException(status, code);
+  }
+
+  private enum LogField implements LogFields {
+    ORDER_REFERENCE("order_reference"),
+    REFUND_REFERENCE("refund_reference"),
+    PSP_CODE("psp_code"),
+    PSP_REFERENCE("psp_reference"),
+    PSP_RESULT("psp_result");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
   }
 }

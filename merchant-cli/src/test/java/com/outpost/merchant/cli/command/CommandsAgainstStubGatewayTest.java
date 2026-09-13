@@ -8,12 +8,15 @@ import com.outpost.merchant.cli.configuration.MerchantCliProperties.MerchantCred
 import com.outpost.merchant.cli.gateway.GatewayClient;
 import com.outpost.merchant.cli.merchant.Merchant;
 import com.outpost.merchant.cli.merchant.MerchantRepository;
+import com.outpost.merchant.cli.merchant.OrderEvent;
 import com.outpost.merchant.cli.merchant.OrderPayment;
 import com.outpost.merchant.cli.merchant.Psp;
 import com.outpost.merchant.cli.psp.PspPaymentClient;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +47,16 @@ class CommandsAgainstStubGatewayTest {
        "amount":2500,"tax_amount":525,"total_amount":3025,"tax_rate":"0.2100"}]}
       """;
   private static final String REPORT_ID = "3f1c2a54-9b0e-4d6f-8a7b-1c2d3e4f5a6b";
+  private static final Instant BOOKED_AT = Instant.parse("2026-09-13T10:00:05Z");
+  private static final List<OrderEvent> CAPTURED_ORDER =
+      List.of(
+          new OrderEvent("PAYMENT", "ORDER_CREATED", BOOKED_AT),
+          new OrderEvent("PAYMENT", "AUTHORISED", BOOKED_AT),
+          new OrderEvent("CAPTURE", "CAPTURED", BOOKED_AT));
+  private static final List<OrderEvent> REFUSED_ORDER =
+      List.of(
+          new OrderEvent("PAYMENT", "ORDER_CREATED", BOOKED_AT),
+          new OrderEvent("PAYMENT", "REFUSED", BOOKED_AT));
   private static final String REPORT =
       """
       {"from":"2026-09-01","to":"2026-09-30","accounts":[{"account_code":"DEMO_MERCHANT",
@@ -81,15 +94,32 @@ class CommandsAgainstStubGatewayTest {
     ObjectMapper json = new ObjectMapper();
     GatewayClient gatewayClient = new GatewayClient(gateway.baseUrl(), http, json);
     ShellSession session = new ShellSession(properties.merchants());
-    StoredMerchants merchants = new StoredMerchants(gateway.baseUrl().toString());
+    StoredMerchants merchants = new StoredMerchants(gateway.baseUrl().toString(), CAPTURED_ORDER);
     merchantCommands = new MerchantCommands(merchants, gatewayClient, session, properties);
-    orderCommands =
-        new OrderCommands(
-            properties,
-            gatewayClient,
-            new PspPaymentClient(PSP_KEY, http, json),
-            merchants,
-            session);
+    orderCommands = orderCommands(merchants, Duration.ofSeconds(5));
+  }
+
+  private OrderCommands orderCommands(MerchantRepository merchants, Duration outcomeWait) {
+    HttpClient http = HttpClient.newHttpClient();
+    ObjectMapper json = new ObjectMapper();
+    return new OrderCommands(
+        properties(),
+        new GatewayClient(gateway.baseUrl(), http, json),
+        new PspPaymentClient(PSP_KEY, http, json),
+        merchants,
+        new ShellSession(Map.of("DEMO_MERCHANT", new MerchantCredentials(API_KEY, SECRET))),
+        outcomeWait);
+  }
+
+  private MerchantCliProperties properties() {
+    return new MerchantCliProperties(
+        gateway.baseUrl(),
+        OPERATOR_KEY,
+        PSP_KEY,
+        Map.of("DEMO_MERCHANT", new MerchantCredentials(API_KEY, SECRET)),
+        List.of(
+            new CatalogueItem("EBOOK", "E-book", 1900, "EUR", "DIGITAL_GOODS"),
+            new CatalogueItem("TSHIRT", "T-shirt", 2500, "EUR", "PHYSICAL_GOODS")));
   }
 
   @AfterEach
@@ -152,16 +182,53 @@ class CommandsAgainstStubGatewayTest {
   }
 
   @Test
-  void paysAtThePspWithTheCardAndTheStoredPspReference() throws Exception {
-    String printed = orderCommands.pay("order-1", "4000000000000002");
+  void paysAtThePspWithTheCardAndTheStoredPspReferenceThenReportsTheBookedCapture()
+      throws Exception {
+    String printed = orderCommands.pay("order-1", OrderCommands.APPROVED_CARD);
 
     StubGateway.Received request = gateway.received().getFirst();
     assertThat(request.path()).isEqualTo("/v1/DEMO_PSP/payment");
     assertThat(request.apiKey()).isEqualTo(PSP_KEY);
     var sent = new ObjectMapper().readTree(request.body());
     assertThat(sent.get("psp_reference").asString()).isEqualTo("41");
-    assertThat(sent.get("card_number").asString()).isEqualTo("4000000000000002");
-    assertThat(printed).startsWith("payment submitted for order-1");
+    assertThat(sent.get("card_number").asString()).isEqualTo(OrderCommands.APPROVED_CARD);
+    assertThat(printed).isEqualTo("payment submitted for order-1; authorised and captured");
+  }
+
+  @Test
+  void reportsRefusedPaymentOnceTheLedgerBooksTheRefusal() {
+    OrderCommands commands =
+        orderCommands(
+            new StoredMerchants(gateway.baseUrl().toString(), REFUSED_ORDER),
+            Duration.ofSeconds(5));
+
+    assertThat(commands.pay("order-1", "4000000000000002"))
+        .isEqualTo("payment submitted for order-1; refused by the PSP");
+  }
+
+  @Test
+  void saysWhenNoOutcomeWasBookedWithinTheWait() {
+    OrderCommands commands =
+        orderCommands(
+            new StoredMerchants(gateway.baseUrl().toString(), List.of()), Duration.ofMillis(50));
+
+    assertThat(commands.pay("order-1", OrderCommands.APPROVED_CARD))
+        .isEqualTo(
+            "payment submitted for order-1; no outcome booked within 50 ms; see status order-1");
+  }
+
+  @Test
+  void listsWhatTheLedgerBookedForAnOrder() {
+    assertThat(orderCommands.status("order-1"))
+        .isEqualTo(
+            """
+            PAYMENT  ORDER_CREATED  2026-09-13T10:00:05Z
+            PAYMENT  AUTHORISED  2026-09-13T10:00:05Z
+            CAPTURE  CAPTURED  2026-09-13T10:00:05Z"""
+                .stripIndent());
+    assertThat(orderCommands.status("order-unpaid"))
+        .isEqualTo("nothing booked yet for order-unpaid");
+    assertThat(gateway.received()).isEmpty();
   }
 
   @Test
@@ -180,6 +247,11 @@ class CommandsAgainstStubGatewayTest {
 
           @Override
           public Optional<OrderPayment> findOrderPayment(String orderReference) {
+            throw new DataAccessResourceFailureException("connection refused");
+          }
+
+          @Override
+          public List<OrderEvent> findOrderEvents(String orderReference) {
             throw new DataAccessResourceFailureException("connection refused");
           }
         };
@@ -239,8 +311,9 @@ class CommandsAgainstStubGatewayTest {
                   List.of(new CatalogueItem("EBOOK", "E-book", 1900, "EUR", "DIGITAL_GOODS"))),
               client,
               new PspPaymentClient(PSP_KEY, HttpClient.newHttpClient(), new ObjectMapper()),
-              new StoredMerchants(refusing.baseUrl().toString()),
-              new ShellSession(Map.of("DEMO_MERCHANT", new MerchantCredentials(API_KEY, SECRET))));
+              new StoredMerchants(refusing.baseUrl().toString(), CAPTURED_ORDER),
+              new ShellSession(Map.of("DEMO_MERCHANT", new MerchantCredentials(API_KEY, SECRET))),
+              Duration.ofSeconds(5));
 
       assertThat(commands.refund("order-1")).isEqualTo("HTTP 409 ORDER_NOT_PAID");
     }
@@ -300,8 +373,11 @@ class CommandsAgainstStubGatewayTest {
     }
   }
 
-  /** The merchants and the one paid order the stubbed platform "stores". */
-  private record StoredMerchants(String pspBaseUrl) implements MerchantRepository {
+  /**
+   * The merchants, the one paid order, and what the Ledger booked for it, as the stub stores them.
+   */
+  private record StoredMerchants(String pspBaseUrl, List<OrderEvent> orderEvents)
+      implements MerchantRepository {
     @Override
     public List<Merchant> findActiveMerchants() {
       return List.of(
@@ -321,6 +397,11 @@ class CommandsAgainstStubGatewayTest {
       return orderReference.equals("order-1")
           ? Optional.of(new OrderPayment("41", pspBaseUrl + "/v1/DEMO_PSP/payment"))
           : Optional.empty();
+    }
+
+    @Override
+    public List<OrderEvent> findOrderEvents(String orderReference) {
+      return orderReference.equals("order-1") ? orderEvents : List.of();
     }
   }
 }

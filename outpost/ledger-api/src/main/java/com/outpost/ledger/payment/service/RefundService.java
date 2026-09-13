@@ -13,6 +13,9 @@ import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.templates.RefundJournalTemplates;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.ledger.payment.repository.CapturePosting;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
@@ -22,10 +25,13 @@ import com.outpost.ledger.payment.repository.RefundChild;
 import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
 import java.util.Arrays;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Books a PSP-confirmed full refund of a captured payment. */
 public class RefundService {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(RefundService.class));
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
 
@@ -56,6 +62,10 @@ public class RefundService {
       if (existing.paymentTransactionId() == payment.transactionId()
           && existing.eventTypeId() != null
           && existing.eventTypeId() == refunded) {
+        LOGGER.info(
+            "Refund already booked",
+            new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
+            new StructuredLogField(LogField.REFUND_REFERENCE, refundReference));
         return;
       }
       throw new RefundException(409, "REFERENCE_CONFLICT");
@@ -90,6 +100,10 @@ public class RefundService {
       throw new RefundException(500, "INTERNAL_ERROR");
     }
     appendRefundEntry(payment, originalReference, stored, event);
+    LOGGER.info(
+        "Refund booked: the capture's net and tax reversed",
+        new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
+        new StructuredLogField(LogField.REFUND_REFERENCE, refundReference));
   }
 
   private void appendRefundEntry(
@@ -184,5 +198,21 @@ public class RefundService {
         .filter(value -> value.getCurrencyId() == currencyId)
         .findFirst()
         .orElseThrow(IllegalArgumentException::new);
+  }
+
+  private enum LogField implements LogFields {
+    ORIGINAL_REFERENCE("original_reference"),
+    REFUND_REFERENCE("refund_reference");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
   }
 }

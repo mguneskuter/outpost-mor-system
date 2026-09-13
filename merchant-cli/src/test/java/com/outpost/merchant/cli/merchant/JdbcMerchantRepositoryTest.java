@@ -1,6 +1,7 @@
 package com.outpost.merchant.cli.merchant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.outpost.merchant.cli.MerchantCliApplication;
 import java.io.PrintWriter;
@@ -22,8 +23,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * The merchant list and an order's payment facts come from Outpost's tables, read through the
- * shell's own queries over the schema Outpost's migrations create.
+ * The merchant list, an order's payment facts, and what the Ledger booked for an order come from
+ * Outpost's tables, read through the shell's own queries over the schema Outpost's migrations
+ * create.
  */
 @SpringBootTest(
     classes = MerchantCliApplication.class,
@@ -99,6 +101,23 @@ class JdbcMerchantRepositoryTest {
             + "NULL, 6, now())",
         shopper,
         shopper);
+    seed.update(
+        "INSERT INTO transaction_type (transaction_type_id, code) VALUES (1, 'PAYMENT'), "
+            + "(2, 'CAPTURE')");
+    seed.update(
+        "INSERT INTO transaction_event_type (transaction_event_type_id, code, "
+            + "requires_journal_entry) VALUES (1, 'ORDER_CREATED', false), "
+            + "(2, 'AUTHORISED', false), (5, 'CAPTURED', false)");
+    seed.update(
+        "INSERT INTO transaction (transaction_id, transaction_type_id, parent_transaction_id, "
+            + "account_id, reference, quantity, currency_id, created_ts) VALUES "
+            + "(1, 1, NULL, 200, 'order-paid', 119, 3, now()), "
+            + "(2, 2, 1, 200, 'capture-1', 119, 3, now()), "
+            + "(3, 1, NULL, 200, 'order-other', 119, 3, now())");
+    seed.update(
+        "INSERT INTO transaction_event (transaction_event_id, transaction_id, "
+            + "transaction_event_type_id, event_ts) VALUES (1, 1, 1, now()), (2, 1, 2, now()), "
+            + "(3, 2, 5, now()), (4, 3, 1, now())");
   }
 
   @DynamicPropertySource
@@ -132,6 +151,17 @@ class JdbcMerchantRepositoryTest {
     assertThat(printed.toString())
         .contains("* DEMO_MERCHANT  Demo Merchant")
         .contains("  ANOTHER_MERCHANT  Another Merchant  (no credentials configured)");
+  }
+
+  @Test
+  void listsTheEventsBookedOnAnOrdersPaymentAndItsChildrenOldestFirst() {
+    assertThat(merchants.findOrderEvents("order-paid"))
+        .extracting(OrderEvent::transactionType, OrderEvent::eventType)
+        .containsExactly(
+            tuple("PAYMENT", "ORDER_CREATED"),
+            tuple("PAYMENT", "AUTHORISED"),
+            tuple("CAPTURE", "CAPTURED"));
+    assertThat(merchants.findOrderEvents("order-unpaid")).isEmpty();
   }
 
   @Test

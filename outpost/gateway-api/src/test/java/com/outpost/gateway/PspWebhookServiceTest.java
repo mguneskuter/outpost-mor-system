@@ -191,7 +191,7 @@ class PspWebhookServiceTest {
   private static PspOrderEvent event(
       PspWebhookEventCodes eventCode, String pspReference, @Nullable String refundReference) {
     return new PspOrderEvent(
-        PSP.code(), pspReference, ORDER_REFERENCE, eventCode, true, refundReference);
+        PSP.code(), pspReference, ORDER_REFERENCE, eventCode, true, "APPROVED", refundReference);
   }
 
   private static final class FakeOrderRepository implements OrderRepository {

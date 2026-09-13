@@ -35,6 +35,8 @@ import tools.jackson.databind.ObjectMapper;
 @ConfigurationPropertiesScan
 @EnableCommand({MerchantCommands.class, OrderCommands.class})
 public class MerchantCliApplication {
+  /** Covers the simulator's authorisation and capture delays and the Gateway's queue polling. */
+  private static final Duration OUTCOME_WAIT = Duration.ofSeconds(30);
 
   /**
    * Starts the shell: the guided, step-by-step session when no arguments are given, otherwise the
@@ -105,6 +107,6 @@ public class MerchantCliApplication {
       PspPaymentClient psp,
       MerchantRepository merchants,
       ShellSession session) {
-    return new OrderCommands(properties, gateway, psp, merchants, session);
+    return new OrderCommands(properties, gateway, psp, merchants, session, OUTCOME_WAIT);
   }
 }

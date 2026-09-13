@@ -32,6 +32,6 @@ public record PspWebhookEvent(
 
   PspOrderEvent toOrderEvent() {
     return new PspOrderEvent(
-        pspCode, pspReference, paymentReference, eventCode, success, refundReference);
+        pspCode, pspReference, paymentReference, eventCode, success, resultCode, refundReference);
   }
 }

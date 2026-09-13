@@ -28,6 +28,7 @@ public final class GuidedShell {
           "create an order",
           "pay an order",
           "refund an order",
+          "what happened to an order",
           "today's balance report for this merchant",
           "today's balance report for the platform (operator)",
           "switch merchant");
@@ -81,8 +82,9 @@ public final class GuidedShell {
             case 0 -> order();
             case 1 -> pay();
             case 2 -> refund();
-            case 3 -> print(merchantCommands.report(today(), today()));
-            case 4 -> print(merchantCommands.reportPlatform(today(), today()));
+            case 3 -> status();
+            case 4 -> print(merchantCommands.report(today(), today()));
+            case 5 -> print(merchantCommands.reportPlatform(today(), today()));
             default -> chooseMerchant();
           };
       if (!continued) {
@@ -183,6 +185,14 @@ public final class GuidedShell {
       return true;
     }
     return print(orderCommands.refund(reference.orElseThrow()));
+  }
+
+  private boolean status() {
+    Optional<String> reference = askOrderReference();
+    if (reference.isEmpty()) {
+      return true;
+    }
+    return print(orderCommands.status(reference.orElseThrow()));
   }
 
   private Optional<String> askOrderReference() {

@@ -7,9 +7,12 @@ import com.outpost.pspsimulator.order.OrderRepository;
 import com.outpost.pspsimulator.order.OrderStatuses;
 import com.outpost.pspsimulator.webhook.WebhookScheduler;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Refunds a captured order and reports the outcome by REFUND webhook. */
 public final class RefundService {
+  private static final Logger LOGGER = LoggerFactory.getLogger(RefundService.class);
 
   private final OrderRepository orderRepository;
   private final RefundRepository refundRepository;
@@ -50,6 +53,15 @@ public final class RefundService {
             accepted);
     if (inserted.isPresent()) {
       Refund refund = inserted.get();
+      LOGGER.info(
+          "refund {} pspCode={} pspReference={} pspRefundReference={} refundReference={} "
+              + "orderStatus={}",
+          refund.accepted() ? "accepted" : "rejected",
+          pspCode,
+          order.pspReference(),
+          refund.pspRefundReference(),
+          command.refundReference(),
+          order.status().getCode());
       if (refund.accepted()) {
         webhookScheduler.scheduleRefund(order, refund);
       }

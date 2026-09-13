@@ -13,6 +13,8 @@ import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.payment.common.Amount;
+import java.util.ArrayList;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.annotation.JsonDeserialize;
 import tools.jackson.databind.annotation.JsonSerialize;
@@ -49,17 +51,28 @@ public record AccountingQueueRequest(
         @JsonDeserialize(using = AmountDeserializer.class)
         @Nullable Amount grossAmount) {
 
-  /** Returns the fields that identify this request on a log line: its type and reference. */
+  /**
+   * Returns the fields that identify this request on a log line: its type and reference, and the
+   * PSP outcome and refund reference when the request carries them.
+   */
   public StructuredLogField[] logFields() {
-    return new StructuredLogField[] {
-      new StructuredLogField(LogField.REQUEST_TYPE, type.name()),
-      new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference)
-    };
+    List<StructuredLogField> fields = new ArrayList<>();
+    fields.add(new StructuredLogField(LogField.REQUEST_TYPE, type.name()));
+    fields.add(new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference));
+    if (success != null) {
+      fields.add(new StructuredLogField(LogField.SUCCESS, success.toString()));
+    }
+    if (refundReference != null) {
+      fields.add(new StructuredLogField(LogField.REFUND_REFERENCE, refundReference));
+    }
+    return fields.toArray(StructuredLogField[]::new);
   }
 
   private enum LogField implements LogFields {
     REQUEST_TYPE("request_type"),
-    ORIGINAL_REFERENCE("original_reference");
+    ORIGINAL_REFERENCE("original_reference"),
+    SUCCESS("success"),
+    REFUND_REFERENCE("refund_reference");
 
     private final String jsonKey;
 

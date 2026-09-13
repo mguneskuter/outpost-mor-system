@@ -34,12 +34,15 @@ make down                  # stop the platform and remove its volume
 ```
 
 `make merchant-cli` opens a merchant's shell against the running platform. It asks step by
-step: which merchant, what to do (create an order, pay it, refund it, read today's balance
-report for the merchant or for the platform), and for an order which PSP, which shopper
-country, and which catalogue items; it prints the result and asks again. The same actions run
-scripted:
+step: which merchant, what to do (create an order, pay it, refund it, see what happened to it,
+read today's balance report for the merchant or for the platform), and for an order which PSP,
+which shopper country, and which catalogue items; it prints the result and asks again. Paying
+posts the card to the PSP's payment route, the way the payment page would, then waits for the
+Ledger to book the outcome the PSP reports by webhook and prints it: authorised and captured, or
+refused. The same actions run scripted:
 `java -jar merchant-cli/build/libs/merchant-cli.jar order --psp DEMO_PSP --items EBOOK,TSHIRT`,
-`pay <order-reference>`, `refund <order-reference>`, `merchants`, `psps`, `catalogue`,
+`pay <order-reference> [--card <number>]`, `refund <order-reference>`,
+`status <order-reference>`, `merchants`, `psps`, `catalogue`,
 `report --from 2026-09-01 --to 2026-09-30`, `report-platform --from … --to …`, and `help`.
 
 `make smoke` builds the images with Buildpacks, starts PostgreSQL, applies the Flyway

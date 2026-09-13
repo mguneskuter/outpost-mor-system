@@ -8,6 +8,7 @@ import com.outpost.merchant.cli.configuration.MerchantCliProperties.MerchantCred
 import com.outpost.merchant.cli.gateway.GatewayClient;
 import com.outpost.merchant.cli.merchant.Merchant;
 import com.outpost.merchant.cli.merchant.MerchantRepository;
+import com.outpost.merchant.cli.merchant.OrderEvent;
 import com.outpost.merchant.cli.merchant.OrderPayment;
 import com.outpost.merchant.cli.merchant.Psp;
 import com.outpost.merchant.cli.psp.PspPaymentClient;
@@ -17,6 +18,8 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -72,7 +75,12 @@ class GuidedShellTest {
     merchantCommands = new MerchantCommands(merchants, client, session, properties);
     orderCommands =
         new OrderCommands(
-            properties, client, new PspPaymentClient("psp-key", http, json), merchants, session);
+            properties,
+            client,
+            new PspPaymentClient("psp-key", http, json),
+            merchants,
+            session,
+            Duration.ofSeconds(5));
   }
 
   @AfterEach
@@ -97,6 +105,8 @@ class GuidedShellTest {
             3
 
             4
+
+            5
             0
             """);
 
@@ -112,9 +122,10 @@ class GuidedShellTest {
         .contains("pay at")
         .contains("Order reference [order-1]:")
         .contains("Which test card?")
-        .contains("payment submitted for order-1")
+        .contains("payment submitted for order-1; authorised and captured")
         .contains("refund accepted: refund-9")
         .contains("report " + gateway.baseUrl() + "/v1/report/" + REPORT_ID)
+        .contains("CAPTURE  CAPTURED")
         .contains("Bye.");
     List<String> paths = gateway.received().stream().map(StubGateway.Received::path).toList();
     assertThat(paths)
@@ -212,6 +223,17 @@ class GuidedShellTest {
       return orderReference.equals("order-1")
           ? Optional.of(new OrderPayment("41", pspBaseUrl + "/v1/DEMO_PSP/payment"))
           : Optional.empty();
+    }
+
+    @Override
+    public List<OrderEvent> findOrderEvents(String orderReference) {
+      Instant bookedAt = Instant.parse("2026-09-13T10:00:05Z");
+      return orderReference.equals("order-1")
+          ? List.of(
+              new OrderEvent("PAYMENT", "ORDER_CREATED", bookedAt),
+              new OrderEvent("PAYMENT", "AUTHORISED", bookedAt),
+              new OrderEvent("CAPTURE", "CAPTURED", bookedAt))
+          : List.of();
     }
   }
 }

@@ -31,17 +31,17 @@ public final class GatewayErrorAdvice {
 
   @ExceptionHandler(OrderCreationException.class)
   ResponseEntity<ErrorResponse> orderCreation(OrderCreationException exception) {
-    return respond(exception.status(), exception.code());
+    return refuse(exception.status(), exception.code());
   }
 
   @ExceptionHandler(ModifyOrderException.class)
   ResponseEntity<ErrorResponse> orderModification(ModifyOrderException exception) {
-    return respond(exception.status(), exception.code());
+    return refuse(exception.status(), exception.code());
   }
 
   @ExceptionHandler(BalanceReportException.class)
   ResponseEntity<ErrorResponse> balanceReport(BalanceReportException exception) {
-    return respond(exception.status(), exception.code());
+    return refuse(exception.status(), exception.code());
   }
 
   /** A request field failed its declared constraint; the constraint's message is the code. */
@@ -81,12 +81,22 @@ public final class GatewayErrorAdvice {
         .body(new ErrorResponse(ErrorResponse.INTERNAL_ERROR, correlationId));
   }
 
+  private static ResponseEntity<ErrorResponse> refuse(int status, String code) {
+    LOGGER.info(
+        "Request refused",
+        new StructuredLogField(LogField.STATUS, Integer.toString(status)),
+        new StructuredLogField(LogField.CODE, code));
+    return respond(status, code);
+  }
+
   private static ResponseEntity<ErrorResponse> respond(int status, String code) {
     return ResponseEntity.status(status).body(ErrorResponse.of(code));
   }
 
   private enum LogField implements LogFields {
-    CORRELATION_ID("correlation_id");
+    CORRELATION_ID("correlation_id"),
+    STATUS("status"),
+    CODE("code");
 
     private final String jsonKey;
 

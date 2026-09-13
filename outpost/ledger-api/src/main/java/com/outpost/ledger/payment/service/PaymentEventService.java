@@ -14,6 +14,9 @@ import com.outpost.accounting.payment.PaymentProcessorStateMachine;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentRepository;
@@ -22,10 +25,13 @@ import com.outpost.ledger.payment.repository.PendingFee;
 import com.outpost.payment.common.Amount;
 import java.util.Arrays;
 import java.util.List;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Books PSP authorisation outcomes on a payment. */
 public class PaymentEventService {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(PaymentEventService.class));
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
   private final PaymentProcessorStateMachine stateMachine;
@@ -60,6 +66,10 @@ public class PaymentEventService {
     if (existingEvents.stream()
         .anyMatch(
             event -> event.transactionEventTypeId() == candidate.getTransactionEventTypeId())) {
+      LOGGER.info(
+          "Authorisation outcome already booked",
+          new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
+          new StructuredLogField(LogField.EVENT, candidate.getCode()));
       return;
     }
     TransactionEventType current = paymentFold(existingEvents);
@@ -77,6 +87,10 @@ public class PaymentEventService {
     if (releasesPendingFee(candidate)) {
       appendFeeRelease(payment, originalReference, candidate, event);
     }
+    LOGGER.info(
+        success ? "Payment authorised" : "Payment refused and its pending fee released",
+        new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
+        new StructuredLogField(LogField.EVENT, candidate.getCode()));
   }
 
   private void appendFeeRelease(
@@ -176,5 +190,21 @@ public class PaymentEventService {
 
   private static PaymentEventException notFound() {
     return new PaymentEventException(404, "PAYMENT_NOT_FOUND");
+  }
+
+  private enum LogField implements LogFields {
+    ORIGINAL_REFERENCE("original_reference"),
+    EVENT("event");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
   }
 }

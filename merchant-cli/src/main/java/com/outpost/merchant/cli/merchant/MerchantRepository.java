@@ -13,4 +13,7 @@ public interface MerchantRepository {
 
   /** Finds the payment facts of an order the PSP has accepted; empty until then. */
   Optional<OrderPayment> findOrderPayment(String orderReference);
+
+  /** Lists what the Ledger booked for an order, oldest first; empty until it booked anything. */
+  List<OrderEvent> findOrderEvents(String orderReference);
 }

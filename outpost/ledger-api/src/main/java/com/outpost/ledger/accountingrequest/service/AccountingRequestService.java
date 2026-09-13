@@ -5,13 +5,17 @@ import com.outpost.accounting.api.AccountingRequestErrorTypes;
 import com.outpost.accounting.transactionlock.TransactionLock;
 import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
 import java.time.Duration;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.LoggerFactory;
 
 /** Accepts accounting requests: validates them, takes the transaction lock, and queues them. */
 public final class AccountingRequestService {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(AccountingRequestService.class));
   private final TransactionLockRepository transactionLocks;
   private final TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue;
   private final Duration transactionLockLease;
@@ -69,6 +73,7 @@ public final class AccountingRequestService {
                         AccountingRequestErrorTypes.TRANSACTION_LOCKED, request));
     try {
       accountingQueue.add(new LockedAccountingQueueRequest(request, lock));
+      LOGGER.info("Accounting request accepted", request.logFields());
     } catch (QueueFullException full) {
       transactionLocks.deleteTransactionLock(lock);
       throw new AccountingRequestRefusedException(AccountingRequestErrorTypes.QUEUE_FULL, request);

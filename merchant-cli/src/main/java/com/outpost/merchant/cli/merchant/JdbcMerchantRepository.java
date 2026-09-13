@@ -1,5 +1,6 @@
 package com.outpost.merchant.cli.merchant;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -59,5 +60,34 @@ public final class JdbcMerchantRepository implements MerchantRepository {
             (row, index) ->
                 new OrderPayment(row.getString("psp_reference"), row.getString("payment_link")))
         .optional();
+  }
+
+  @Override
+  public List<OrderEvent> findOrderEvents(String orderReference) {
+    return jdbc.sql(
+            """
+            SELECT transaction_type.code AS transaction_type,
+                   transaction_event_type.code AS event_type,
+                   transaction_event.event_ts
+              FROM transaction_event
+              JOIN transaction ON transaction.transaction_id = transaction_event.transaction_id
+              LEFT JOIN transaction parent
+                ON parent.transaction_id = transaction.parent_transaction_id
+              JOIN transaction_type
+                ON transaction_type.transaction_type_id = transaction.transaction_type_id
+              JOIN transaction_event_type
+                ON transaction_event_type.transaction_event_type_id
+                   = transaction_event.transaction_event_type_id
+             WHERE :orderReference IN (transaction.reference, parent.reference)
+             ORDER BY transaction_event.transaction_event_id
+            """)
+        .param("orderReference", orderReference)
+        .query(
+            (row, index) ->
+                new OrderEvent(
+                    row.getString("transaction_type"),
+                    row.getString("event_type"),
+                    row.getObject("event_ts", OffsetDateTime.class).toInstant()))
+        .list();
   }
 }
