@@ -2,7 +2,7 @@ package com.outpost.ledger.payment.repository.mybatis;
 
 import java.time.Instant;
 
-/** MyBatis projection of a capture child and its outcome. */
+/** MyBatis projection of a capture child and its capture event. */
 public record CaptureChildRow(
     long transactionId,
     String reference,

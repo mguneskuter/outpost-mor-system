@@ -1,4 +1,4 @@
-package com.outpost.accounting;
+package com.outpost.accounting.templates;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -6,6 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
+import com.outpost.accounting.AccountingFixtures;
+import com.outpost.accounting.JournalEntry;
+import com.outpost.accounting.JournalEntryTypes;
+import com.outpost.accounting.Register;
+import com.outpost.accounting.RegisterTypes;
+import com.outpost.accounting.Transaction;
+import com.outpost.accounting.TransactionEvent;
+import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.common.iso.Currencies;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
@@ -27,7 +35,7 @@ class PendingFeeJournalTemplatesTest {
 
     JournalEntry entry =
         PendingFeeJournalTemplates.FEE_PENDING.build(
-            10L, 1L, 2L, orderCreated, merchantRegister, platformRegister, FEE, WHEN);
+            orderCreated, merchantRegister, platformRegister, FEE, WHEN);
 
     assertEquals(JournalEntryTypes.FEE_PENDING.getValue(), entry.getJournalEntryType());
     assertEquals(2, entry.getJournalEntryLines().size());
@@ -58,9 +66,6 @@ class PendingFeeJournalTemplatesTest {
 
     JournalEntry entry =
         PendingFeeJournalTemplates.FEE_PENDING.build(
-            11L,
-            3L,
-            4L,
             orderCreated,
             merchantRegister,
             platformRegister,
@@ -82,7 +87,7 @@ class PendingFeeJournalTemplatesTest {
 
     JournalEntry entry =
         PendingFeeJournalTemplates.FEE_RELEASE.build(
-            104L, 102L, 103L, releaseEvent, merchantRegister, platformRegister, FEE, WHEN);
+            releaseEvent, merchantRegister, platformRegister, FEE, WHEN);
 
     assertEquals(JournalEntryTypes.FEE_RELEASE.getValue(), entry.getJournalEntryType());
     assertTrue(
@@ -109,7 +114,7 @@ class PendingFeeJournalTemplatesTest {
 
     JournalEntry entry =
         PendingFeeJournalTemplates.FEE_RELEASE.build(
-            204L, 202L, 203L, captureFailed, merchantRegister, platformRegister, FEE, WHEN);
+            captureFailed, merchantRegister, platformRegister, FEE, WHEN);
 
     assertEquals(JournalEntryTypes.FEE_RELEASE.getValue(), entry.getJournalEntryType());
     assertTrue(
@@ -138,7 +143,7 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_RELEASE.build(
-                214L, 212L, 213L, captureFailed, merchantRegister, platformRegister, FEE, WHEN));
+                captureFailed, merchantRegister, platformRegister, FEE, WHEN));
   }
 
   @Test
@@ -153,7 +158,7 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_PENDING.build(
-                224L, 222L, 223L, orderCreated, merchantRegister, platformRegister, FEE, WHEN));
+                orderCreated, merchantRegister, platformRegister, FEE, WHEN));
   }
 
   @Test
@@ -169,14 +174,7 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_PENDING.build(
-                234L,
-                232L,
-                233L,
-                orderCreated,
-                merchantRegister,
-                platformRegister,
-                wrongCurrencyFee,
-                WHEN));
+                orderCreated, merchantRegister, platformRegister, wrongCurrencyFee, WHEN));
   }
 
   @Test
@@ -191,7 +189,7 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_PENDING.build(
-                12L, 5L, 6L, authorised, merchantRegister, platformRegister, FEE, WHEN));
+                authorised, merchantRegister, platformRegister, FEE, WHEN));
   }
 
   @Test
@@ -207,7 +205,7 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_PENDING.build(
-                13L, 7L, 8L, orderCreated, wrongTypeRegister, platformRegister, FEE, WHEN));
+                orderCreated, wrongTypeRegister, platformRegister, FEE, WHEN));
   }
 
   @Test
@@ -233,7 +231,7 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_PENDING.build(
-                14L, 9L, 10L, orderCreated, foreignMerchantRegister, platformRegister, FEE, WHEN));
+                orderCreated, foreignMerchantRegister, platformRegister, FEE, WHEN));
   }
 
   @Test
@@ -248,7 +246,7 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_PENDING.build(
-                15L, 11L, 12L, orderCreated, merchantRegister, notPlatformRegister, FEE, WHEN));
+                orderCreated, merchantRegister, notPlatformRegister, FEE, WHEN));
   }
 
   @Test
@@ -263,9 +261,6 @@ class PendingFeeJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             PendingFeeJournalTemplates.FEE_PENDING.build(
-                16L,
-                13L,
-                14L,
                 orderCreated,
                 merchantRegister,
                 platformRegister,

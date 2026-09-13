@@ -1,9 +1,16 @@
-package com.outpost.accounting;
+package com.outpost.accounting.templates;
 
 import com.outpost.account.AccountTypes;
+import com.outpost.accounting.JournalEntry;
+import com.outpost.accounting.JournalEntryLine;
+import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.JournalEntryTypes.JournalEntryType;
-import com.outpost.accounting.RegisterTypes.RegisterType;
+import com.outpost.accounting.Register;
+import com.outpost.accounting.RegisterTypes;
+import com.outpost.accounting.TransactionEvent;
+import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
+import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.TransactionTypes.TransactionType;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
@@ -41,6 +48,8 @@ public enum PendingFeeJournalTemplates {
           TransactionEventTypes.CAPTURE_FAILED.getValue(), TransactionTypes.CAPTURE.getValue()),
       false);
 
+  private static final JournalTemplateValidator VALIDATOR = new JournalTemplateValidator();
+
   @SuppressWarnings("Immutable")
   private final JournalEntryType journalEntryType;
 
@@ -69,17 +78,12 @@ public enum PendingFeeJournalTemplates {
    *     {@code fee} is negative.
    */
   public JournalEntry build(
-      long journalEntryId,
-      long merchantLineId,
-      long platformLineId,
       TransactionEvent sourceEvent,
       Register merchantPendingFeeRegister,
       Register platformPendingFeeRegister,
       Amount fee,
       Instant bookedAndPosted) {
     Objects.requireNonNull(sourceEvent, "sourceEvent");
-    Objects.requireNonNull(merchantPendingFeeRegister, "merchantPendingFeeRegister");
-    Objects.requireNonNull(platformPendingFeeRegister, "platformPendingFeeRegister");
     Objects.requireNonNull(fee, "fee");
     Objects.requireNonNull(bookedAndPosted, "bookedAndPosted");
     TransactionType requiredTransactionType =
@@ -91,15 +95,8 @@ public enum PendingFeeJournalTemplates {
               + ": "
               + sourceEvent.getTransactionEventType().getCode());
     }
-    if (!requiredTransactionType.equals(sourceEvent.getTransaction().getTransactionType())) {
-      throw new IllegalArgumentException(
-          "source event "
-              + sourceEvent.getTransactionEventType().getCode()
-              + " must occur on a "
-              + requiredTransactionType.getCode()
-              + " transaction: "
-              + sourceEvent.getTransaction().getTransactionType().getCode());
-    }
+    VALIDATOR.requireSource(
+        sourceEvent, sourceEvent.getTransactionEventType(), requiredTransactionType);
     if (!fee.currency().equals(sourceEvent.getTransaction().getAmount().currency())) {
       throw new IllegalArgumentException(
           "fee currency must match the source transaction currency: " + fee);
@@ -107,45 +104,25 @@ public enum PendingFeeJournalTemplates {
     if (fee.quantity() < 0) {
       throw new IllegalArgumentException("fee must not be negative: " + fee);
     }
-    requireRegister(
-        merchantPendingFeeRegister, RegisterTypes.PENDING_FEE.getValue(), "merchant register");
-    if (!merchantPendingFeeRegister
-        .getAccount()
-        .equals(sourceEvent.getTransaction().getMerchantAccount())) {
-      throw new IllegalArgumentException(
-          "merchant register must belong to the payment's merchant account");
-    }
-    requireRegister(
-        platformPendingFeeRegister, RegisterTypes.PENDING_FEE.getValue(), "platform register");
-    if (!platformPendingFeeRegister
-        .getAccount()
-        .getAccountType()
-        .equals(AccountTypes.PLATFORM.getValue())) {
-      throw new IllegalArgumentException("platform register must belong to a PLATFORM account");
-    }
+    VALIDATOR.requireRegister(
+        merchantPendingFeeRegister,
+        RegisterTypes.PENDING_FEE.getValue(),
+        AccountTypes.MERCHANT.getValue());
+    VALIDATOR.requireMerchantRegister(merchantPendingFeeRegister, sourceEvent);
+    VALIDATOR.requireRegister(
+        platformPendingFeeRegister,
+        RegisterTypes.PENDING_FEE.getValue(),
+        AccountTypes.PLATFORM.getValue());
 
     JournalEntry entry =
-        new JournalEntry(
-            journalEntryId, sourceEvent, journalEntryType, bookedAndPosted, bookedAndPosted);
+        new JournalEntry(sourceEvent, journalEntryType, bookedAndPosted, bookedAndPosted);
     long merchantQuantity = merchantIsDebit ? fee.quantity() : -fee.quantity();
     entry.addLine(
         new JournalEntryLine(
-            merchantLineId,
-            entry,
-            merchantPendingFeeRegister,
-            new Amount(fee.currency(), merchantQuantity)));
+            entry, merchantPendingFeeRegister, new Amount(fee.currency(), merchantQuantity)));
     entry.addLine(
         new JournalEntryLine(
-            platformLineId,
-            entry,
-            platformPendingFeeRegister,
-            new Amount(fee.currency(), -merchantQuantity)));
+            entry, platformPendingFeeRegister, new Amount(fee.currency(), -merchantQuantity)));
     return entry;
-  }
-
-  private static void requireRegister(Register register, RegisterType expected, String label) {
-    if (!register.getRegisterType().equals(expected)) {
-      throw new IllegalArgumentException(label + " must have register type " + expected.getCode());
-    }
   }
 }

@@ -120,6 +120,8 @@ class ModuleGraphSpec {
         ':accounting:persistence': [
             ':accounting:domain',
             ':account:domain',
+            ':common-iso:domain',
+            ':common-payment:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],

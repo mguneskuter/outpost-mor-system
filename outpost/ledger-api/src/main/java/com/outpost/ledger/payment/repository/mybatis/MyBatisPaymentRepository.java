@@ -90,18 +90,13 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public Long findTaxAuthority(long c) {
-    return mapper.findTaxAuthority(c);
+  public Account findTaxAuthorityAccountByCountryId(long countryId) {
+    return account(mapper.findTaxAuthorityAccountByCountryId(countryId));
   }
 
   @Override
-  public Long findPlatform() {
-    return mapper.findPlatform();
-  }
-
-  @Override
-  public Long findPendingRegister(long a) {
-    return mapper.findPendingRegister(a);
+  public Account findPlatformAccount() {
+    return account(mapper.findPlatformAccount());
   }
 
   @Override
@@ -117,16 +112,6 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   @Override
   public long insertEvent(long i, Instant t) {
     return mapper.insertEvent(i, t);
-  }
-
-  @Override
-  public long insertEntry(long i, Instant t) {
-    return mapper.insertEntry(i, t);
-  }
-
-  @Override
-  public long insertLine(long e, long r, long c, long q) {
-    return mapper.insertLine(e, r, c, q);
   }
 
   @Override
@@ -201,16 +186,6 @@ public class MyBatisPaymentRepository implements PaymentRepository {
         ? null
         : new PendingFee(
             row.fee(), row.currencyId(), row.merchantRegisterId(), row.platformRegisterId());
-  }
-
-  @Override
-  public long insertFeeReleaseEntry(long i, long t, Instant at) {
-    return mapper.insertFeeReleaseEntry(i, t, at);
-  }
-
-  @Override
-  public long insertRefundEntry(long i, long t, Instant at) {
-    return mapper.insertRefundEntry(i, t, at);
   }
 
   @Override

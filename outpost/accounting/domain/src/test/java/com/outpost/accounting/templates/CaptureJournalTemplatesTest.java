@@ -1,14 +1,22 @@
-package com.outpost.accounting;
+package com.outpost.accounting.templates;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
+import com.outpost.accounting.AccountingFixtures;
+import com.outpost.accounting.JournalEntry;
+import com.outpost.accounting.JournalEntryTypes;
+import com.outpost.accounting.Register;
+import com.outpost.accounting.RegisterTypes;
+import com.outpost.accounting.Transaction;
+import com.outpost.accounting.TransactionEvent;
+import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.TransactionTypes;
 import com.outpost.common.iso.Currencies;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -23,14 +31,14 @@ class CaptureJournalTemplatesTest {
   void capturePostsExactlySixBalancedLines() {
     Transaction payment = AccountingFixtures.payment(1L);
     Transaction capture =
-        new Transaction(
+        Transaction.childOf(
+            payment,
             2L,
             TransactionTypes.CAPTURE.getValue(),
             AccountingFixtures.merchant(),
             "capture-2",
             GROSS,
             WHEN);
-    payment.attachChild(capture);
     TransactionEvent captured =
         new TransactionEvent(3L, capture, TransactionEventTypes.CAPTURED.getValue(), WHEN);
     Register psp = register(11L, AccountingFixtures.psp(), RegisterTypes.PSP_RECEIVABLE.getValue());
@@ -48,13 +56,6 @@ class CaptureJournalTemplatesTest {
 
     JournalEntry entry =
         CaptureJournalTemplates.CAPTURE.build(
-            4L,
-            41L,
-            42L,
-            43L,
-            44L,
-            45L,
-            46L,
             captured,
             psp,
             tax,
@@ -71,10 +72,7 @@ class CaptureJournalTemplatesTest {
     assertEquals(JournalEntryTypes.CAPTURE.getValue(), entry.getJournalEntryType());
     assertEquals(
         List.of(12_000L, -2_000L, -9_500L, -500L, -500L, 500L),
-        entry.getJournalEntryLines().stream()
-            .sorted(Comparator.comparingLong(JournalEntryLine::getJournalEntryLineId))
-            .map(line -> line.getAmount().quantity())
-            .toList());
+        entry.getJournalEntryLines().stream().map(line -> line.getAmount().quantity()).toList());
     assertEquals(
         0L, entry.getJournalEntryLines().stream().mapToLong(l -> l.getAmount().quantity()).sum());
   }
@@ -101,13 +99,6 @@ class CaptureJournalTemplatesTest {
         IllegalArgumentException.class,
         () ->
             CaptureJournalTemplates.CAPTURE.build(
-                12L,
-                121L,
-                122L,
-                123L,
-                124L,
-                125L,
-                126L,
                 wrongEvent,
                 psp,
                 tax,

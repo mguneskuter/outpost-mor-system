@@ -1,10 +1,7 @@
 package com.outpost.ledger.payment.service;
 
 import com.outpost.account.Account;
-import com.outpost.accounting.CaptureJournalTemplates;
 import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.JournalEntryLine;
-import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
 import com.outpost.accounting.Transaction;
@@ -12,6 +9,9 @@ import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
+import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
+import com.outpost.accounting.templates.CaptureJournalTemplates;
+import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.ledger.payment.api.CaptureRequest;
@@ -32,17 +32,20 @@ import org.springframework.transaction.annotation.Transactional;
 /** Coordinates one immutable PSP capture attempt and its accounting evidence. */
 public class CaptureService {
   private final PaymentRepository repository;
+  private final JournalEntryRepository journalEntryRepository;
   private final Clock clock;
   private final com.outpost.accounting.payment.PaymentLifecycle lifecycle =
       new com.outpost.accounting.payment.PaymentLifecycle();
 
-  /** Creates a service using the ledger clock and persistence seam. */
-  public CaptureService(PaymentRepository repository, Clock clock) {
+  /** Creates a service using the ledger clock and persistence seams. */
+  public CaptureService(
+      PaymentRepository repository, JournalEntryRepository journalEntryRepository, Clock clock) {
     this.repository = repository;
+    this.journalEntryRepository = journalEntryRepository;
     this.clock = clock;
   }
 
-  /** Records a successful or failed capture, or returns the exact prior result. */
+  /** Stores a successful or failed capture, or returns the exact prior result. */
   @Transactional
   public CaptureResponse capture(CaptureRequest request) {
     validate(request);
@@ -65,10 +68,10 @@ public class CaptureService {
       throw conflict();
     }
 
-    TransactionEventType outcome = outcome(request.success());
+    TransactionEventType transactionEventType = transactionEventType(request.success());
     List<PaymentEvent> events = repository.findPaymentEvents(payment.transactionId());
     TransactionEventType paymentState = fold(events);
-    if (!lifecycle.canFollowCapture(paymentState, false, outcome)
+    if (!lifecycle.canFollowCapture(paymentState, false, transactionEventType)
         || payment.currencyId() != currency.getCurrencyId()
         || payment.grossQuantity() != request.amount()) {
       throw invalidCapture();
@@ -79,7 +82,7 @@ public class CaptureService {
     }
 
     Instant occurredAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
-    Long captureId =
+    Long captureTransactionId =
         repository.insertCaptureTransaction(
             payment.transactionId(),
             payment.merchantAccountId(),
@@ -87,39 +90,37 @@ public class CaptureService {
             request.amount(),
             currency.getCurrencyId(),
             occurredAt);
-    if (captureId == null) {
+    if (captureTransactionId == null) {
       throw conflict();
     }
     Long eventId =
-        repository.insertPaymentEvent(captureId, outcome.getTransactionEventTypeId(), occurredAt);
+        repository.insertPaymentEvent(
+            captureTransactionId, transactionEventType.getTransactionEventTypeId(), occurredAt);
     if (eventId == null) {
       throw internal();
     }
-    if (request.success()) {
-      JournalEntry captureEntry =
-          buildCaptureEntry(
-              payment,
-              pendingFee,
-              currency,
-              request.captureReference(),
-              captureId,
-              eventId,
-              occurredAt);
-      long entryId =
-          repository.insertFeeReleaseEntry(
-              eventId, JournalEntryTypes.CAPTURE.getValue().getJournalEntryTypeId(), occurredAt);
-      persistLines(entryId, captureEntry);
-    } else {
-      long entryId =
-          repository.insertFeeReleaseEntry(
-              eventId,
-              JournalEntryTypes.FEE_RELEASE.getValue().getJournalEntryTypeId(),
-              occurredAt);
-      repository.insertLine(
-          entryId, pendingFee.merchantRegisterId(), pendingFee.currencyId(), -pendingFee.fee());
-      repository.insertLine(
-          entryId, pendingFee.platformRegisterId(), pendingFee.currencyId(), pendingFee.fee());
+    Account merchantAccount = repository.findAccountById(payment.merchantAccountId());
+    if (merchantAccount == null) {
+      throw internal();
     }
+    TransactionEvent transactionEvent;
+    try {
+      transactionEvent =
+          new TransactionEvent(
+              eventId,
+              Transaction.of(
+                  captureTransactionId,
+                  TransactionTypes.CAPTURE.getValue(),
+                  merchantAccount,
+                  request.captureReference(),
+                  new Amount(currency, payment.grossQuantity()),
+                  occurredAt),
+              transactionEventType,
+              occurredAt);
+    } catch (IllegalArgumentException exception) {
+      throw internal();
+    }
+    journalEntryRepository.insertJournalEntry(journalEntry(payment, pendingFee, transactionEvent));
     return new CaptureResponse(request.captureReference(), occurredAt);
   }
 
@@ -129,109 +130,65 @@ public class CaptureService {
         || existing.quantity() != request.amount()
         || existing.currencyId() != currency.getCurrencyId()
         || existing.eventTypeId() == null
-        || existing.eventTypeId() != outcome(request.success()).getTransactionEventTypeId()) {
+        || existing.eventTypeId()
+            != transactionEventType(request.success()).getTransactionEventTypeId()) {
       throw conflict();
     }
     return new CaptureResponse(existing.reference(), existing.createdTs());
   }
 
-  private JournalEntry buildCaptureEntry(
-      PaymentFamily payment,
-      PendingFee pendingFee,
-      Currency currency,
-      String captureReference,
-      long captureId,
-      long eventId,
-      Instant occurredAt) {
-    Register psp =
-        register(
-            payment.pspAccountId(), RegisterTypes.PSP_RECEIVABLE.getValue().getRegisterTypeId());
-    Long taxAuthority = repository.findTaxAuthority(payment.shopperCountryId());
-    Long platform = repository.findPlatform();
-    Register tax =
-        taxAuthority == null
-            ? null
-            : register(taxAuthority, RegisterTypes.TAX_PAYABLE.getValue().getRegisterTypeId());
-    Register merchantPayable =
-        register(
-            payment.merchantAccountId(),
-            RegisterTypes.MERCHANT_PAYABLE.getValue().getRegisterTypeId());
-    Register feeRevenue =
-        platform == null
-            ? null
-            : register(platform, RegisterTypes.FEE_REVENUE.getValue().getRegisterTypeId());
-    Register merchantPending =
-        register(
-            payment.merchantAccountId(), RegisterTypes.PENDING_FEE.getValue().getRegisterTypeId());
-    Register platformPending =
-        platform == null
-            ? null
-            : register(platform, RegisterTypes.PENDING_FEE.getValue().getRegisterTypeId());
-    if (tax == null
-        || feeRevenue == null
-        || platformPending == null
-        || merchantPending.getRegisterId() != pendingFee.merchantRegisterId()
-        || platformPending.getRegisterId() != pendingFee.platformRegisterId()
-        || psp.getAccount().getAccountId() != payment.pspAccountId()
-        || tax.getAccount().getAccountId() != taxAuthority
-        || merchantPayable.getAccount().getAccountId() != payment.merchantAccountId()
-        || feeRevenue.getAccount().getAccountId() != platform) {
-      throw internal();
-    }
+  private JournalEntry journalEntry(
+      PaymentFamily payment, PendingFee pendingFee, TransactionEvent transactionEvent) {
     try {
-      Account merchantAccount = merchantPayable.getAccount();
-      Transaction captureTransaction =
-          Transaction.of(
-              captureId,
-              TransactionTypes.CAPTURE.getValue(),
-              merchantAccount,
-              captureReference,
-              new Amount(currency, payment.grossQuantity()),
-              occurredAt);
-      TransactionEvent captureEvent =
-          new TransactionEvent(
-              eventId, captureTransaction, TransactionEventTypes.CAPTURED.getValue(), occurredAt);
+      Account platformAccount = repository.findPlatformAccount();
+      if (platformAccount == null) {
+        throw internal();
+      }
+      Register merchantPendingFee =
+          register(payment.merchantAccountId(), RegisterTypes.PENDING_FEE);
+      Register platformPendingFee =
+          register(platformAccount.getAccountId(), RegisterTypes.PENDING_FEE);
+      if (merchantPendingFee.getRegisterId() != pendingFee.merchantRegisterId()
+          || platformPendingFee.getRegisterId() != pendingFee.platformRegisterId()) {
+        throw internal();
+      }
+      Amount gross = transactionEvent.getTransaction().getAmount();
+      Amount fee = new Amount(gross.currency(), pendingFee.fee());
+      Instant occurredAt = transactionEvent.getOccurredAt();
+      if (!transactionEvent
+          .getTransactionEventType()
+          .equals(TransactionEventTypes.CAPTURED.getValue())) {
+        return PendingFeeJournalTemplates.FEE_RELEASE.build(
+            transactionEvent, merchantPendingFee, platformPendingFee, fee, occurredAt);
+      }
+      Account taxAuthorityAccount =
+          repository.findTaxAuthorityAccountByCountryId(payment.shopperCountryId());
+      if (taxAuthorityAccount == null) {
+        throw internal();
+      }
       return CaptureJournalTemplates.CAPTURE.build(
-          1L,
-          1L,
-          2L,
-          3L,
-          4L,
-          5L,
-          6L,
-          captureEvent,
-          psp,
-          tax,
-          merchantPayable,
-          feeRevenue,
-          merchantPending,
-          platformPending,
-          new Amount(currency, payment.grossQuantity()),
-          new Amount(currency, payment.netQuantity()),
-          new Amount(currency, payment.taxQuantity()),
-          new Amount(currency, pendingFee.fee()),
+          transactionEvent,
+          register(payment.pspAccountId(), RegisterTypes.PSP_RECEIVABLE),
+          register(taxAuthorityAccount.getAccountId(), RegisterTypes.TAX_PAYABLE),
+          register(payment.merchantAccountId(), RegisterTypes.MERCHANT_PAYABLE),
+          register(platformAccount.getAccountId(), RegisterTypes.FEE_REVENUE),
+          merchantPendingFee,
+          platformPendingFee,
+          gross,
+          new Amount(gross.currency(), payment.netQuantity()),
+          new Amount(gross.currency(), payment.taxQuantity()),
+          fee,
           occurredAt);
-    } catch (CaptureException exception) {
-      throw exception;
     } catch (IllegalArgumentException | ArithmeticException exception) {
       throw internal();
     }
   }
 
-  private void persistLines(long entryId, JournalEntry journalEntry) {
-    for (JournalEntryLine line : journalEntry.getJournalEntryLines()) {
-      repository.insertLine(
-          entryId,
-          line.getRegister().getRegisterId(),
-          line.getAmount().currency().getCurrencyId(),
-          line.getAmount().quantity());
-    }
-  }
-
-  private Register register(long accountId, long registerTypeId) {
-    Register register = repository.findRegister(accountId, registerTypeId);
-    if (register == null) {
-      throw missingRegister();
+  private Register register(long accountId, RegisterTypes registerType) {
+    Register register =
+        repository.findRegister(accountId, registerType.getValue().getRegisterTypeId());
+    if (register == null || register.getAccount().getAccountId() != accountId) {
+      throw internal();
     }
     return register;
   }
@@ -260,7 +217,7 @@ public class CaptureService {
         .orElseThrow(CaptureService::internal);
   }
 
-  private static TransactionEventType outcome(boolean success) {
+  private static TransactionEventType transactionEventType(boolean success) {
     return success
         ? TransactionEventTypes.CAPTURED.getValue()
         : TransactionEventTypes.CAPTURE_FAILED.getValue();
@@ -279,10 +236,6 @@ public class CaptureService {
         || request.currency().isBlank()) {
       throw bad();
     }
-  }
-
-  private static CaptureException missingRegister() {
-    return internal();
   }
 
   private static CaptureException bad() {

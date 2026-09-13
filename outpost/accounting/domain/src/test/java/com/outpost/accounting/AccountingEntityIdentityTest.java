@@ -127,7 +127,6 @@ class AccountingEntityIdentityTest {
     JournalEntry entry = AccountingFixtures.journalEntry(1L);
     JournalEntryLine zeroLine =
         new JournalEntryLine(
-            1L,
             entry,
             new Register(
                 2L, AccountingFixtures.merchant(), RegisterTypes.MERCHANT_PAYABLE.getValue()),

@@ -1,5 +1,8 @@
 package com.outpost.ledger.configuration;
 
+import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
+import com.outpost.accounting.journalentry.repository.mybatis.JournalEntryMapper;
+import com.outpost.accounting.journalentry.repository.mybatis.MyBatisJournalEntryRepository;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
@@ -32,6 +35,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /** Wires FX persistence and validates all loaded data before exposing the provider. */
 @Configuration(proxyBeanMethods = false)
@@ -49,19 +53,30 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
+  JournalEntryRepository journalEntryRepository(
+      JournalEntryMapper mapper, PlatformTransactionManager transactionManager) {
+    return new MyBatisJournalEntryRepository(mapper, transactionManager);
+  }
+
+  @Bean
   PaymentCreationService paymentCreationService(
-      PaymentRepository repository, PaymentFeeCalculator calculator, Clock clock) {
-    return new PaymentCreationService(repository, calculator, clock);
+      PaymentRepository repository,
+      JournalEntryRepository journalEntryRepository,
+      PaymentFeeCalculator calculator,
+      Clock clock) {
+    return new PaymentCreationService(repository, journalEntryRepository, calculator, clock);
   }
 
   @Bean
-  PaymentEventService paymentEventService(PaymentRepository repository, Clock clock) {
-    return new PaymentEventService(repository, clock);
+  PaymentEventService paymentEventService(
+      PaymentRepository repository, JournalEntryRepository journalEntryRepository, Clock clock) {
+    return new PaymentEventService(repository, journalEntryRepository, clock);
   }
 
   @Bean
-  CaptureService captureService(PaymentRepository repository, Clock clock) {
-    return new CaptureService(repository, clock);
+  CaptureService captureService(
+      PaymentRepository repository, JournalEntryRepository journalEntryRepository, Clock clock) {
+    return new CaptureService(repository, journalEntryRepository, clock);
   }
 
   @Bean

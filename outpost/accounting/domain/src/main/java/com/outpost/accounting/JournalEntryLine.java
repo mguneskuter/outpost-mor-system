@@ -2,18 +2,27 @@ package com.outpost.accounting;
 
 import com.outpost.payment.common.Amount;
 import java.util.Objects;
+import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /** One currency-denominated movement in a journal entry. */
 public final class JournalEntryLine {
-  private final long journalEntryLineId;
+  private final @Nullable Long journalEntryLineId;
   private final JournalEntry journalEntry;
   private final Register register;
   private final Amount amount;
 
-  /** Creates a journal entry line. */
-  public JournalEntryLine(
-      long journalEntryLineId, JournalEntry journalEntry, Register register, Amount amount) {
-    if (journalEntryLineId <= 0) {
+  /** Creates a line that has not been stored. */
+  public JournalEntryLine(JournalEntry journalEntry, Register register, Amount amount) {
+    this(null, journalEntry, register, amount);
+  }
+
+  JournalEntryLine(
+      @Nullable Long journalEntryLineId,
+      JournalEntry journalEntry,
+      Register register,
+      Amount amount) {
+    if (journalEntryLineId != null && journalEntryLineId <= 0) {
       throw new IllegalArgumentException(
           "journalEntryLineId must be positive: " + journalEntryLineId);
     }
@@ -23,9 +32,9 @@ public final class JournalEntryLine {
     this.amount = Objects.requireNonNull(amount, "amount");
   }
 
-  /** Returns the line identity. */
-  public long getJournalEntryLineId() {
-    return journalEntryLineId;
+  /** Returns the stored line identifier, or empty before the line is stored. */
+  public Optional<Long> getJournalEntryLineId() {
+    return Optional.ofNullable(journalEntryLineId);
   }
 
   /** Returns the owning entry. */
@@ -51,10 +60,10 @@ public final class JournalEntryLine {
     if (!(other instanceof JournalEntryLine that)) {
       return false;
     }
-    return journalEntryLineId == that.journalEntryLineId
-        && Objects.equals(journalEntry, that.journalEntry)
-        && Objects.equals(register, that.register)
-        && Objects.equals(amount, that.amount);
+    return Objects.equals(journalEntryLineId, that.journalEntryLineId)
+        && journalEntry.equals(that.journalEntry)
+        && register.equals(that.register)
+        && amount.equals(that.amount);
   }
 
   @Override

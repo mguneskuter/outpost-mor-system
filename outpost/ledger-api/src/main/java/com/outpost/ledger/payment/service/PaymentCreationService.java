@@ -3,8 +3,17 @@ package com.outpost.ledger.payment.service;
 import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.MerchantFeeConfiguration;
+import com.outpost.accounting.JournalEntry;
+import com.outpost.accounting.Register;
+import com.outpost.accounting.RegisterTypes;
+import com.outpost.accounting.Transaction;
+import com.outpost.accounting.TransactionEvent;
+import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.TransactionTypes;
+import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.payment.CreatePaymentCommand;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
+import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions;
@@ -25,13 +34,18 @@ import org.springframework.transaction.annotation.Transactional;
 /** Coordinates the atomic payment creation transaction. */
 public class PaymentCreationService {
   private final PaymentRepository repository;
+  private final JournalEntryRepository journalEntryRepository;
   private final PaymentFeeCalculator feeCalculator;
   private final Clock clock;
 
-  /** Creates a service using the ledger clock and persistence seam. */
+  /** Creates a service using the ledger clock and persistence seams. */
   public PaymentCreationService(
-      PaymentRepository repository, PaymentFeeCalculator feeCalculator, Clock clock) {
+      PaymentRepository repository,
+      JournalEntryRepository journalEntryRepository,
+      PaymentFeeCalculator feeCalculator,
+      Clock clock) {
     this.repository = repository;
+    this.journalEntryRepository = journalEntryRepository;
     this.feeCalculator = feeCalculator;
     this.clock = clock;
   }
@@ -73,12 +87,9 @@ public class PaymentCreationService {
           || feeConfiguration.currency().getCurrencyId() != currency.getCurrencyId()) {
         throw unprocessable("MISSING_FEE_CONFIGURATION");
       }
-      long fee;
+      Amount fee;
       try {
-        fee =
-            feeCalculator
-                .calculate(new Amount(currency, request.netAmount()), feeConfiguration)
-                .quantity();
+        fee = feeCalculator.calculate(new Amount(currency, request.netAmount()), feeConfiguration);
       } catch (IllegalArgumentException | ArithmeticException e) {
         throw unprocessable("FEE_ABOVE_NET");
       }
@@ -93,16 +104,14 @@ public class PaymentCreationService {
       if (transactionId == null) {
         return existingOrConflict(request, currency, merchant, psp, country, subdivision);
       }
-      Long taxAuthority = repository.findTaxAuthority(country.getCountryId());
-      Long platform = repository.findPlatform();
-      Long merchantRegister = repository.findPendingRegister(merchant.getAccountId());
-      Long platformRegister = platform == null ? null : repository.findPendingRegister(platform);
-      if (taxAuthority == null
-          || platform == null
-          || merchantRegister == null
-          || platformRegister == null) {
+      Account taxAuthorityAccount =
+          repository.findTaxAuthorityAccountByCountryId(country.getCountryId());
+      Account platformAccount = repository.findPlatformAccount();
+      if (taxAuthorityAccount == null || platformAccount == null) {
         throw unprocessable("MISSING_ACCOUNT");
       }
+      Register merchantPendingFee = pendingFeeRegister(merchant);
+      Register platformPendingFee = pendingFeeRegister(platformAccount);
       repository.insertPaymentDetail(
           transactionId,
           country.getCountryId(),
@@ -111,9 +120,20 @@ public class PaymentCreationService {
           request.netAmount(),
           request.taxAmount());
       long eventId = repository.insertEvent(transactionId, createdAt);
-      long entryId = repository.insertEntry(eventId, createdAt);
-      repository.insertLine(entryId, merchantRegister, currency.getCurrencyId(), fee);
-      repository.insertLine(entryId, platformRegister, currency.getCurrencyId(), -fee);
+      TransactionEvent orderCreated =
+          new TransactionEvent(
+              eventId,
+              Transaction.of(
+                  transactionId,
+                  TransactionTypes.PAYMENT.getValue(),
+                  merchant,
+                  request.paymentReference(),
+                  new Amount(currency, gross),
+                  createdAt),
+              TransactionEventTypes.ORDER_CREATED.getValue(),
+              createdAt);
+      journalEntryRepository.insertJournalEntry(
+          pendingFeeEntry(orderCreated, merchantPendingFee, platformPendingFee, fee));
       return new PaymentResponse(request.paymentReference(), createdAt);
     } catch (PaymentCreationException e) {
       throw e;
@@ -121,6 +141,37 @@ public class PaymentCreationService {
       throw bad();
     } catch (RuntimeException e) {
       throw e;
+    }
+  }
+
+  private Register pendingFeeRegister(Account account) {
+    Register register;
+    try {
+      register =
+          repository.findRegister(
+              account.getAccountId(), RegisterTypes.PENDING_FEE.getValue().getRegisterTypeId());
+    } catch (IllegalArgumentException e) {
+      throw internal();
+    }
+    if (register == null) {
+      throw unprocessable("MISSING_ACCOUNT");
+    }
+    if (register.getAccount().getAccountId() != account.getAccountId()) {
+      throw internal();
+    }
+    return register;
+  }
+
+  private static JournalEntry pendingFeeEntry(
+      TransactionEvent orderCreated,
+      Register merchantPendingFee,
+      Register platformPendingFee,
+      Amount fee) {
+    try {
+      return PendingFeeJournalTemplates.FEE_PENDING.build(
+          orderCreated, merchantPendingFee, platformPendingFee, fee, orderCreated.getOccurredAt());
+    } catch (IllegalArgumentException e) {
+      throw internal();
     }
   }
 
@@ -189,5 +240,9 @@ public class PaymentCreationService {
 
   private static PaymentCreationException unprocessable(String code) {
     return new PaymentCreationException(422, code);
+  }
+
+  private static PaymentCreationException internal() {
+    return new PaymentCreationException(500, "INTERNAL_ERROR");
   }
 }
