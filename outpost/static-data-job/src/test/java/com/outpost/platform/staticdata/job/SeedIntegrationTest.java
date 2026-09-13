@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -59,6 +60,7 @@ class SeedIntegrationTest {
 
   @BeforeEach
   void resetSeededRows() {
+    jdbcTemplate.update("DELETE FROM tax_rate");
     jdbcTemplate.update("DELETE FROM register");
     jdbcTemplate.update("TRUNCATE TABLE account RESTART IDENTITY CASCADE");
     jdbcTemplate.update(
@@ -152,6 +154,31 @@ class SeedIntegrationTest {
                 "SELECT COUNT(*) FROM register WHERE account_id = 200 AND register_type_id = 1",
                 Integer.class))
         .isEqualTo(1);
+  }
+
+  @Test
+  void rerunningTaxRatesWritesNothing() {
+    runSeed("tax_rate.sql");
+    final List<Map<String, Object>> rates =
+        jdbcTemplate.queryForList("SELECT * FROM tax_rate ORDER BY tax_rate_id");
+
+    runSeed("tax_rate.sql");
+
+    assertThat(rates).isNotEmpty();
+    assertThat(jdbcTemplate.queryForList("SELECT * FROM tax_rate ORDER BY tax_rate_id"))
+        .containsExactlyElementsOf(rates);
+  }
+
+  @Test
+  void failsOnDivergentTaxRateWithoutOverwritingIt() {
+    runSeed("tax_rate.sql");
+    jdbcTemplate.update("UPDATE tax_rate SET rate = 0.5 WHERE tax_rate_id = 1");
+
+    assertThatThrownBy(() -> runSeed("tax_rate.sql")).isInstanceOf(DataAccessException.class);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT rate FROM tax_rate WHERE tax_rate_id = 1", BigDecimal.class))
+        .isEqualByComparingTo("0.5");
   }
 
   @Test
