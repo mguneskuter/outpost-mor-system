@@ -14,4 +14,7 @@ interface AccountMapper {
 
   /** Finds the account with this code. */
   @Nullable Account findAccountByCode(@Param("code") String code);
+
+  /** Finds the TAX_AUTHORITY account that collects tax for the country with this id. */
+  @Nullable Account findTaxAuthorityAccountByCountryId(@Param("countryId") long countryId);
 }

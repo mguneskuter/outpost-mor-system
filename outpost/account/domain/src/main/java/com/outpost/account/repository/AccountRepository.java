@@ -10,4 +10,7 @@ public interface AccountRepository {
 
   /** Finds the account with this code. */
   Optional<Account> findAccountByCode(String code);
+
+  /** Finds the tax-authority account that collects tax for the country with this id. */
+  Optional<Account> findTaxAuthorityAccountByCountryId(long countryId);
 }

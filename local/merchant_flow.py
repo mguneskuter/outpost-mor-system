@@ -150,7 +150,7 @@ class MerchantFlow:
                 "email": "merchant-flow-shopper@example.com",
                 "country": SHOPPER_COUNTRY,
             },
-            "payment_method": PSP_CODE,
+            "psp_code": PSP_CODE,
             "order_details": {
                 "order_lines": [
                     {

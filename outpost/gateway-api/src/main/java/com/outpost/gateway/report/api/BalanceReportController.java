@@ -1,15 +1,7 @@
 package com.outpost.gateway.report.api;
 
-import com.outpost.framework.logging.StructuredLogger;
-import com.outpost.gateway.report.service.BalanceReportException;
 import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.GatewayPrincipal;
-import com.outpost.gateway.security.MerchantAuthenticationFilter;
-import jakarta.servlet.http.HttpServletRequest;
-import java.util.Objects;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,8 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/report/balance")
 public final class BalanceReportController {
-  private static final StructuredLogger LOGGER =
-      new StructuredLogger(LoggerFactory.getLogger(BalanceReportController.class));
   private final ReportService service;
 
   /** Creates a controller backed by the report service. */
@@ -29,33 +19,13 @@ public final class BalanceReportController {
 
   /** Returns tax-authority balances for the operator. */
   @GetMapping("/tax")
-  public BalanceReportResponse tax(HttpServletRequest httpRequest) {
-    return BalanceReportResponse.from(service.tax(principal(httpRequest)));
+  public BalanceReportResponse tax(GatewayPrincipal principal) {
+    return BalanceReportResponse.from(service.tax(principal));
   }
 
   /** Returns merchant balances: every merchant for the operator, only itself for a merchant. */
   @GetMapping("/merchant")
-  public BalanceReportResponse merchant(HttpServletRequest httpRequest) {
-    return BalanceReportResponse.from(service.merchant(principal(httpRequest)));
+  public BalanceReportResponse merchant(GatewayPrincipal principal) {
+    return BalanceReportResponse.from(service.merchant(principal));
   }
-
-  private static GatewayPrincipal principal(HttpServletRequest httpRequest) {
-    return Objects.requireNonNull(
-        (GatewayPrincipal)
-            httpRequest.getAttribute(MerchantAuthenticationFilter.PRINCIPAL_ATTRIBUTE),
-        "principal");
-  }
-
-  @ExceptionHandler(BalanceReportException.class)
-  ResponseEntity<ErrorResponse> controlled(BalanceReportException exception) {
-    return ResponseEntity.status(exception.status()).body(new ErrorResponse(exception.code()));
-  }
-
-  @ExceptionHandler(RuntimeException.class)
-  ResponseEntity<ErrorResponse> unexpected(RuntimeException exception) {
-    LOGGER.warn("balance report request failed", exception);
-    return ResponseEntity.internalServerError().body(new ErrorResponse("INTERNAL_ERROR"));
-  }
-
-  record ErrorResponse(String code) {}
 }

@@ -21,9 +21,14 @@ public final class BalanceReportService {
     return report(repository.findTaxBalances());
   }
 
-  /** Returns what is owed to merchants, grouped by account and currency. */
+  /** Returns what is owed to every merchant, grouped by account and currency. */
   public BalanceReport merchant() {
     return report(repository.findMerchantBalances());
+  }
+
+  /** Returns what is owed to the merchant with this account code, grouped by currency. */
+  public BalanceReport merchant(String merchantCode) {
+    return report(repository.findMerchantBalancesByMerchantCode(merchantCode));
   }
 
   private static BalanceReport report(List<BalanceLine> lines) {

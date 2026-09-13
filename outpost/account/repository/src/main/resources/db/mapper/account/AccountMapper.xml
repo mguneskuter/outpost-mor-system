@@ -31,4 +31,11 @@
     <include refid="accountSelect"/>
      WHERE account.code = #{code}
   </select>
+
+  <select id="findTaxAuthorityAccountByCountryId" resultMap="account">
+    <include refid="accountSelect"/>
+      JOIN tax_authority_account ON tax_authority_account.account_id = account.account_id
+     WHERE tax_authority_account.country_id = #{countryId}
+       AND account_type.code = 'TAX_AUTHORITY'
+  </select>
 </mapper>

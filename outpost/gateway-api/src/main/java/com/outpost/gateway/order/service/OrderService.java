@@ -33,7 +33,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -80,12 +79,12 @@ public final class OrderService {
    * transaction; when it accepts, the order's creation is queued for the Ledger. A repeated request
    * whose order has no PSP reference calls the PSP again with the order's reference.
    *
-   * @throws OrderCreationException for an invalid request, a different request under a used
-   *     idempotency key, or a failed PSP call
+   * @throws OrderCreationException for a request the platform cannot price or book, a different
+   *     request under a used idempotency key, or a failed PSP call
    */
   public CreateOrderResult create(long merchantAccountId, CreateOrderCommand command) {
     String fingerprint = fingerprint(command);
-    String idempotencyKey = required(command.idempotencyKey(), "idempotency_key");
+    String idempotencyKey = command.idempotencyKey();
     Optional<Order> existing = orders.findOrderByIdempotencyKey(merchantAccountId, idempotencyKey);
     if (existing.isPresent()) {
       return repeat(merchantAccountId, existing.orElseThrow(), command, fingerprint);
@@ -190,46 +189,33 @@ public final class OrderService {
     return new PspOrder(pspReference, paymentLink);
   }
 
+  /**
+   * Prices the order and resolves the accounts that serve it, refusing anything the platform cannot
+   * book, before any row is stored or the PSP is called.
+   */
   private Checkout checkout(long merchantAccountId, CreateOrderCommand command) {
-    final String merchantReference = required(command.merchantReference(), "merchant_reference");
-    final String paymentMethod = required(command.paymentMethod(), "payment_method");
-    CreateOrderCommand.ShopperDetailsCommand shopper =
-        required(command.shopperDetails(), "shopper_details");
-    final String email = required(shopper.email(), "shopper_details.email");
-    final String fullName = required(shopper.fullName(), "shopper_details.full_name");
+    CreateOrderCommand.ShopperDetailsCommand shopper = command.shopperDetails();
     Country country =
-        Countries.fromIsoCode(required(shopper.country(), "shopper_details.country"))
+        Countries.fromIsoCode(shopper.country())
             .orElseThrow(() -> failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "INVALID_COUNTRY"));
     CountrySubdivision subdivision = subdivision(country, shopper.state());
-    CreateOrderCommand.OrderDetailsCommand details =
-        required(command.orderDetails(), "order_details");
-    List<CreateOrderCommand.OrderLineCommand> requestLines =
-        details.orderLines() == null ? List.of() : nonNullLines(details.orderLines());
-    if (requestLines.isEmpty()) {
-      throw failure(HttpStatus.BAD_REQUEST.value(), "ORDER_LINES_REQUIRED");
-    }
+    CreateOrderCommand.OrderDetailsCommand details = command.orderDetails();
     Currency currency =
-        Currencies.fromCurrencyCode(required(details.currency(), "order_details.currency"))
+        Currencies.fromCurrencyCode(details.currency())
             .orElseThrow(() -> failure(HttpStatus.BAD_REQUEST.value(), "UNSUPPORTED_CURRENCY"));
-    long requestedTotal = required(details.totalAmount(), "order_details.total_amount");
     Set<String> merchantLineReferences = new HashSet<>();
     List<OrderItem> items = new ArrayList<>();
     Amount netAmount = new Amount(currency, 0);
     Amount taxAmount = new Amount(currency, 0);
-    for (CreateOrderCommand.OrderLineCommand input : requestLines) {
-      String lineReference = required(input.merchantLineReference(), "merchant_line_reference");
-      if (!merchantLineReferences.add(lineReference)) {
+    for (CreateOrderCommand.OrderLineCommand input : details.orderLines()) {
+      if (!merchantLineReferences.add(input.merchantLineReference())) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "DUPLICATE_MERCHANT_LINE_REFERENCE");
       }
-      long net = required(input.amount(), "order_lines.amount");
-      if (net <= 0) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "LINE_AMOUNT_MUST_BE_POSITIVE");
-      }
-      if (!currency.getCurrencyCode().equals(required(input.currency(), "order_lines.currency"))) {
+      if (!currency.getCurrencyCode().equals(input.currency())) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "MIXED_CURRENCIES");
       }
       ProductType productType =
-          ProductTypes.fromCode(required(input.type(), "order_lines.type"))
+          ProductTypes.fromCode(input.type())
               .orElseThrow(() -> failure(HttpStatus.BAD_REQUEST.value(), "INVALID_PRODUCT_TYPE"));
       TaxRate rate;
       try {
@@ -237,7 +223,7 @@ public final class OrderService {
       } catch (RuntimeException exception) {
         throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "TAX_RATE_UNAVAILABLE");
       }
-      Amount lineNet = new Amount(currency, net);
+      Amount lineNet = new Amount(currency, input.amount());
       Amount lineTax;
       try {
         lineTax = lineTaxCalculator.calculateTax(lineNet, rate.rate());
@@ -251,12 +237,12 @@ public final class OrderService {
               null,
               productType,
               "line-" + UUID.randomUUID(),
-              lineReference,
+              input.merchantLineReference(),
               lineNet,
               lineTax,
               rate.rate()));
     }
-    if (requestedTotal != netAmount.quantity()) {
+    if (details.totalAmount() != netAmount.quantity()) {
       throw failure(HttpStatus.BAD_REQUEST.value(), "TOTAL_AMOUNT_MISMATCH");
     }
     Amount grossAmount;
@@ -273,21 +259,29 @@ public final class OrderService {
             .orElseThrow(() -> failure(HttpStatus.UNAUTHORIZED.value(), "MERCHANT_NOT_FOUND"));
     Account pspAccount =
         accounts
-            .findAccountByCode(paymentMethod)
+            .findAccountByCode(command.pspCode())
             .filter(account -> isActive(account, AccountTypes.PSP))
             .filter(account -> merchantPsps.isPspEnabled(merchantAccountId, account.getAccountId()))
-            .orElseThrow(
-                () ->
-                    failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "PAYMENT_METHOD_UNAVAILABLE"));
+            .orElseThrow(() -> failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "PSP_UNAVAILABLE"));
     if (!feeConfigurations.hasFeeConfiguration(merchantAccountId, currency)) {
       throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "MISSING_FEE_CONFIGURATION");
+    }
+    // The Ledger books the captured tax against the shopper country's tax authority; an order it
+    // could never book is refused before the shopper pays.
+    if (accounts.findTaxAuthorityAccountByCountryId(country.getCountryId()).isEmpty()) {
+      throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "MISSING_TAX_AUTHORITY");
     }
     return new Checkout(
         merchant,
         pspAccount,
-        merchantReference,
+        command.merchantReference(),
         new ShopperDetail(
-            null, email, fullName, country, subdivision, nullableText(shopper.zipcode())),
+            null,
+            shopper.email(),
+            shopper.fullName(),
+            country,
+            subdivision,
+            nullableText(shopper.zipcode())),
         List.copyOf(items),
         netAmount,
         taxAmount,
@@ -296,17 +290,6 @@ public final class OrderService {
 
   private static boolean isActive(Account account, AccountTypes type) {
     return account.isActive() && account.getAccountType().equals(type.getValue());
-  }
-
-  private static List<CreateOrderCommand.OrderLineCommand> nonNullLines(List<?> lines) {
-    List<CreateOrderCommand.OrderLineCommand> result = new ArrayList<>();
-    for (Object value : lines) {
-      if (!(value instanceof CreateOrderCommand.OrderLineCommand line)) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "INVALID_ORDER_LINE");
-      }
-      result.add(line);
-    }
-    return List.copyOf(result);
   }
 
   private static @Nullable CountrySubdivision subdivision(Country country, @Nullable String state) {
@@ -321,38 +304,22 @@ public final class OrderService {
     StringBuilder canonical = new StringBuilder();
     append(canonical, command.merchantReference());
     append(canonical, command.idempotencyKey());
-    append(canonical, command.paymentMethod());
+    append(canonical, command.pspCode());
     CreateOrderCommand.ShopperDetailsCommand shopper = command.shopperDetails();
-    if (shopper == null) {
-      append(canonical, null);
-    } else {
-      append(canonical, shopper.fullName());
-      append(canonical, shopper.email());
-      append(canonical, shopper.country());
-      append(canonical, shopper.state());
-      append(canonical, shopper.zipcode());
-    }
+    append(canonical, shopper.fullName());
+    append(canonical, shopper.email());
+    append(canonical, shopper.country());
+    append(canonical, shopper.state());
+    append(canonical, shopper.zipcode());
     CreateOrderCommand.OrderDetailsCommand details = command.orderDetails();
-    if (details == null) {
-      append(canonical, null);
-    } else {
-      append(canonical, details.totalAmount());
-      append(canonical, details.currency());
-      if (details.orderLines() == null) {
-        append(canonical, null);
-      } else {
-        append(canonical, details.orderLines().size());
-        for (CreateOrderCommand.OrderLineCommand line : details.orderLines()) {
-          if (line == null) {
-            append(canonical, null);
-          } else {
-            append(canonical, line.merchantLineReference());
-            append(canonical, line.amount());
-            append(canonical, line.currency());
-            append(canonical, line.type());
-          }
-        }
-      }
+    append(canonical, details.totalAmount());
+    append(canonical, details.currency());
+    append(canonical, details.orderLines().size());
+    for (CreateOrderCommand.OrderLineCommand line : details.orderLines()) {
+      append(canonical, line.merchantLineReference());
+      append(canonical, line.amount());
+      append(canonical, line.currency());
+      append(canonical, line.type());
     }
     try {
       return Base64.getUrlEncoder()
@@ -368,24 +335,6 @@ public final class OrderService {
   private static void append(StringBuilder target, @Nullable Object value) {
     String text = value == null ? "<null>" : value.toString();
     target.append(text.length()).append(':').append(text).append('|');
-  }
-
-  private static String required(@Nullable String value, String field) {
-    if (value == null || value.isBlank()) {
-      throw failure(
-          HttpStatus.BAD_REQUEST.value(),
-          "INVALID_" + field.toUpperCase(Locale.ROOT).replace('.', '_'));
-    }
-    return value;
-  }
-
-  private static <T> T required(@Nullable T value, String field) {
-    if (value == null) {
-      throw failure(
-          HttpStatus.BAD_REQUEST.value(),
-          "INVALID_" + field.toUpperCase(Locale.ROOT).replace('.', '_'));
-    }
-    return value;
   }
 
   private static @Nullable String nullableText(@Nullable String value) {

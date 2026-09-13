@@ -35,23 +35,30 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * as the only granted authority. A request without a verifying signature continues unauthenticated,
  * so the chain's authorization rules decide its outcome. A signed request's body is read in full
  * and remains readable downstream; a signed request whose body exceeds {@link
- * SizeBoundedRequestBody} is answered {@code 413} and goes no further.
+ * SizeBoundedRequestBody} is answered {@code 413 BODY_TOO_LARGE} and goes no further.
  */
 public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
   static final String SIGNATURE_HEADER = "X-Outpost-Signature";
 
+  /** The error code of a signed body larger than {@link SizeBoundedRequestBody#MAX_SIZE_BYTES}. */
+  public static final String BODY_TOO_LARGE = "BODY_TOO_LARGE";
+
   private final SecurityContextHolderStrategy contextHolder =
       SecurityContextHolder.getContextHolderStrategy();
   private final Map<String, HmacKey> keysByCaller;
+  private final ErrorBodyWriter errorBodies;
 
   /**
-   * Creates a filter that recognises each named caller by its key.
+   * Creates a filter that recognises each named caller by its key and answers a rejected request
+   * through {@code errorBodies}.
    *
    * @throws IllegalArgumentException when two callers share a key, since a signature would then not
    *     identify one caller
    */
-  public SignatureAuthenticationFilter(Map<String, HmacKey> keysByCaller) {
+  public SignatureAuthenticationFilter(
+      Map<String, HmacKey> keysByCaller, ErrorBodyWriter errorBodies) {
     this.keysByCaller = Map.copyOf(keysByCaller);
+    this.errorBodies = errorBodies;
     List<HmacKey> keys = List.copyOf(this.keysByCaller.values());
     for (int i = 0; i < keys.size(); i++) {
       for (int j = i + 1; j < keys.size(); j++) {
@@ -73,7 +80,7 @@ public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
     }
     Optional<byte[]> boundedBody = SizeBoundedRequestBody.read(request);
     if (boundedBody.isEmpty()) {
-      response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+      errorBodies.write(response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, BODY_TOO_LARGE);
       return;
     }
     byte[] body = boundedBody.orElseThrow();

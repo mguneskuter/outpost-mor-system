@@ -1,6 +1,7 @@
 package com.outpost.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.FeeModes;
@@ -87,6 +88,14 @@ class OrderServiceIntegrationTest {
     long rootAccountId = account(seed, AccountTypes.ROOT, "ORDER_ROOT", null);
     merchantAccountId = account(seed, AccountTypes.MERCHANT, MERCHANT_CODE, rootAccountId);
     long pspAccountId = account(seed, AccountTypes.PSP, PSP_CODE, rootAccountId);
+    long taxAuthorityAccountId =
+        account(seed, AccountTypes.TAX_AUTHORITY, "TAX_AUTHORITY_DE", rootAccountId);
+    seed.update(
+        "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
+            + "VALUES (?, ?, ?)",
+        Countries.GERMANY.getValue().getCountryId(),
+        taxAuthorityAccountId,
+        AccountTypes.TAX_AUTHORITY.getValue().getAccountTypeId());
     seed.update(
         "INSERT INTO merchant_psp (account_id, psp_account_id) VALUES (?, ?)",
         merchantAccountId,
@@ -133,6 +142,47 @@ class OrderServiceIntegrationTest {
   }
 
   @Test
+  void refusesOrderForCountryWithoutTaxAuthorityBeforeStoringItOrCallingThePsp() {
+    RecordingPsp psp = new RecordingPsp();
+    OrderService service = service(rate(), psp);
+    CreateOrderCommand command =
+        command(
+            "untaxed-key", "untaxed-order", "untaxed", Countries.AUSTRIA.getValue().getIsoCode());
+
+    OrderCreationException refusal =
+        catchThrowableOfType(
+            OrderCreationException.class, () -> service.create(merchantAccountId, command));
+
+    assertThat(refusal.status()).isEqualTo(422);
+    assertThat(refusal.code()).isEqualTo("MISSING_TAX_AUTHORITY");
+    assertThat(orderCount("untaxed-key")).isZero();
+    assertThat(psp.requests).isEmpty();
+  }
+
+  @Test
+  void keepsTheStoredOrderWithoutPspFactsAndQueuesNothingWhenThePspAnswerIsLost() {
+    TimeOrderedQueue<AccountingQueueRequest> accountingQueue =
+        new TimeOrderedQueue<>(Clock.systemUTC());
+    OrderService service = service(rate(), new UnreachablePsp(), accountingQueue);
+
+    OrderCreationException failure =
+        catchThrowableOfType(
+            OrderCreationException.class,
+            () ->
+                service.create(merchantAccountId, command("lost-key", "lost-order", "lost", "DE")));
+
+    assertThat(failure.status()).isEqualTo(503);
+    assertThat(failure.code()).isEqualTo("PSP_RETRYABLE");
+    Map<String, Object> order =
+        jdbcTemplate.queryForMap(
+            "SELECT psp_reference, payment_link FROM merchant_order WHERE idempotency_key = ?",
+            "lost-key");
+    assertThat(order.get("psp_reference")).isNull();
+    assertThat(order.get("payment_link")).isNull();
+    assertThat(accountingQueue.size()).isZero();
+  }
+
+  @Test
   void concurrentRequestsWithOneKeyAndDifferentBodiesCommitOnlyTheWinner() throws Exception {
     CyclicBarrier bothPriced = new CyclicBarrier(2);
     OrderService service = service(barrierRate(bothPriced), new AcceptingPsp());
@@ -170,8 +220,13 @@ class OrderServiceIntegrationTest {
   }
 
   private OrderService service(TaxRateProvider taxRates, PspClient psp) {
-    TimeOrderedQueue<AccountingQueueRequest> accountingQueue =
-        new TimeOrderedQueue<>(Clock.systemUTC());
+    return service(taxRates, psp, new TimeOrderedQueue<>(Clock.systemUTC()));
+  }
+
+  private OrderService service(
+      TaxRateProvider taxRates,
+      PspClient psp,
+      TimeOrderedQueue<AccountingQueueRequest> accountingQueue) {
     return new OrderService(
         orders,
         accounts,
@@ -184,8 +239,7 @@ class OrderServiceIntegrationTest {
   }
 
   private static Outcome attempt(OrderService service, CreateOrderCommand command) {
-    String shopperName =
-        Objects.requireNonNull(Objects.requireNonNull(command.shopperDetails()).fullName());
+    String shopperName = command.shopperDetails().fullName();
     try {
       return new Outcome(shopperName, service.create(merchantAccountId, command), 0);
     } catch (OrderCreationException exception) {
@@ -195,10 +249,15 @@ class OrderServiceIntegrationTest {
 
   private static CreateOrderCommand command(
       String idempotencyKey, String merchantReference, String shopperName) {
+    return command(idempotencyKey, merchantReference, shopperName, "DE");
+  }
+
+  private static CreateOrderCommand command(
+      String idempotencyKey, String merchantReference, String shopperName, String countryCode) {
     return new CreateOrderCommand(
         merchantReference,
         idempotencyKey,
-        new ShopperDetailsCommand(shopperName, shopperEmail(shopperName), "DE", null, null),
+        new ShopperDetailsCommand(shopperName, shopperEmail(shopperName), countryCode, null, null),
         PSP_CODE,
         new OrderDetailsCommand(
             List.of(
@@ -228,6 +287,15 @@ class OrderServiceIntegrationTest {
       }
       return new TaxRate(country, subdivision, productType, new BigDecimal("0.19"));
     };
+  }
+
+  private int orderCount(String idempotencyKey) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM merchant_order WHERE account_id = ? AND idempotency_key = ?",
+            Integer.class,
+            merchantAccountId,
+            idempotencyKey));
   }
 
   private int itemCount(String orderReference) {
@@ -264,6 +332,38 @@ class OrderServiceIntegrationTest {
 
   private record Outcome(
       String shopperName, @Nullable CreateOrderResult result, int conflictStatus) {}
+
+  /** A PSP that records every order it is asked to create and accepts each one. */
+  private static final class RecordingPsp implements PspClient {
+    private final List<CreateOrderRequest> requests = new ArrayList<>();
+
+    @Override
+    public com.outpost.integration.psp.service.CreateOrderResult createOrder(
+        CreateOrderRequest request) {
+      requests.add(request);
+      return new com.outpost.integration.psp.service.CreateOrderResult(
+          AcceptingPsp.PSP_REFERENCE, AcceptingPsp.PAYMENT_LINK, ResultCode.ACCEPTED);
+    }
+
+    @Override
+    public RefundResult refund(RefundRequest request) {
+      throw new UnsupportedOperationException();
+    }
+  }
+
+  /** A PSP whose answer never arrives. */
+  private static final class UnreachablePsp implements PspClient {
+    @Override
+    public com.outpost.integration.psp.service.CreateOrderResult createOrder(
+        CreateOrderRequest request) {
+      throw new IllegalStateException("the PSP did not answer");
+    }
+
+    @Override
+    public RefundResult refund(RefundRequest request) {
+      throw new UnsupportedOperationException();
+    }
+  }
 
   private static final class AcceptingPsp implements PspClient {
     private static final String PSP_REFERENCE = "psp-accepted";

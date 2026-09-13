@@ -11,4 +11,12 @@
          AND psp_account_id = #{pspAccountId}
     )
   </select>
+
+  <select id="findEnabledPspAccountIds" resultType="long">
+    SELECT merchant_psp.psp_account_id
+      FROM merchant_psp
+      JOIN account psp ON psp.account_id = merchant_psp.psp_account_id
+     WHERE merchant_psp.account_id = #{merchantAccountId}
+     ORDER BY psp.code
+  </select>
 </mapper>

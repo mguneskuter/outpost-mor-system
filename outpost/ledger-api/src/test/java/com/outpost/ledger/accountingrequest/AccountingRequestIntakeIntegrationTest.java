@@ -5,17 +5,27 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingQueueRequestTypes;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.ledger.LedgerApiApplication;
 import com.outpost.ledger.LedgerStaticDataFixtures;
+import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
 import com.outpost.ledger.accountingrequest.service.LockedAccountingQueueRequest;
+import com.outpost.ledger.accountingrequest.service.TransactionLockedException;
 import jakarta.servlet.Filter;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
@@ -66,6 +76,7 @@ class AccountingRequestIntakeIntegrationTest {
 
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue;
+  @Autowired private AccountingRequestService accountingRequestService;
   private MockMvc mockMvc;
 
   @BeforeAll
@@ -143,6 +154,48 @@ class AccountingRequestIntakeIntegrationTest {
     submit(CAPTURE_REQUEST, GATEWAY_KEY).andExpect(status().isAccepted());
 
     assertThat(accountingQueue.size()).isEqualTo(1);
+  }
+
+  @Test
+  void queuesExactlyOneOfTwoRequestsRacingForOnePaymentsTransactionLock() throws Exception {
+    CyclicBarrier bothReady = new CyclicBarrier(2);
+    AccountingQueueRequest request =
+        new AccountingQueueRequest(
+            AccountingQueueRequestTypes.CAPTURE,
+            REFERENCE,
+            "merchant-order-1",
+            "DEMO_PSP",
+            "41",
+            true,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+    List<Boolean> accepted;
+    try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+      Future<Boolean> first = executor.submit(() -> accept(bothReady, request));
+      Future<Boolean> second = executor.submit(() -> accept(bothReady, request));
+      accepted = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+    }
+
+    assertThat(accepted).containsExactlyInAnyOrder(true, false);
+    assertThat(lockCount(REFERENCE)).isEqualTo(1);
+    assertThat(accountingQueue.size()).isEqualTo(1);
+  }
+
+  /** Waits until both submitters are ready, then submits; false means the lock was taken. */
+  private boolean accept(CyclicBarrier bothReady, AccountingQueueRequest request) throws Exception {
+    bothReady.await(10, TimeUnit.SECONDS);
+    try {
+      accountingRequestService.accept(request);
+      return true;
+    } catch (TransactionLockedException locked) {
+      return false;
+    }
   }
 
   @ParameterizedTest(name = "{0}")

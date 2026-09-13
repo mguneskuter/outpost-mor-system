@@ -2,6 +2,7 @@ package com.outpost.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,6 +34,8 @@ import com.outpost.ledger.payment.service.PaymentEventException;
 import com.outpost.ledger.payment.service.PaymentEventService;
 import com.outpost.ledger.payment.service.RefundException;
 import com.outpost.ledger.payment.service.RefundService;
+import com.outpost.ledger.report.repository.BalanceLine;
+import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.payment.common.Amount;
 import jakarta.servlet.Filter;
 import java.nio.charset.StandardCharsets;
@@ -81,6 +84,7 @@ class PaymentBookingIntegrationTest {
   @Autowired private PaymentEventService paymentEvents;
   @Autowired private CaptureService captures;
   @Autowired private RefundService refunds;
+  @Autowired private BalanceReportRepository balanceReports;
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -208,6 +212,43 @@ class PaymentBookingIntegrationTest {
             () -> paymentEvents.recordAuthorisation("event-unknown", true));
     assertThat(unknown.status()).isEqualTo(404);
     assertThat(unknown.code()).isEqualTo("PAYMENT_NOT_FOUND");
+    assertThat(writes()).isEqualTo(writes);
+  }
+
+  @Test
+  void repeatedSuccessfulAuthorisationWritesNothing() {
+    String reference = "event-authorised-again";
+    paymentCreation.create(orderCreated(reference));
+    paymentEvents.recordAuthorisation(reference, true);
+    Writes writes = writes();
+
+    paymentEvents.recordAuthorisation(reference, true);
+
+    assertThat(writes()).isEqualTo(writes);
+  }
+
+  @Test
+  void captureOfAnUnknownPaymentIsRejectedWithoutWrites() {
+    Writes writes = writes();
+
+    CaptureException rejected =
+        catchThrowableOfType(
+            CaptureException.class, () -> captures.capture("capture-unknown-payment", true));
+
+    assertThat(rejected.status()).isEqualTo(404);
+    assertThat(writes()).isEqualTo(writes);
+  }
+
+  @Test
+  void refundOfAnUnknownPaymentIsRejectedWithoutWrites() {
+    Writes writes = writes();
+
+    RefundException rejected =
+        catchThrowableOfType(
+            RefundException.class,
+            () -> refunds.refund("refund-unknown-payment", "refund-unknown-payment-ref"));
+
+    assertThat(rejected.status()).isEqualTo(404);
     assertThat(writes()).isEqualTo(writes);
   }
 
@@ -419,6 +460,31 @@ class PaymentBookingIntegrationTest {
     assertThat(balanceAmount(merchantAccount, "EUR")).isEqualTo(-500L);
     // Net 20000 less the 5% fee.
     assertThat(balanceAmount(merchantAccount, "USD")).isEqualTo(19_000L);
+  }
+
+  @Test
+  void perMerchantBalancesReadOnlyTheNamedMerchantsRows() throws Exception {
+    String firstReference = "per-merchant-first";
+    createCapturedPayment(
+        firstReference,
+        orderCreated(firstReference, "DEMO_MERCHANT_3", Countries.GERMANY.getValue(), NET));
+    String secondReference = "per-merchant-second";
+    createCapturedPayment(
+        secondReference,
+        orderCreated(secondReference, "DEMO_MERCHANT_4", Countries.GERMANY.getValue(), 2 * NET));
+
+    List<BalanceLine> lines = balanceReports.findMerchantBalancesByMerchantCode("DEMO_MERCHANT_4");
+
+    assertThat(lines)
+        .extracting(BalanceLine::accountCode, BalanceLine::currency, BalanceLine::amount)
+        .containsExactly(tuple("DEMO_MERCHANT_4", "EUR", 2 * NET - 2 * NET / 20));
+    assertThat(balanceReports.findMerchantBalancesByMerchantCode("NOBODY")).isEmpty();
+    JsonNode reported =
+        account(report("/v1/report/balance/merchant/DEMO_MERCHANT_3"), "DEMO_MERCHANT_3");
+    assertThat(balanceAmount(reported, "EUR")).isEqualTo(NET - NET / 20);
+    assertThat(
+            JSON.readTree(report("/v1/report/balance/merchant/DEMO_MERCHANT_3")).path("accounts"))
+        .hasSize(1);
   }
 
   @Test
@@ -757,6 +823,8 @@ class PaymentBookingIntegrationTest {
     insertAccount(jdbcTemplate, 100, platformType, 1L, "OUTPOST", "Outpost");
     insertAccount(jdbcTemplate, 200, merchantType, 1L, "DEMO_MERCHANT", "Demo Merchant");
     insertAccount(jdbcTemplate, 210, merchantType, 1L, "DEMO_MERCHANT_2", "Demo Merchant 2");
+    insertAccount(jdbcTemplate, 220, merchantType, 1L, "DEMO_MERCHANT_3", "Demo Merchant 3");
+    insertAccount(jdbcTemplate, 230, merchantType, 1L, "DEMO_MERCHANT_4", "Demo Merchant 4");
     insertAccount(jdbcTemplate, 300, pspType, 1L, "DEMO_PSP", "Demo PSP");
     for (Countries value : Countries.values()) {
       var country = value.getValue();
@@ -821,7 +889,7 @@ class PaymentBookingIntegrationTest {
 
   private static void seedMerchantFees(JdbcTemplate jdbcTemplate) {
     long percentageMode = FeeModes.PERCENTAGE.getValue().getFeeModeId();
-    for (long merchantId : List.of(200L, 210L)) {
+    for (long merchantId : List.of(200L, 210L, 220L, 230L)) {
       for (Currencies value : List.of(Currencies.EUR, Currencies.USD)) {
         jdbcTemplate.update(
             "INSERT INTO merchant_fee_configuration (account_id, account_type_id, currency_id, "

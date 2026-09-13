@@ -25,6 +25,11 @@ public final class LedgerReportHttpClient implements LedgerReportClient {
     return fetch(balanceReportApi::merchant);
   }
 
+  @Override
+  public BalanceReport merchantBalances(String merchantCode) {
+    return fetch(() -> balanceReportApi.merchant(merchantCode));
+  }
+
   private static BalanceReport fetch(Supplier<BalanceReportResponse> report) {
     try {
       return toBalanceReport(report.get());

@@ -9,6 +9,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.web.SizeBoundedRequestBody;
+import com.outpost.gateway.api.ErrorResponse;
 import com.outpost.gateway.security.AesGcmSecretAdapter;
 import com.outpost.gateway.security.GatewayPrincipal;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
@@ -30,8 +31,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import tools.jackson.databind.ObjectMapper;
 
 class MerchantAuthenticationFilterTest {
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private static final String API_KEY = "demo-outpost-api-key";
   private static final String API_KEY_SHA256_HEX =
@@ -48,7 +51,7 @@ class MerchantAuthenticationFilterTest {
   void authenticatesSignedRequestForSeededMerchant() throws Exception {
     MerchantAuthenticationFilter filter =
         new MerchantAuthenticationFilter(
-            apiKeyHash -> activeCredentialsFor(apiKeyHash), "", secrets());
+            apiKeyHash -> activeCredentialsFor(apiKeyHash), "", secrets(), JSON);
     MockHttpServletRequest request = signedRequest("payload");
     MockHttpServletResponse response = new MockHttpServletResponse();
     CapturingChain chain = new CapturingChain();
@@ -66,19 +69,22 @@ class MerchantAuthenticationFilterTest {
       throws Exception {
     MerchantAuthenticationFilter filter =
         new MerchantAuthenticationFilter(
-            MerchantAuthenticationFilterTest::activeCredentialsFor, "", secrets());
+            MerchantAuthenticationFilterTest::activeCredentialsFor, "", secrets(), JSON);
     MockHttpServletResponse response = new MockHttpServletResponse();
 
     filter.doFilter(request, response, new CapturingChain());
 
     assertThat(response.getStatus()).as(scenario).isEqualTo(401);
+    assertThat(response.getContentAsString())
+        .as(scenario)
+        .isEqualTo("{\"code\":\"UNAUTHENTICATED\"}");
   }
 
   @Test
   void authenticatesSignedBodyAtMaxSize() throws Exception {
     MerchantAuthenticationFilter filter =
         new MerchantAuthenticationFilter(
-            MerchantAuthenticationFilterTest::activeCredentialsFor, "", secrets());
+            MerchantAuthenticationFilterTest::activeCredentialsFor, "", secrets(), JSON);
     MockHttpServletResponse response = new MockHttpServletResponse();
     CapturingChain chain = new CapturingChain();
 
@@ -100,7 +106,8 @@ class MerchantAuthenticationFilterTest {
               return activeCredentialsFor(apiKeyHash);
             },
             "",
-            secrets());
+            secrets(),
+            JSON);
     MockHttpServletRequest request =
         new DeclaredLengthRequest("/orders", SizeBoundedRequestBody.MAX_SIZE_BYTES + 1L);
     request.addHeader("X-Outpost-Api-Key", API_KEY);
@@ -110,6 +117,7 @@ class MerchantAuthenticationFilterTest {
     filter.doFilter(request, response, new CapturingChain());
 
     assertThat(response.getStatus()).isEqualTo(413);
+    assertThat(response.getContentAsString()).isEqualTo("{\"code\":\"BODY_TOO_LARGE\"}");
     assertThat(credentialsLookedUp).isFalse();
   }
 
@@ -119,7 +127,7 @@ class MerchantAuthenticationFilterTest {
       String failure, MerchantApiKeyRepository merchantApiKeys, @Nullable String merchantAccountId)
       throws Exception {
     MerchantAuthenticationFilter filter =
-        new MerchantAuthenticationFilter(merchantApiKeys, "", secrets());
+        new MerchantAuthenticationFilter(merchantApiKeys, "", secrets(), JSON);
     MockHttpServletResponse response = new MockHttpServletResponse();
     Logger logger = (Logger) LoggerFactory.getLogger(MerchantAuthenticationFilter.class);
     ListAppender<ILoggingEvent> appender = new ListAppender<>();
@@ -137,6 +145,9 @@ class MerchantAuthenticationFilterTest {
           .containsEntry("authentication_failure", failure)
           .extractingByKey("merchant_account_id")
           .isEqualTo(merchantAccountId);
+      ErrorResponse body = JSON.readValue(response.getContentAsString(), ErrorResponse.class);
+      assertThat(body.code()).isEqualTo("INTERNAL_ERROR");
+      assertThat(body.correlationId()).isEqualTo(event.getMDCPropertyMap().get("correlation_id"));
     } finally {
       logger.detachAppender(appender);
       appender.stop();
@@ -147,7 +158,7 @@ class MerchantAuthenticationFilterTest {
   void propagatesDownstreamIllegalArgumentException() {
     MerchantAuthenticationFilter filter =
         new MerchantAuthenticationFilter(
-            MerchantAuthenticationFilterTest::activeCredentialsFor, "", secrets());
+            MerchantAuthenticationFilterTest::activeCredentialsFor, "", secrets(), JSON);
 
     org.junit.jupiter.api.Assertions.assertThrows(
         IllegalArgumentException.class,

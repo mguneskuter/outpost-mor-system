@@ -148,7 +148,7 @@ class GatewayApiIntegrationTest {
     assertThat(get("/livez").getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(get("/readyz").getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(get("/actuator/metrics").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-    assertThat(get("/orders/123").getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    assertResult(get("/orders/123"), 401, "UNAUTHENTICATED");
   }
 
   @Test
