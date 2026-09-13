@@ -4,8 +4,7 @@ package com.outpost.pspsimulator.webhook;
 public enum WebhookEventCodes {
   AUTHORISATION,
   CAPTURE,
-  REFUND,
-  CANCELLATION;
+  REFUND;
 
   /** Returns the exact event code, which is also the serialised value. */
   public String getCode() {

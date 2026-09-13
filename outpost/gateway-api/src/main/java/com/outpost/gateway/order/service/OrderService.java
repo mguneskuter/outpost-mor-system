@@ -5,15 +5,15 @@ import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.repository.MerchantFeeConfigurationRepository;
 import com.outpost.account.configuration.repository.MerchantPspRepository;
 import com.outpost.account.repository.AccountRepository;
+import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingQueueRequestTypes;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
-import com.outpost.gateway.order.client.LedgerClient;
-import com.outpost.gateway.order.client.LedgerPayment;
-import com.outpost.gateway.order.client.ledger.LedgerClientException;
+import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.integration.psp.service.CreateOrderRequest;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.service.ResultCode;
@@ -46,7 +46,7 @@ public final class OrderService {
   private final AccountRepository accounts;
   private final MerchantPspRepository merchantPsps;
   private final MerchantFeeConfigurationRepository feeConfigurations;
-  private final LedgerClient ledger;
+  private final TimeOrderedQueue<AccountingQueueRequest> accountingQueue;
   private final PspClient psp;
   private final TaxRateProvider taxRates;
   private final LineTaxCalculator lineTaxCalculator;
@@ -57,7 +57,7 @@ public final class OrderService {
       AccountRepository accounts,
       MerchantPspRepository merchantPsps,
       MerchantFeeConfigurationRepository feeConfigurations,
-      LedgerClient ledger,
+      TimeOrderedQueue<AccountingQueueRequest> accountingQueue,
       PspClient psp,
       TaxRateProvider taxRates,
       LineTaxCalculator lineTaxCalculator) {
@@ -65,7 +65,7 @@ public final class OrderService {
     this.accounts = accounts;
     this.merchantPsps = merchantPsps;
     this.feeConfigurations = feeConfigurations;
-    this.ledger = ledger;
+    this.accountingQueue = accountingQueue;
     this.psp = psp;
     this.taxRates = taxRates;
     this.lineTaxCalculator = lineTaxCalculator;
@@ -76,12 +76,12 @@ public final class OrderService {
    * under the same idempotency key.
    *
    * <p>The shopper, the order, and its lines are stored as one unit, which stores nothing when
-   * another request has already used the idempotency key. Ledger and the PSP are called afterwards,
-   * outside any transaction. A repeated request whose order has no PSP reference calls them again
-   * with the order's existing references.
+   * another request has already used the idempotency key. The PSP is called afterwards, outside any
+   * transaction; when it accepts, the order's creation is queued for the Ledger. A repeated request
+   * whose order has no PSP reference calls the PSP again with the order's reference.
    *
    * @throws OrderCreationException for an invalid request, a different request under a used
-   *     idempotency key, or a failed Ledger or PSP call
+   *     idempotency key, or a failed PSP call
    */
   public CreateOrderResult create(long merchantAccountId, CreateOrderCommand command) {
     String fingerprint = fingerprint(command);
@@ -133,7 +133,6 @@ public final class OrderService {
         checkout.grossAmount(),
         idempotencyKey,
         fingerprint,
-        "payment-" + UUID.randomUUID(),
         checkout.psp().getAccountId(),
         null,
         null,
@@ -142,36 +141,32 @@ public final class OrderService {
   }
 
   private CreateOrderResult pay(long merchantAccountId, Order order, Checkout checkout) {
-    createLedgerPayment(order, checkout.merchant().getCode(), checkout.psp().getCode());
     PspOrder pspOrder = createPspOrder(order, checkout.psp().getCode());
     orders.updateOrderPspReferenceAndPaymentLink(
-        order.getPaymentReference(), pspOrder.pspReference(), pspOrder.paymentLink());
+        order.getOrderReference(), pspOrder.pspReference(), pspOrder.paymentLink());
+    accountingQueue.add(orderCreated(order, checkout, pspOrder));
     return result(
         orders
             .findOrderByIdempotencyKey(merchantAccountId, order.getIdempotencyKey())
             .orElseThrow(() -> new IllegalStateException("stored order disappeared")));
   }
 
-  private void createLedgerPayment(Order order, String merchantCode, String pspCode) {
-    try {
-      ledger.createPayment(
-          new LedgerPayment(
-              order.getPaymentReference(),
-              merchantCode,
-              pspCode,
-              order.getShopperCountry(),
-              order.getShopperCountrySubdivision().orElse(null),
-              order.getNetAmount(),
-              order.getTaxAmount(),
-              order.getGrossAmount()));
-    } catch (LedgerClientException exception) {
-      if (exception.retryable()) {
-        throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "LEDGER_RETRYABLE");
-      }
-      throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "LEDGER_REJECTED");
-    } catch (RuntimeException exception) {
-      throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "LEDGER_RETRYABLE");
-    }
+  private static AccountingQueueRequest orderCreated(
+      Order order, Checkout checkout, PspOrder pspOrder) {
+    return new AccountingQueueRequest(
+        AccountingQueueRequestTypes.ORDER_CREATED,
+        order.getOrderReference(),
+        order.getMerchantReference(),
+        checkout.psp().getCode(),
+        pspOrder.pspReference(),
+        null,
+        null,
+        checkout.merchant().getCode(),
+        order.getShopperCountry(),
+        order.getShopperCountrySubdivision().orElse(null),
+        order.getNetAmount(),
+        order.getTaxAmount(),
+        order.getGrossAmount());
   }
 
   private PspOrder createPspOrder(Order order, String pspCode) {
@@ -179,7 +174,7 @@ public final class OrderService {
     try {
       pspResult =
           psp.createOrder(
-              new CreateOrderRequest(pspCode, order.getPaymentReference(), order.getGrossAmount()));
+              new CreateOrderRequest(pspCode, order.getOrderReference(), order.getGrossAmount()));
     } catch (RuntimeException exception) {
       throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     }

@@ -39,7 +39,6 @@ public class LedgerSecurityConfiguration {
   static final List<String> PUBLIC_PATHS = List.of("/livez", "/readyz");
 
   private static final String GATEWAY = "GATEWAY";
-  private static final String WORKER = "WORKER";
 
   @Bean
   @Order(1)
@@ -71,9 +70,7 @@ public class LedgerSecurityConfiguration {
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .addFilterBefore(
             new SignatureAuthenticationFilter(
-                Map.of(
-                    GATEWAY, HmacKey.fromUtf8(properties.gatewayHmacSecret()),
-                    WORKER, HmacKey.fromUtf8(properties.workerHmacSecret()))),
+                Map.of(GATEWAY, HmacKey.fromUtf8(properties.gatewayHmacSecret()))),
             AnonymousAuthenticationFilter.class)
         .exceptionHandling(
             exceptions ->
@@ -95,17 +92,11 @@ public class LedgerSecurityConfiguration {
                     .permitAll()
                     .requestMatchers(PUBLIC_PATHS.toArray(String[]::new))
                     .permitAll()
-                    .requestMatchers(HttpMethod.POST, "/v1/payment")
+                    .requestMatchers(HttpMethod.POST, "/v1/accounting-request")
                     .hasAuthority(GATEWAY)
                     .requestMatchers(
                         HttpMethod.GET, "/v1/report/balance/tax", "/v1/report/balance/merchant")
                     .hasAuthority(GATEWAY)
-                    .requestMatchers(
-                        HttpMethod.POST,
-                        "/v1/payment/event",
-                        "/v1/payment/capture",
-                        "/v1/payment/refund")
-                    .hasAuthority(WORKER)
                     .anyRequest()
                     .denyAll())
         .build();

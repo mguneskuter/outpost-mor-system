@@ -4,9 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-/** HMAC secrets with which the Gateway and the Worker sign their Ledger requests. */
+/** HMAC secret with which Gateway signs its Ledger requests. */
 @Validated
 @ConfigurationProperties("outpost.ledger")
 public record LedgerAuthenticationProperties(
-    @NotBlank(message = "must be set") String gatewayHmacSecret,
-    @NotBlank(message = "must be set") String workerHmacSecret) {}
+    @NotBlank(message = "must be set") String gatewayHmacSecret) {}

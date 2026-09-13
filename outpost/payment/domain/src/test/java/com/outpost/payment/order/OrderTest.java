@@ -117,23 +117,6 @@ class OrderTest {
   }
 
   @Test
-  void rejectsBlankPaymentReference() {
-    OrderItem line = item(1L, "OLR-1", "MLR-1");
-
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            order(
-                Countries.NETHERLANDS.getValue(),
-                null,
-                "request-fingerprint",
-                " ",
-                List.of(line),
-                eur(1000L),
-                eur(210L)));
-  }
-
-  @Test
   void rejectsBlankRequestFingerprint() {
     OrderItem line = item(1L, "OLR-1", "MLR-1");
 
@@ -141,13 +124,7 @@ class OrderTest {
         IllegalArgumentException.class,
         () ->
             order(
-                Countries.NETHERLANDS.getValue(),
-                null,
-                " ",
-                "payment-ref",
-                List.of(line),
-                eur(1000L),
-                eur(210L)));
+                Countries.NETHERLANDS.getValue(), null, " ", List.of(line), eur(1000L), eur(210L)));
   }
 
   @Test
@@ -161,7 +138,6 @@ class OrderTest {
                 Countries.GERMANY.getValue(),
                 CountrySubdivisions.US_CA.getValue(),
                 "request-fingerprint",
-                "payment-ref",
                 List.of(line),
                 eur(1000L),
                 eur(210L)));

@@ -42,20 +42,13 @@ final class OrderFixtures {
 
   static Order order(List<OrderItem> items, Amount netAmount, Amount taxAmount) {
     return order(
-        Countries.NETHERLANDS.getValue(),
-        null,
-        "request-fingerprint",
-        "payment-ref",
-        items,
-        netAmount,
-        taxAmount);
+        Countries.NETHERLANDS.getValue(), null, "request-fingerprint", items, netAmount, taxAmount);
   }
 
   static Order order(
       Country shopperCountry,
       @Nullable CountrySubdivision shopperCountrySubdivision,
       String requestFingerprint,
-      String paymentReference,
       List<OrderItem> items,
       Amount netAmount,
       Amount taxAmount) {
@@ -72,7 +65,6 @@ final class OrderFixtures {
         netAmount.plus(taxAmount),
         "idempotency-key",
         requestFingerprint,
-        paymentReference,
         300L,
         null,
         null,
@@ -94,7 +86,6 @@ final class OrderFixtures {
         netAmount.plus(taxAmount),
         "idempotency-key",
         "request-fingerprint",
-        "payment-ref",
         300L,
         null,
         null,

@@ -7,10 +7,11 @@ import com.outpost.account.configuration.FeeModes;
 import com.outpost.account.configuration.repository.MerchantFeeConfigurationRepository;
 import com.outpost.account.configuration.repository.MerchantPspRepository;
 import com.outpost.account.repository.AccountRepository;
+import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
-import com.outpost.gateway.order.client.LedgerClient;
+import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.gateway.order.service.CreateOrderCommand;
 import com.outpost.gateway.order.service.CreateOrderCommand.OrderDetailsCommand;
 import com.outpost.gateway.order.service.CreateOrderCommand.OrderLineCommand;
@@ -18,8 +19,6 @@ import com.outpost.gateway.order.service.CreateOrderCommand.ShopperDetailsComman
 import com.outpost.gateway.order.service.CreateOrderResult;
 import com.outpost.gateway.order.service.OrderCreationException;
 import com.outpost.gateway.order.service.OrderService;
-import com.outpost.integration.psp.service.CancelRequest;
-import com.outpost.integration.psp.service.CancelResult;
 import com.outpost.integration.psp.service.CreateOrderRequest;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.service.RefundRequest;
@@ -30,6 +29,7 @@ import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -170,13 +170,14 @@ class OrderServiceIntegrationTest {
   }
 
   private OrderService service(TaxRateProvider taxRates, PspClient psp) {
-    LedgerClient ledger = payment -> {};
+    TimeOrderedQueue<AccountingQueueRequest> accountingQueue =
+        new TimeOrderedQueue<>(Clock.systemUTC());
     return new OrderService(
         orders,
         accounts,
         merchantPsps,
         feeConfigurations,
-        ledger,
+        accountingQueue,
         psp,
         taxRates,
         new LineTaxCalculator());
@@ -277,11 +278,6 @@ class OrderServiceIntegrationTest {
 
     @Override
     public RefundResult refund(RefundRequest request) {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public CancelResult cancel(CancelRequest request) {
       throw new UnsupportedOperationException();
     }
   }

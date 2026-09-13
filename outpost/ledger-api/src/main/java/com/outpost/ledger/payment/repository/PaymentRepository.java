@@ -36,17 +36,17 @@ public interface PaymentRepository {
   /** Inserts the order-created event, dated by the database transaction that stores it. */
   PaymentEvent insertEvent(long transactionId);
 
-  /** Locks and returns the payment family root for a payment reference. */
-  PaymentFamily findPaymentFamilyForUpdate(String reference);
+  /**
+   * Locks the PAYMENT transaction with this original reference and returns it with its detail; null
+   * when none exists.
+   */
+  PaymentTransaction findPaymentTransactionForUpdate(String originalReference);
 
   /** Reads payment events in their append order. */
   List<PaymentEvent> findPaymentEvents(long transactionId);
 
   /** Reads the payment's capture child and its capture event type, if one exists. */
   CaptureChild findCaptureChild(long paymentTransactionId);
-
-  /** Reads a capture by its unique reference. */
-  CaptureChild findCaptureByReference(String reference);
 
   /** Finds a register for an account and accounting purpose. */
   Register findRegister(long accountId, long registerTypeId);

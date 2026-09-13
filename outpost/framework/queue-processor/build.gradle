@@ -1,0 +1,14 @@
+plugins {
+    id 'outpost.java-conventions'
+    id 'java-library'
+}
+
+dependencies {
+    implementation project(':framework:logging')
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

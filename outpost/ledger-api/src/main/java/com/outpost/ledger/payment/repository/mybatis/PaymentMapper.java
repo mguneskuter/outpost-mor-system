@@ -125,23 +125,21 @@ public interface PaymentMapper {
       """)
   PaymentEventRow insertEvent(@Param("transactionId") long transactionId);
 
-  /** Locks the payment family root before reading or appending lifecycle evidence. */
+  /** Locks the PAYMENT transaction with this original reference. */
   @Select(
       """
-      SELECT root.transaction_id, root.currency_id, root.account_id merchant_account_id,
-             pd.psp_account_id, pd.shopper_country_id, root.quantity gross_quantity,
+      SELECT payment.transaction_id, payment.currency_id, payment.account_id merchant_account_id,
+             pd.psp_account_id, pd.shopper_country_id, payment.quantity gross_quantity,
              pd.net_quantity, pd.tax_quantity
-        FROM transaction target
-        JOIN transaction root
-          ON root.transaction_id = COALESCE(target.parent_transaction_id, target.transaction_id)
-        JOIN payment_detail pd ON pd.transaction_id = root.transaction_id
-        JOIN transaction_type payment_type ON payment_type.code = 'PAYMENT'
-       WHERE target.reference = #{reference}
-         AND target.transaction_type_id = payment_type.transaction_type_id
-         AND root.transaction_type_id = payment_type.transaction_type_id
-       FOR UPDATE OF root
+        FROM transaction payment
+        JOIN payment_detail pd ON pd.transaction_id = payment.transaction_id
+       WHERE payment.reference = #{originalReference}
+         AND payment.transaction_type_id =
+             (SELECT transaction_type_id FROM transaction_type WHERE code = 'PAYMENT')
+       FOR UPDATE OF payment
       """)
-  PaymentFamilyRow findPaymentFamilyForUpdate(@Param("reference") String reference);
+  PaymentTransactionRow findPaymentTransactionForUpdate(
+      @Param("originalReference") String originalReference);
 
   /** Reads payment events in append order for the lifecycle fold. */
   @Select(
@@ -167,19 +165,6 @@ public interface PaymentMapper {
        LIMIT 1
       """)
   CaptureChildRow findCaptureChild(@Param("paymentTransactionId") long paymentTransactionId);
-
-  /** Reads a CAPTURE child by its unique reference. */
-  @Select(
-      """
-      SELECT child.transaction_id, child.reference, child.quantity, child.currency_id,
-             child.created_ts, capture_event.transaction_event_type_id event_type_id
-        FROM transaction child
-        LEFT JOIN transaction_event capture_event ON capture_event.transaction_id = child.transaction_id
-       WHERE child.reference = #{reference}
-         AND child.transaction_type_id =
-             (SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE')
-      """)
-  CaptureChildRow findCaptureByReference(@Param("reference") String reference);
 
   /** Reads a register and its owning account type. */
   @Select(

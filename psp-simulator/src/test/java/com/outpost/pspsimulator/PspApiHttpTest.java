@@ -37,7 +37,7 @@ class PspApiHttpTest {
             "http://localhost:8083",
             "http://localhost:8080",
             new SimulatorProperties.DelaySettings(
-                Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO),
+                Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO),
             List.of(new PspAccount("DEMO_PSP", API_KEY, "secret")));
     mvc =
         MockMvcBuilders.standaloneSetup(
@@ -90,7 +90,7 @@ class PspApiHttpTest {
         .thenReturn(new RefundService.RefundResult(77, true));
     String body =
         """
-        {"psp_reference":41,"refund_reference":"refund-1","amount":1250,"currency":"EUR"}
+        {"psp_reference":41,"refund_reference":"refund-1"}
         """;
     mvc.perform(
             post("/v1/DEMO_PSP/refund")

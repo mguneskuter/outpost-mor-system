@@ -22,9 +22,9 @@ include(
     ':framework:logging',
     ':framework:security',
     ':framework:healthprobe',
+    ':framework:queue-processor',
     ':accounting:domain',
     ':accounting:persistence',
-    ':accounting:queue-api',
     ':accounting:api',
     ':accounting:api-client',
     ':tax',
@@ -35,6 +35,5 @@ include(
     ':psp-integration:client',
     ':gateway-api',
     ':ledger-api',
-    ':outpost-worker',
     ':static-data-job'
 )

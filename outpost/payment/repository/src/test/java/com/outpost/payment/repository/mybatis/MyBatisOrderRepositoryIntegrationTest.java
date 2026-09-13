@@ -120,6 +120,17 @@ class MyBatisOrderRepositoryIntegrationTest {
   }
 
   @Test
+  void findsAnOrderByItsReferenceWithoutMerchantScope() {
+    Order stored =
+        orders()
+            .insertOrder(shopper("by-reference", "Shopper"), anOrderWithTwoLines("by-reference"))
+            .orElseThrow();
+
+    assertThat(orders().findOrderByOrderReference("by-reference-order")).contains(stored);
+    assertThat(orders().findOrderByOrderReference("unknown-order")).isEmpty();
+  }
+
+  @Test
   void anOrderLosingItsIdempotencyKeyStoresNoShopperAndNoOrder() {
     assertThat(orders().insertOrder(shopper("winner", "Winner"), anOrderWithTwoLines("race")))
         .isPresent();
@@ -194,7 +205,6 @@ class MyBatisOrderRepositoryIntegrationTest {
         usd(321L),
         keySlug + "-key",
         referenceSlug + "-fingerprint",
-        referenceSlug + "-payment",
         pspAccountId,
         null,
         null,

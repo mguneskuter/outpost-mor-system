@@ -16,15 +16,6 @@ import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.TransactionTypes.TransactionType;
-import com.outpost.accounting.queue.AccountingRequestResults;
-import com.outpost.accounting.queue.AccountingRequestResults.AccountingRequestResult;
-import com.outpost.accounting.queue.AccountingRequestStatuses;
-import com.outpost.accounting.queue.AccountingRequestStatuses.AccountingRequestStatus;
-import com.outpost.accounting.queue.AccountingRequestTypes;
-import com.outpost.accounting.queue.AccountingRequestTypes.AccountingRequestType;
-import com.outpost.accounting.queue.repository.AccountingRequestResultRecord;
-import com.outpost.accounting.queue.repository.AccountingRequestStatusRecord;
-import com.outpost.accounting.queue.repository.AccountingRequestTypeRecord;
 import com.outpost.accounting.repository.AccountTypeRegisterTypeRecord;
 import com.outpost.accounting.repository.JournalEntryTypeRecord;
 import com.outpost.accounting.repository.RegisterTypeRecord;
@@ -39,30 +30,15 @@ import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.common.iso.repository.CountryRecord;
 import com.outpost.common.iso.repository.CountrySubdivisionRecord;
 import com.outpost.common.iso.repository.CurrencyRecord;
-import com.outpost.payment.PspEventCodes;
-import com.outpost.payment.PspEventCodes.PspEventCode;
-import com.outpost.payment.PspEventResults;
-import com.outpost.payment.PspEventResults.PspEventResult;
-import com.outpost.payment.PspEventStatuses;
-import com.outpost.payment.PspEventStatuses.PspEventStatus;
 import com.outpost.payment.common.ProductTypes;
 import com.outpost.payment.common.ProductTypes.ProductType;
 import com.outpost.payment.common.repository.ProductTypeRecord;
-import com.outpost.payment.repository.PspEventCodeRecord;
-import com.outpost.payment.repository.PspEventResultRecord;
-import com.outpost.payment.repository.PspEventStatusRecord;
 import com.outpost.platform.staticdata.StaticDataRepository;
 import com.outpost.platform.staticdata.job.accounting.AccountTypeRegisterTypeWriteMapper;
-import com.outpost.platform.staticdata.job.accounting.AccountingRequestResultWriteMapper;
-import com.outpost.platform.staticdata.job.accounting.AccountingRequestStatusWriteMapper;
-import com.outpost.platform.staticdata.job.accounting.AccountingRequestTypeWriteMapper;
 import com.outpost.platform.staticdata.job.accounting.JournalEntryTypeWriteMapper;
 import com.outpost.platform.staticdata.job.accounting.RegisterTypeWriteMapper;
 import com.outpost.platform.staticdata.job.accounting.TransactionEventTypeWriteMapper;
 import com.outpost.platform.staticdata.job.accounting.TransactionTypeWriteMapper;
-import com.outpost.platform.staticdata.job.payment.PspEventCodeWriteMapper;
-import com.outpost.platform.staticdata.job.payment.PspEventResultWriteMapper;
-import com.outpost.platform.staticdata.job.payment.PspEventStatusWriteMapper;
 import com.outpost.platform.staticdata.job.repository.AccountTypeWriteMapper;
 import com.outpost.platform.staticdata.job.repository.CountrySubdivisionWriteMapper;
 import com.outpost.platform.staticdata.job.repository.CountryWriteMapper;
@@ -75,63 +51,6 @@ import org.springframework.context.annotation.Configuration;
 /** Supplies the typed operators discovered by {@link EnsureStaticDataJob}. */
 @Configuration(proxyBeanMethods = false)
 public class EnsureStaticDataOperators {
-  @Bean
-  EnsureStaticDataOperator<
-          AccountingRequestTypes, AccountingRequestType, AccountingRequestTypeRecord>
-      accountingRequestTypeEnsureOperator(
-          StaticDataRepository<
-                  AccountingRequestTypes, AccountingRequestType, AccountingRequestTypeRecord>
-              repository,
-          AccountingRequestTypeWriteMapper mapper) {
-    return new EnsureStaticDataOperator<>(repository, mapper::insert);
-  }
-
-  @Bean
-  EnsureStaticDataOperator<
-          AccountingRequestStatuses, AccountingRequestStatus, AccountingRequestStatusRecord>
-      accountingRequestStatusEnsureOperator(
-          StaticDataRepository<
-                  AccountingRequestStatuses, AccountingRequestStatus, AccountingRequestStatusRecord>
-              repository,
-          AccountingRequestStatusWriteMapper mapper) {
-    return new EnsureStaticDataOperator<>(repository, mapper::insert);
-  }
-
-  @Bean
-  EnsureStaticDataOperator<
-          AccountingRequestResults, AccountingRequestResult, AccountingRequestResultRecord>
-      accountingRequestResultEnsureOperator(
-          StaticDataRepository<
-                  AccountingRequestResults, AccountingRequestResult, AccountingRequestResultRecord>
-              repository,
-          AccountingRequestResultWriteMapper mapper) {
-    return new EnsureStaticDataOperator<>(repository, mapper::insert);
-  }
-
-  @Bean
-  EnsureStaticDataOperator<PspEventCodes, PspEventCode, PspEventCodeRecord>
-      pspEventCodeEnsureOperator(
-          StaticDataRepository<PspEventCodes, PspEventCode, PspEventCodeRecord> repository,
-          PspEventCodeWriteMapper mapper) {
-    return new EnsureStaticDataOperator<>(repository, mapper::insert);
-  }
-
-  @Bean
-  EnsureStaticDataOperator<PspEventStatuses, PspEventStatus, PspEventStatusRecord>
-      pspEventStatusEnsureOperator(
-          StaticDataRepository<PspEventStatuses, PspEventStatus, PspEventStatusRecord> repository,
-          PspEventStatusWriteMapper mapper) {
-    return new EnsureStaticDataOperator<>(repository, mapper::insert);
-  }
-
-  @Bean
-  EnsureStaticDataOperator<PspEventResults, PspEventResult, PspEventResultRecord>
-      pspEventResultEnsureOperator(
-          StaticDataRepository<PspEventResults, PspEventResult, PspEventResultRecord> repository,
-          PspEventResultWriteMapper mapper) {
-    return new EnsureStaticDataOperator<>(repository, mapper::insert);
-  }
-
   @Bean
   EnsureStaticDataOperator<Countries, Country, CountryRecord> countryEnsureOperator(
       StaticDataRepository<Countries, Country, CountryRecord> repository,

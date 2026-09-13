@@ -1,0 +1,73 @@
+package com.outpost.ledger.accountingrequest.service;
+
+import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.transactionlock.TransactionLock;
+import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
+import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
+import com.outpost.framework.queue.TimeOrderedQueue;
+import java.time.Duration;
+import org.jspecify.annotations.Nullable;
+
+/** Accepts accounting requests: validates them, takes the transaction lock, and queues them. */
+public final class AccountingRequestService {
+  private final TransactionLockRepository transactionLocks;
+  private final TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue;
+  private final Duration transactionLockLease;
+
+  /** Creates a service that locks payments for {@code transactionLockLease} while booking. */
+  public AccountingRequestService(
+      TransactionLockRepository transactionLocks,
+      TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue,
+      Duration transactionLockLease) {
+    this.transactionLocks = transactionLocks;
+    this.accountingQueue = accountingQueue;
+    this.transactionLockLease = transactionLockLease;
+  }
+
+  /**
+   * Validates the request, takes the payment's transaction lock, and queues the request for
+   * booking.
+   *
+   * @throws InvalidAccountingRequestException when a field the request's type requires is absent
+   * @throws TransactionLockedException when a live transaction lock exists for the payment
+   */
+  public void accept(@Nullable AccountingQueueRequest request) {
+    if (request == null
+        || request.type() == null
+        || blank(request.originalReference())
+        || blank(request.merchantReference())
+        || blank(request.pspCode())
+        || blank(request.pspReference())) {
+      throw new InvalidAccountingRequestException();
+    }
+    boolean complete =
+        switch (request.type()) {
+          case ORDER_CREATED ->
+              !blank(request.merchantCode())
+                  && request.shopperCountry() != null
+                  && request.netAmount() != null
+                  && request.taxAmount() != null
+                  && request.grossAmount() != null
+                  && belongsToShopperCountry(request);
+          case AUTHORISATION, CAPTURE -> request.success() != null;
+          case REFUND -> request.success() != null && !blank(request.refundReference());
+        };
+    if (!complete) {
+      throw new InvalidAccountingRequestException();
+    }
+    TransactionLock lock =
+        transactionLocks
+            .insertTransactionLock(request.originalReference(), transactionLockLease)
+            .orElseThrow(TransactionLockedException::new);
+    accountingQueue.add(new LockedAccountingQueueRequest(request, lock));
+  }
+
+  private static boolean belongsToShopperCountry(AccountingQueueRequest request) {
+    CountrySubdivision subdivision = request.shopperCountrySubdivision();
+    return subdivision == null || subdivision.getCountry().equals(request.shopperCountry());
+  }
+
+  private static boolean blank(@Nullable String value) {
+    return value == null || value.isBlank();
+  }
+}

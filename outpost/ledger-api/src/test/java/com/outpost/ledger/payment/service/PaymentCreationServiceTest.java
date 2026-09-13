@@ -20,7 +20,8 @@ import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
 import com.outpost.accounting.TransactionEventTypes;
-import com.outpost.accounting.api.CreatePaymentRequest;
+import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingQueueRequestTypes;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
 import com.outpost.common.iso.Countries;
@@ -185,8 +186,24 @@ class PaymentCreationServiceTest {
         new Amount(Currencies.EUR.getValue(), feeFixed));
   }
 
-  private CreatePaymentRequest request(long net, long tax) {
-    return new CreatePaymentRequest(
-        "payment-1", merchant.getCode(), psp.getCode(), "DE", null, net, tax, net + tax, "EUR");
+  private AccountingQueueRequest request(long net, long tax) {
+    return new AccountingQueueRequest(
+        AccountingQueueRequestTypes.ORDER_CREATED,
+        "payment-1",
+        "merchant-order-1",
+        psp.getCode(),
+        "41",
+        null,
+        null,
+        merchant.getCode(),
+        Countries.GERMANY.getValue(),
+        null,
+        eur(net),
+        eur(tax),
+        eur(net + tax));
+  }
+
+  private static Amount eur(long quantity) {
+    return new Amount(Currencies.EUR.getValue(), quantity);
   }
 }

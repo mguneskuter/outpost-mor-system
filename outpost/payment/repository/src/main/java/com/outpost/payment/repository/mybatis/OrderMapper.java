@@ -1,6 +1,5 @@
 package com.outpost.payment.repository.mybatis;
 
-import com.outpost.payment.order.repository.OrderRepository.PspRouting;
 import java.util.List;
 import org.apache.ibatis.annotations.Param;
 import org.jspecify.annotations.Nullable;
@@ -15,19 +14,11 @@ interface OrderMapper {
   @Nullable Order findOrderByIdempotencyKey(
       @Param("accountId") long accountId, @Param("idempotencyKey") String idempotencyKey);
 
-  /** Finds an order by its reference, scoped to the merchant that owns it. */
-  @Nullable Order findOrderByOrderReference(
-      @Param("accountId") long accountId, @Param("orderReference") String orderReference);
-
-  /** Finds the order paid by this payment reference. */
-  @Nullable Order findOrderByPaymentReference(@Param("paymentReference") String paymentReference);
+  /** Finds an order by its reference. */
+  @Nullable Order findOrderByOrderReference(@Param("orderReference") String orderReference);
 
   /** Finds an order's lines in the order they were inserted. */
   List<OrderItem> findOrderItems(@Param("orderId") long orderId);
-
-  /** Finds the PSP this payment reference was routed to. */
-  @Nullable PspRouting findPspRoutingByPaymentReference(
-      @Param("paymentReference") String paymentReference);
 
   /** Finds the shopper with this email. */
   @Nullable ShopperDetail findShopperDetailByEmail(@Param("email") String email);
@@ -43,7 +34,7 @@ interface OrderMapper {
 
   /** Stores PSP facts on an order that has no PSP reference yet. */
   int updateOrderPspReferenceAndPaymentLink(
-      @Param("paymentReference") String paymentReference,
+      @Param("orderReference") String orderReference,
       @Param("pspReference") String pspReference,
       @Param("paymentLink") String paymentLink);
 }

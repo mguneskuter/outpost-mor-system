@@ -29,11 +29,11 @@ class GatewayArchitectureTest {
   }
 
   @Test
-  void nothingDependsOnLedgerOrWorker() {
+  void nothingDependsOnLedger() {
     noClasses()
         .should()
         .dependOnClassesThat()
-        .resideInAnyPackage("com.outpost.ledger..", "com.outpost.worker..")
+        .resideInAPackage("com.outpost.ledger..")
         .check(GATEWAY_CLASSES);
   }
 }

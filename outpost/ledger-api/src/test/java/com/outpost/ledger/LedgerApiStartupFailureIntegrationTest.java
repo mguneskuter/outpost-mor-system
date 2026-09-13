@@ -23,8 +23,6 @@ class LedgerApiStartupFailureIntegrationTest {
 
   private static final String GATEWAY_SECRET_ENVIRONMENT_VARIABLE =
       "OUTPOST_LEDGER_GATEWAY_HMAC_SECRET";
-  private static final String WORKER_SECRET_ENVIRONMENT_VARIABLE =
-      "OUTPOST_LEDGER_WORKER_HMAC_SECRET";
 
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
@@ -89,8 +87,7 @@ class LedgerApiStartupFailureIntegrationTest {
     LedgerStaticDataFixtures.insertRates(jdbcTemplate, LocalDate.of(2026, 9, 11), false);
     LedgerStaticDataFixtures.insertFees(jdbcTemplate, true);
 
-    try (ConfigurableApplicationContext context =
-        startAgainstDatabase("gateway-secret", "worker-secret")) {
+    try (ConfigurableApplicationContext context = startAgainstDatabase("gateway-secret")) {
       assertThat(context.isActive()).isTrue();
     }
   }
@@ -114,7 +111,7 @@ class LedgerApiStartupFailureIntegrationTest {
     LedgerStaticDataFixtures.insertRates(jdbcTemplate, LocalDate.of(2026, 9, 10), true);
     LedgerStaticDataFixtures.insertFees(jdbcTemplate, true);
 
-    assertThatThrownBy(() -> startAgainstDatabase("", /* workerHmacSecret= */ null))
+    assertThatThrownBy(() -> startAgainstDatabase(""))
         .isInstanceOf(Exception.class)
         .rootCause()
         .hasMessageContaining("gatewayHmacSecret");
@@ -128,43 +125,10 @@ class LedgerApiStartupFailureIntegrationTest {
     LedgerStaticDataFixtures.insertFees(jdbcTemplate, true);
 
     assertThatThrownBy(
-            () ->
-                startAgainstDatabase(
-                    unresolvedPlaceholder(GATEWAY_SECRET_ENVIRONMENT_VARIABLE),
-                    /* workerHmacSecret= */ null))
+            () -> startAgainstDatabase(unresolvedPlaceholder(GATEWAY_SECRET_ENVIRONMENT_VARIABLE)))
         .isInstanceOf(Exception.class)
         .rootCause()
         .hasMessageContaining("gatewayHmacSecret");
-  }
-
-  @Test
-  void failsClosedWhenWorkerSigningSecretIsBlank() {
-    JdbcTemplate jdbcTemplate = jdbcTemplate();
-    LedgerStaticDataFixtures.materialize(jdbcTemplate);
-    LedgerStaticDataFixtures.insertRates(jdbcTemplate, LocalDate.of(2026, 9, 10), true);
-    LedgerStaticDataFixtures.insertFees(jdbcTemplate, true);
-
-    assertThatThrownBy(() -> startAgainstDatabase(/* gatewayHmacSecret= */ null, ""))
-        .isInstanceOf(Exception.class)
-        .rootCause()
-        .hasMessageContaining("workerHmacSecret");
-  }
-
-  @Test
-  void failsClosedWhenWorkerSigningSecretIsAbsent() {
-    JdbcTemplate jdbcTemplate = jdbcTemplate();
-    LedgerStaticDataFixtures.materialize(jdbcTemplate);
-    LedgerStaticDataFixtures.insertRates(jdbcTemplate, LocalDate.of(2026, 9, 10), true);
-    LedgerStaticDataFixtures.insertFees(jdbcTemplate, true);
-
-    assertThatThrownBy(
-            () ->
-                startAgainstDatabase(
-                    /* gatewayHmacSecret= */ null,
-                    unresolvedPlaceholder(WORKER_SECRET_ENVIRONMENT_VARIABLE)))
-        .isInstanceOf(Exception.class)
-        .rootCause()
-        .hasMessageContaining("workerHmacSecret");
   }
 
   @Test
@@ -184,20 +148,19 @@ class LedgerApiStartupFailureIntegrationTest {
   }
 
   private void startAgainstDatabase() {
-    startAgainstDatabase(/* gatewayHmacSecret= */ null, /* workerHmacSecret= */ null);
+    startAgainstDatabase(/* gatewayHmacSecret= */ null);
   }
 
-  private ConfigurableApplicationContext startAgainstDatabase(
-      @Nullable String gatewayHmacSecret, @Nullable String workerHmacSecret) {
+  private ConfigurableApplicationContext startAgainstDatabase(@Nullable String gatewayHmacSecret) {
     MockEnvironment environment = new MockEnvironment();
     environment.setProperty("spring.datasource.url", DATABASE.getJdbcUrl());
     environment.setProperty("spring.datasource.username", DATABASE.getUsername());
     environment.setProperty("spring.datasource.password", DATABASE.getPassword());
+    environment.setProperty("outpost.ledger.accounting-queue.worker-count", "1");
+    environment.setProperty("outpost.ledger.accounting-queue.poll-interval", "PT1M");
+    environment.setProperty("outpost.ledger.accounting-queue.transaction-lock-lease", "PT5M");
     if (gatewayHmacSecret != null) {
       environment.setProperty("outpost.ledger.gateway-hmac-secret", gatewayHmacSecret);
-    }
-    if (workerHmacSecret != null) {
-      environment.setProperty("outpost.ledger.worker-hmac-secret", workerHmacSecret);
     }
     return new SpringApplicationBuilder(LedgerApiApplication.class)
         .web(WebApplicationType.NONE)

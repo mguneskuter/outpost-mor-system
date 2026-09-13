@@ -42,21 +42,9 @@ public final class MyBatisOrderRepository implements OrderRepository {
 
   @Override
   public Optional<com.outpost.payment.order.Order> findOrderByOrderReference(
-      long accountId, String orderReference) {
-    return Optional.ofNullable(mapper.findOrderByOrderReference(accountId, orderReference))
+      String orderReference) {
+    return Optional.ofNullable(mapper.findOrderByOrderReference(orderReference))
         .map(this::withItems);
-  }
-
-  @Override
-  public Optional<com.outpost.payment.order.Order> findOrderByPaymentReference(
-      String paymentReference) {
-    return Optional.ofNullable(mapper.findOrderByPaymentReference(paymentReference))
-        .map(this::withItems);
-  }
-
-  @Override
-  public Optional<PspRouting> findPspRoutingByPaymentReference(String paymentReference) {
-    return Optional.ofNullable(mapper.findPspRoutingByPaymentReference(paymentReference));
   }
 
   @Override
@@ -84,8 +72,8 @@ public final class MyBatisOrderRepository implements OrderRepository {
 
   @Override
   public void updateOrderPspReferenceAndPaymentLink(
-      String paymentReference, String pspReference, String paymentLink) {
-    mapper.updateOrderPspReferenceAndPaymentLink(paymentReference, pspReference, paymentLink);
+      String orderReference, String pspReference, String paymentLink) {
+    mapper.updateOrderPspReferenceAndPaymentLink(orderReference, pspReference, paymentLink);
   }
 
   private long storedShopperId(com.outpost.payment.ShopperDetail shopper) {
@@ -128,7 +116,6 @@ public final class MyBatisOrderRepository implements OrderRepository {
         order.getGrossAmount().quantity(),
         order.getIdempotencyKey(),
         order.getRequestFingerprint(),
-        order.getPaymentReference(),
         order.getPspAccountId(),
         order.getPspReference().orElse(null),
         order.getPaymentLink().orElse(null),
@@ -168,7 +155,6 @@ public final class MyBatisOrderRepository implements OrderRepository {
         new Amount(currency, row.grossAmount()),
         row.idempotencyKey(),
         row.requestFingerprint(),
-        row.paymentReference(),
         row.pspAccountId(),
         row.pspReference(),
         row.paymentLink(),

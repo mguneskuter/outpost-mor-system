@@ -1,28 +1,38 @@
 package com.outpost.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import com.outpost.account.repository.AccountRepository;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.gateway.order.service.ModifyOrderCommand;
-import com.outpost.gateway.order.service.ModifyOrderCommand.RefundLineCommand;
 import com.outpost.gateway.order.service.ModifyOrderException;
 import com.outpost.gateway.order.service.ModifyOrderResult;
 import com.outpost.gateway.order.service.OrderModificationService;
+import com.outpost.integration.psp.service.CreateOrderRequest;
+import com.outpost.integration.psp.service.CreateOrderResult;
+import com.outpost.integration.psp.service.PspClient;
+import com.outpost.integration.psp.service.RefundRequest;
+import com.outpost.integration.psp.service.RefundResult;
+import com.outpost.integration.psp.service.ResultCode;
 import com.outpost.payment.ShopperDetail;
 import com.outpost.payment.common.Amount;
 import com.outpost.payment.common.ProductTypes;
 import com.outpost.payment.order.Order;
 import com.outpost.payment.order.OrderItem;
 import com.outpost.payment.order.repository.OrderRepository;
+import com.outpost.payment.refund.repository.RefundRepository;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.flywaydb.core.Flyway;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +48,8 @@ class OrderModificationServiceIntegrationTest {
   private static final long MERCHANT_ACCOUNT_ID = 300L;
   private static final long OTHER_MERCHANT_ACCOUNT_ID = 301L;
   private static final long PSP_ACCOUNT_ID = 302L;
+  private static final String PSP_CODE = "MOD_PSP";
+  private static final String PSP_REFERENCE = "41";
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_gateway_modification",
@@ -45,7 +57,8 @@ class OrderModificationServiceIntegrationTest {
           "outpost_gateway_modification");
 
   @Autowired private OrderRepository orderRepository;
-  @Autowired private OrderModificationService service;
+  @Autowired private AccountRepository accountRepository;
+  @Autowired private RefundRepository refundRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @BeforeAll
@@ -69,10 +82,12 @@ class OrderModificationServiceIntegrationTest {
     try (Connection connection = DATABASE.createConnection("")) {
       execute(
           connection,
-          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
-              + "VALUES (300, 2, 'MOD_MERCHANT', 'Modification merchant', true, now()), "
-              + "(301, 2, 'MOD_OTHER_MERCHANT', 'Other merchant', true, now()), "
-              + "(302, 4, 'MOD_PSP', 'Modification PSP', true, now())");
+          "INSERT INTO account (account_id, account_type_id, parent_account_id, code, name, "
+              + "is_active, created_ts) "
+              + "VALUES (299, 1, NULL, 'MOD_ROOT', 'Modification root', true, now()), "
+              + "(300, 2, 299, 'MOD_MERCHANT', 'Modification merchant', true, now()), "
+              + "(301, 2, 299, 'MOD_OTHER_MERCHANT', 'Other merchant', true, now()), "
+              + "(302, 4, 299, 'MOD_PSP', 'Modification PSP', true, now())");
     }
   }
 
@@ -88,136 +103,120 @@ class OrderModificationServiceIntegrationTest {
   }
 
   @Test
-  void storesRefundRequestWithResolvedLinesAndReturnsReceived() {
-    Order order = insertOrder(MERCHANT_ACCOUNT_ID, "order-valid", "payment-valid", "idem-valid");
+  void storesTheRefundThePspAcceptedAndReturnsItsReference() {
+    Order order = insertOrder(MERCHANT_ACCOUNT_ID, "order-valid", "idem-valid", PSP_REFERENCE);
+    RecordingPsp psp = new RecordingPsp(new RefundResult(PSP_REFERENCE, "77", ResultCode.ACCEPTED));
 
     ModifyOrderResult result =
-        service.request(
-            MERCHANT_ACCOUNT_ID,
-            new ModifyOrderCommand(
-                "order-valid",
-                "refund-idem-valid",
-                "merchant-ref-valid",
-                "REFUND",
-                List.of(
-                    new RefundLineCommand(
-                        order.getItems().get(0).getOrderLineReference(), null, 20L),
-                    new RefundLineCommand(
-                        null, order.getItems().get(1).getMerchantLineReference(), null))));
+        service(psp).request(MERCHANT_ACCOUNT_ID, command("order-valid", "refund-idem-valid"));
 
-    assertThat(result.status()).isEqualTo("RECEIVED");
-    assertThat(result.refundReference()).isNotBlank();
-    var stored =
+    assertThat(result.refundReference()).startsWith("refund-");
+    Map<String, Object> stored =
         jdbcTemplate.queryForMap(
-            "SELECT original_reference, merchant_reference, idempotency_key "
-                + "FROM accounting_request_queue WHERE reference = ?",
+            "SELECT order_id, original_reference, merchant_reference, idempotency_key, "
+                + "psp_refund_reference FROM merchant_refund WHERE refund_reference = ?",
             result.refundReference());
-    assertThat(stored.get("original_reference")).isEqualTo("payment-valid");
-    assertThat(stored.get("merchant_reference")).isEqualTo("merchant-ref-valid");
-    assertThat(stored.get("idempotency_key")).isEqualTo("refund-idem-valid");
-    List<String> lineReferences =
-        jdbcTemplate.queryForList(
-            "SELECT order_line_reference FROM accounting_request_queue_line "
-                + "WHERE queue_id = "
-                + "(SELECT queue_id FROM accounting_request_queue WHERE reference = ?) "
-                + "ORDER BY order_line_reference",
-            String.class,
-            result.refundReference());
-    assertThat(lineReferences)
-        .containsExactlyInAnyOrder(
-            order.getItems().get(0).getOrderLineReference(),
-            order.getItems().get(1).getOrderLineReference());
+    assertThat(stored)
+        .containsEntry("order_id", order.getOrderId().orElseThrow())
+        .containsEntry("original_reference", "order-valid")
+        .containsEntry("merchant_reference", "merchant-refund-order-valid")
+        .containsEntry("idempotency_key", "refund-idem-valid")
+        .containsEntry("psp_refund_reference", "77");
+    assertThat(psp.refundRequests)
+        .containsExactly(new RefundRequest(PSP_CODE, PSP_REFERENCE, result.refundReference()));
   }
 
   @Test
-  void replayWithSameIdempotencyKeyReturnsOriginalReferenceAndStoresNothingNew() {
-    insertOrder(MERCHANT_ACCOUNT_ID, "order-replay", "payment-replay", "idem-replay");
-    ModifyOrderCommand command =
-        new ModifyOrderCommand(
-            "order-replay", "refund-idem-replay", "merchant-ref-replay", "REFUND", List.of());
+  void rejectsRefundThePspRejectedAndStoresNothing() {
+    insertOrder(MERCHANT_ACCOUNT_ID, "order-rejected", "idem-rejected", PSP_REFERENCE);
+    RecordingPsp psp = new RecordingPsp(new RefundResult(PSP_REFERENCE, null, ResultCode.REJECTED));
 
-    ModifyOrderResult first = service.request(MERCHANT_ACCOUNT_ID, command);
-    ModifyOrderResult replay = service.request(MERCHANT_ACCOUNT_ID, command);
+    ModifyOrderException failure =
+        catchThrowableOfType(
+            ModifyOrderException.class,
+            () ->
+                service(psp)
+                    .request(
+                        MERCHANT_ACCOUNT_ID, command("order-rejected", "refund-idem-rejected")));
 
-    assertThat(replay.refundReference()).isEqualTo(first.refundReference());
-    Integer count =
-        jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM accounting_request_queue WHERE account_id = ? "
-                + "AND idempotency_key = ?",
-            Integer.class,
-            MERCHANT_ACCOUNT_ID,
-            "refund-idem-replay");
-    assertThat(count).isEqualTo(1);
+    assertThat(failure.status()).isEqualTo(422);
+    assertThat(failure.code()).isEqualTo("REFUND_REJECTED");
+    assertThat(refundCount("order-rejected")).isZero();
+  }
+
+  @Test
+  void answersRetryableWhenThePspOutcomeIsUnknownAndStoresNothing() {
+    insertOrder(MERCHANT_ACCOUNT_ID, "order-unknown", "idem-unknown", PSP_REFERENCE);
+    RecordingPsp psp = new RecordingPsp(new RefundResult(PSP_REFERENCE, null, ResultCode.UNKNOWN));
+
+    ModifyOrderException failure =
+        catchThrowableOfType(
+            ModifyOrderException.class,
+            () ->
+                service(psp)
+                    .request(MERCHANT_ACCOUNT_ID, command("order-unknown", "refund-idem-unknown")));
+
+    assertThat(failure.status()).isEqualTo(503);
+    assertThat(failure.code()).isEqualTo("PSP_RETRYABLE");
+    assertThat(refundCount("order-unknown")).isZero();
   }
 
   @Test
   void rejectsForeignOrder() {
-    insertOrder(OTHER_MERCHANT_ACCOUNT_ID, "order-foreign", "payment-foreign", "idem-foreign");
+    insertOrder(OTHER_MERCHANT_ACCOUNT_ID, "order-foreign", "idem-foreign", PSP_REFERENCE);
+    RecordingPsp psp = new RecordingPsp(new RefundResult(PSP_REFERENCE, "77", ResultCode.ACCEPTED));
 
-    assertThatThrownBy(
+    ModifyOrderException failure =
+        catchThrowableOfType(
+            ModifyOrderException.class,
             () ->
-                service.request(
-                    MERCHANT_ACCOUNT_ID,
-                    new ModifyOrderCommand(
-                        "order-foreign",
-                        "refund-idem-foreign",
-                        "merchant-ref-foreign",
-                        "REFUND",
-                        List.of())))
-        .isInstanceOf(ModifyOrderException.class)
-        .extracting(exception -> ((ModifyOrderException) exception).code())
-        .isEqualTo("ORDER_NOT_FOUND");
+                service(psp)
+                    .request(MERCHANT_ACCOUNT_ID, command("order-foreign", "refund-idem-foreign")));
+
+    assertThat(failure.status()).isEqualTo(404);
+    assertThat(failure.code()).isEqualTo("ORDER_NOT_FOUND");
+    assertThat(psp.refundRequests).isEmpty();
   }
 
   @Test
-  void rejectsUnknownOrderLine() {
-    insertOrder(
-        MERCHANT_ACCOUNT_ID, "order-unknown-line", "payment-unknown-line", "idem-unknown-line");
+  void rejectsAnOrderWithoutPspReference() {
+    insertOrder(MERCHANT_ACCOUNT_ID, "order-unpaid", "idem-unpaid", null);
+    RecordingPsp psp = new RecordingPsp(new RefundResult(PSP_REFERENCE, "77", ResultCode.ACCEPTED));
 
-    assertThatThrownBy(
+    ModifyOrderException failure =
+        catchThrowableOfType(
+            ModifyOrderException.class,
             () ->
-                service.request(
-                    MERCHANT_ACCOUNT_ID,
-                    new ModifyOrderCommand(
-                        "order-unknown-line",
-                        "refund-idem-unknown-line",
-                        "merchant-ref-unknown-line",
-                        "REFUND",
-                        List.of(new RefundLineCommand("does-not-exist", null, null)))))
-        .isInstanceOf(ModifyOrderException.class)
-        .extracting(exception -> ((ModifyOrderException) exception).code())
-        .isEqualTo("UNKNOWN_ORDER_LINE");
+                service(psp)
+                    .request(MERCHANT_ACCOUNT_ID, command("order-unpaid", "refund-idem-unpaid")));
+
+    assertThat(failure.status()).isEqualTo(409);
+    assertThat(failure.code()).isEqualTo("ORDER_NOT_PAID");
+    assertThat(psp.refundRequests).isEmpty();
   }
 
-  @Test
-  void rejectsLineNamingBothReferences() {
-    Order order =
-        insertOrder(MERCHANT_ACCOUNT_ID, "order-ambiguous", "payment-ambiguous", "idem-ambiguous");
+  private OrderModificationService service(PspClient psp) {
+    return new OrderModificationService(orderRepository, accountRepository, psp, refundRepository);
+  }
 
-    assertThatThrownBy(
-            () ->
-                service.request(
-                    MERCHANT_ACCOUNT_ID,
-                    new ModifyOrderCommand(
-                        "order-ambiguous",
-                        "refund-idem-ambiguous",
-                        "merchant-ref-ambiguous",
-                        "REFUND",
-                        List.of(
-                            new RefundLineCommand(
-                                order.getItems().get(0).getOrderLineReference(),
-                                order.getItems().get(0).getMerchantLineReference(),
-                                null)))))
-        .isInstanceOf(ModifyOrderException.class)
-        .extracting(exception -> ((ModifyOrderException) exception).code())
-        .isEqualTo("AMBIGUOUS_LINE_REFERENCE");
+  private static ModifyOrderCommand command(String orderReference, String idempotencyKey) {
+    return new ModifyOrderCommand(
+        orderReference, idempotencyKey, "merchant-refund-" + orderReference, "REFUND");
+  }
+
+  private int refundCount(String orderReference) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM merchant_refund WHERE original_reference = ?",
+            Integer.class,
+            orderReference));
   }
 
   private Order insertOrder(
       long merchantAccountId,
       String orderReference,
-      String paymentReference,
-      String idempotencyKey) {
+      String idempotencyKey,
+      @Nullable String pspReference) {
     ShopperDetail shopper =
         new ShopperDetail(
             null,
@@ -240,15 +239,19 @@ class OrderModificationServiceIntegrationTest {
             eur(119L),
             idempotencyKey,
             "fingerprint-" + orderReference,
-            paymentReference,
             PSP_ACCOUNT_ID,
             null,
             null,
-            Instant.parse("2026-09-12T00:00:00Z"),
+            null,
             List.of(
                 item(orderReference + "-line-1", orderReference + "-merchant-line-1", 50L, 10L),
                 item(orderReference + "-line-2", orderReference + "-merchant-line-2", 50L, 9L)));
-    return orderRepository.insertOrder(shopper, order).orElseThrow();
+    Order stored = orderRepository.insertOrder(shopper, order).orElseThrow();
+    if (pspReference != null) {
+      orderRepository.updateOrderPspReferenceAndPaymentLink(
+          orderReference, pspReference, "https://pay.example/" + orderReference);
+    }
+    return stored;
   }
 
   private static OrderItem item(
@@ -279,5 +282,26 @@ class OrderModificationServiceIntegrationTest {
       throw new IllegalStateException("outpost.migration.location is required");
     }
     return location;
+  }
+
+  /** A PSP that answers every refund with one chosen result and records what it was asked. */
+  private static final class RecordingPsp implements PspClient {
+    private final RefundResult refundResult;
+    private final List<RefundRequest> refundRequests = new ArrayList<>();
+
+    private RecordingPsp(RefundResult refundResult) {
+      this.refundResult = refundResult;
+    }
+
+    @Override
+    public CreateOrderResult createOrder(CreateOrderRequest request) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public RefundResult refund(RefundRequest request) {
+      refundRequests.add(request);
+      return refundResult;
+    }
   }
 }

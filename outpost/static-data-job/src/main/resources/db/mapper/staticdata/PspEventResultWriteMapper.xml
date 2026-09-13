@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.outpost.platform.staticdata.job.payment.PspEventResultWriteMapper">
-  <select id="findAll" resultType="com.outpost.payment.repository.PspEventResultRecord">SELECT psp_event_result_id, code FROM psp_event_result ORDER BY psp_event_result_id</select>
-  <insert id="insert" parameterType="com.outpost.payment.repository.PspEventResultRecord">INSERT INTO psp_event_result (psp_event_result_id, code) VALUES (#{pspEventResultId}, #{code})</insert>
-</mapper>

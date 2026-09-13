@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingQueueRequestTypes;
+import com.outpost.accounting.api.AccountingRequestApi;
 import com.outpost.accounting.api.BalanceReportApi;
-import com.outpost.accounting.api.PaymentApi;
-import com.outpost.accounting.api.PaymentEventRequest;
 import com.outpost.accounting.api.client.LedgerClientConfiguration;
 import com.outpost.accounting.api.client.LedgerHttpServiceGroupConfigurer;
 import com.outpost.common.iso.Currencies;
@@ -45,7 +45,6 @@ class LedgerApiIntegrationTest {
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8("test-gateway-secret");
   private static final Currencies.Currency EUR = Currencies.EUR.getValue();
   private static final Currencies.Currency USD = Currencies.USD.getValue();
-  private static final HmacKey WORKER_KEY = HmacKey.fromUtf8("test-worker-secret");
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_ledger_api", "outpost_ledger_api", "outpost_ledger_api");
@@ -136,7 +135,7 @@ class LedgerApiIntegrationTest {
     String body = "{}";
     HttpResponse<String> response =
         httpClient.send(
-            HttpRequest.newBuilder(URI.create("http://localhost:8081/v1/payment"))
+            HttpRequest.newBuilder(URI.create("http://localhost:8081/v1/accounting-request"))
                 .header("Content-Type", "text/plain")
                 .header("X-Outpost-Signature", HmacSha256.signUtf8(GATEWAY_KEY, body).toBase64())
                 .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -167,15 +166,26 @@ class LedgerApiIntegrationTest {
   }
 
   @Test
-  void acceptsWorkerSignedPaymentEventThroughTheLedgerClient() {
-    try (AnnotationConfigApplicationContext worker = ledgerClient(WORKER_KEY)) {
-      PaymentApi payments = worker.getBean(PaymentApi.class);
-      PaymentEventRequest unknownPayment =
-          new PaymentEventRequest(
-              "unknown-payment", null, TransactionEventTypes.AUTHORISED.getValue().getCode());
+  void acceptsGatewaySignedAccountingRequestThroughTheLedgerClient() {
+    try (AnnotationConfigApplicationContext gateway = ledgerClient(GATEWAY_KEY)) {
+      AccountingRequestApi accountingRequests = gateway.getBean(AccountingRequestApi.class);
+      AccountingQueueRequest capture =
+          new AccountingQueueRequest(
+              AccountingQueueRequestTypes.CAPTURE,
+              "unknown-payment",
+              "merchant-order-1",
+              "DEMO_PSP",
+              "41",
+              true,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null);
 
-      assertThatThrownBy(() -> payments.appendPaymentEvent(unknownPayment))
-          .isInstanceOf(HttpClientErrorException.NotFound.class);
+      assertThat(accountingRequests.submit(capture).getStatusCode().is2xxSuccessful()).isTrue();
     }
   }
 

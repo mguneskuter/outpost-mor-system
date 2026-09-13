@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.accounting.transactionlock.repository.mybatis.TransactionLockMapper">
+  <resultMap id="transactionLock" type="com.outpost.accounting.transactionlock.TransactionLock">
+    <constructor>
+      <idArg column="original_reference" javaType="string"/>
+      <arg column="locked_ts" javaType="java.time.Instant"/>
+      <arg column="lease_until_ts" javaType="java.time.Instant"/>
+    </constructor>
+  </resultMap>
+
+  <select id="insertTransactionLock" resultMap="transactionLock">
+    INSERT INTO transaction_lock (original_reference, locked_ts, lease_until_ts)
+    VALUES (#{originalReference}, now(), now() + make_interval(secs => #{leaseSeconds}))
+    ON CONFLICT (original_reference) DO UPDATE
+       SET locked_ts = EXCLUDED.locked_ts,
+           lease_until_ts = EXCLUDED.lease_until_ts
+     WHERE transaction_lock.lease_until_ts &lt;= now()
+    RETURNING original_reference, locked_ts, lease_until_ts
+  </select>
+
+  <delete id="deleteTransactionLock">
+    DELETE FROM transaction_lock
+     WHERE original_reference = #{originalReference}
+       AND locked_ts = #{lockedAt}
+  </delete>
+</mapper>

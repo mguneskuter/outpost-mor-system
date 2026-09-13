@@ -1,8 +1,6 @@
 package com.outpost.integration.psp.simulator;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.outpost.integration.psp.service.CancelRequest;
-import com.outpost.integration.psp.service.CancelResult;
 import com.outpost.integration.psp.service.CreateOrderRequest;
 import com.outpost.integration.psp.service.CreateOrderResult;
 import com.outpost.integration.psp.service.PspClient;
@@ -45,15 +43,6 @@ public final class SimulatorPspClient implements PspClient {
         .orElse(new RefundResult("", "", ResultCode.REJECTED));
   }
 
-  /** Sends a cancellation request. */
-  @Override
-  public CancelResult cancel(CancelRequest request) {
-    return configurations
-        .findByCode(request.pspCode())
-        .map(c -> cancelCall(c, request))
-        .orElse(new CancelResult(request.pspReference(), ResultCode.REJECTED));
-  }
-
   private CreateOrderResult createOrderCall(
       PspConfiguration configuration, CreateOrderRequest request) {
     try {
@@ -84,22 +73,6 @@ public final class SimulatorPspClient implements PspClient {
               response.accepted() ? ResultCode.ACCEPTED : ResultCode.REJECTED);
     } catch (SimulatorTimeoutException ex) {
       return new RefundResult(request.pspReference(), "", ResultCode.UNKNOWN);
-    }
-  }
-
-  private CancelResult cancelCall(PspConfiguration configuration, CancelRequest request) {
-    try {
-      client(configuration)
-          .post()
-          .uri(URI.create("/v1/" + configuration.code() + "/cancel"))
-          .header("X-Outpost-Api-Key", configuration.apiKey())
-          .body(SimulatorCancelRequest.from(request))
-          .retrieve()
-          .toBodilessEntity();
-      return new CancelResult(request.pspReference(), ResultCode.ACCEPTED);
-    } catch (RuntimeException ex) {
-      return new CancelResult(
-          request.pspReference(), isTimeout(ex) ? ResultCode.UNKNOWN : ResultCode.REJECTED);
     }
   }
 
@@ -147,21 +120,9 @@ public final class SimulatorPspClient implements PspClient {
 
   private record SimulatorRefundRequest(
       @JsonProperty("psp_reference") String pspReference,
-      @JsonProperty("refund_reference") String refundReference,
-      long amount,
-      String currency) {
+      @JsonProperty("refund_reference") String refundReference) {
     static SimulatorRefundRequest from(RefundRequest request) {
-      return new SimulatorRefundRequest(
-          request.pspReference(),
-          request.refundReference(),
-          request.amount().quantity(),
-          request.amount().currency().getCurrencyCode());
-    }
-  }
-
-  private record SimulatorCancelRequest(@JsonProperty("psp_reference") String pspReference) {
-    static SimulatorCancelRequest from(CancelRequest request) {
-      return new SimulatorCancelRequest(request.pspReference());
+      return new SimulatorRefundRequest(request.pspReference(), request.refundReference());
     }
   }
 

@@ -8,6 +8,7 @@ dependencies {
     implementation project(':framework:persistence')
     implementation project(':framework:security')
     implementation project(':framework:healthprobe')
+    implementation project(':framework:queue-processor')
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
@@ -25,7 +26,6 @@ dependencies {
     implementation project(':payment:repository')
     implementation project(':psp-integration:domain')
     implementation project(':psp-integration:client')
-    implementation project(':accounting:queue-api')
     implementation project(':accounting:api')
     implementation project(':accounting:api-client')
 

@@ -11,11 +11,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-final class LedgerStaticDataFixtures {
+/** Inserts the reference rows a Ledger integration test needs before the application starts. */
+public final class LedgerStaticDataFixtures {
 
   private LedgerStaticDataFixtures() {}
 
-  static void materialize(JdbcTemplate jdbcTemplate) {
+  /** Inserts one row per constant of every enum the Ledger's static-data check verifies. */
+  public static void materialize(JdbcTemplate jdbcTemplate) {
     for (Currencies currency : Currencies.values()) {
       var value = currency.getValue();
       jdbcTemplate.update(
@@ -73,7 +75,9 @@ final class LedgerStaticDataFixtures {
     }
   }
 
-  static void insertRates(JdbcTemplate jdbcTemplate, LocalDate date, boolean includeAllPairs) {
+  /** Inserts one rate per ordered currency pair for {@code date}, or all pairs but one. */
+  public static void insertRates(
+      JdbcTemplate jdbcTemplate, LocalDate date, boolean includeAllPairs) {
     long id = date.getDayOfMonth() * 100L + 1;
     for (Currencies base : Currencies.values()) {
       for (Currencies quote : Currencies.values()) {
@@ -95,7 +99,8 @@ final class LedgerStaticDataFixtures {
     }
   }
 
-  static void insertFees(JdbcTemplate jdbcTemplate, boolean includeAllPairs) {
+  /** Inserts one fee per ordered currency pair, or all pairs but one. */
+  public static void insertFees(JdbcTemplate jdbcTemplate, boolean includeAllPairs) {
     long id = 1;
     for (Currencies base : Currencies.values()) {
       for (Currencies quote : Currencies.values()) {

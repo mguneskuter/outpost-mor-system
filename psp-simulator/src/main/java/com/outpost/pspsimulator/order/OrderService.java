@@ -6,7 +6,7 @@ import com.outpost.pspsimulator.configuration.SimulatorProperties;
 import com.outpost.pspsimulator.webhook.WebhookScheduler;
 import java.util.Optional;
 
-/** Drives an order through creation, payment, and cancellation. */
+/** Drives an order through creation and payment. */
 public final class OrderService {
 
   private final OrderRepository orderRepository;
@@ -81,29 +81,6 @@ public final class OrderService {
       throw new ConflictException("order no longer awaits payment: " + command.pspReference());
     }
     webhookScheduler.scheduleAuthorisation(order, outcome);
-  }
-
-  /**
-   * Cancels an authorised order before it is captured.
-   *
-   * @throws NotFoundException when the order is unknown
-   * @throws ConflictException when the order is not authorised, for example already captured
-   */
-  public void cancel(String pspCode, CancelCommand command) {
-    Order order =
-        orderRepository
-            .findByPspReference(pspCode, command.pspReference())
-            .orElseThrow(
-                () ->
-                    new NotFoundException(
-                        "no order with psp reference: " + command.pspReference()));
-    boolean transitioned =
-        orderRepository.transition(
-            pspCode, command.pspReference(), OrderStatuses.AUTHORISED, OrderStatuses.CANCELLED);
-    if (!transitioned) {
-      throw new ConflictException("order cannot be cancelled in state " + order.status().getCode());
-    }
-    webhookScheduler.scheduleCancellation(order);
   }
 
   private String paymentUrl(String pspCode) {

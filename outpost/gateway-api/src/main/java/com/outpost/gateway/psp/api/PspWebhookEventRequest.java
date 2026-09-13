@@ -2,7 +2,7 @@ package com.outpost.gateway.psp.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.outpost.gateway.psp.service.PspWebhookEvent;
-import com.outpost.payment.PspEventCodes;
+import com.outpost.gateway.psp.service.PspWebhookEventCodes;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -12,7 +12,7 @@ public record PspWebhookEventRequest(
     @JsonProperty("psp_reference") String pspReference,
     @JsonProperty("psp_refund_reference") @Nullable String pspRefundReference,
     @JsonProperty("payment_reference") String paymentReference,
-    @JsonProperty("event_code") PspEventCodes eventCode,
+    @JsonProperty("event_code") PspWebhookEventCodes eventCode,
     long timestamp,
     boolean success,
     @JsonProperty("result_code") String resultCode,
@@ -28,16 +28,10 @@ public record PspWebhookEventRequest(
     Objects.requireNonNull(eventCode, "eventCode");
     Objects.requireNonNull(resultCode, "resultCode");
     Objects.requireNonNull(currency, "currency");
-    if (eventCode == PspEventCodes.REFUND) {
-      Objects.requireNonNull(pspRefundReference, "pspRefundReference");
-    }
   }
 
   PspWebhookEvent toEvent() {
-    String eventReference =
-        eventCode == PspEventCodes.REFUND
-            ? Objects.requireNonNull(pspRefundReference, "pspRefundReference")
-            : pspReference;
-    return new PspWebhookEvent(pspCode, pspReference, paymentReference, eventCode, eventReference);
+    return new PspWebhookEvent(
+        pspCode, pspReference, paymentReference, eventCode, success, refundReference);
   }
 }

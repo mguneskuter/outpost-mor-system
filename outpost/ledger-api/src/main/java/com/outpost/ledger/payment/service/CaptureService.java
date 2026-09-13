@@ -9,8 +9,6 @@ import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
-import com.outpost.accounting.api.CaptureRequest;
-import com.outpost.accounting.api.CaptureResponse;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.payment.PaymentLifecycle;
 import com.outpost.accounting.templates.CaptureJournalTemplates;
@@ -19,17 +17,18 @@ import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.ledger.payment.repository.CaptureChild;
 import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.repository.PaymentTransaction;
 import com.outpost.ledger.payment.repository.PendingFee;
 import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Coordinates one immutable PSP capture attempt and its accounting evidence. */
+/** Books one PSP capture outcome on an authorised payment and its accounting evidence. */
 public class CaptureService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
@@ -45,55 +44,57 @@ public class CaptureService {
     this.lifecycle = lifecycle;
   }
 
-  /** Stores a successful or failed capture, or returns the exact prior result. */
+  /**
+   * Books the PSP's capture outcome as the payment's single CAPTURE child for the payment's gross
+   * amount: CAPTURED and the CAPTURE entry when {@code success}, otherwise CAPTURE_FAILED and the
+   * release of the pending fee. A repeat of the booked outcome writes nothing.
+   *
+   * @throws CaptureException 404 PAYMENT_NOT_FOUND, 409 CAPTURE_CONFLICT or REFERENCE_CONFLICT, 422
+   *     INVALID_CAPTURE
+   */
   @Transactional
-  public CaptureResponse capture(CaptureRequest request) {
-    validate(request);
-    Currency currency =
-        Currencies.fromCurrencyCode(request.currency()).orElseThrow(CaptureService::bad);
-    PaymentFamily payment = repository.findPaymentFamilyForUpdate(request.paymentReference());
+  public void capture(String originalReference, boolean success) {
+    TransactionEventType candidate =
+        success
+            ? TransactionEventTypes.CAPTURED.getValue()
+            : TransactionEventTypes.CAPTURE_FAILED.getValue();
+    PaymentTransaction payment = repository.findPaymentTransactionForUpdate(originalReference);
     if (payment == null) {
-      throw notFound();
+      throw new CaptureException(404, "PAYMENT_NOT_FOUND");
     }
-
     CaptureChild existing = repository.findCaptureChild(payment.transactionId());
     if (existing != null) {
-      if (!existing.reference().equals(request.captureReference())) {
-        throw invalidCapture();
+      if (existing.eventTypeId() != null
+          && existing.eventTypeId() == candidate.getTransactionEventTypeId()) {
+        return;
       }
-      return replayOrReject(request, currency, existing);
+      throw new CaptureException(409, "CAPTURE_CONFLICT");
     }
-    if (repository.findCaptureByReference(request.captureReference()) != null
-        || repository.findByReference(request.captureReference()) != null) {
-      throw conflict();
-    }
-
-    TransactionEventType transactionEventType = transactionEventType(request.success());
     List<PaymentEvent> events = repository.findPaymentEvents(payment.transactionId());
     TransactionEventType paymentState = fold(events);
-    if (!lifecycle.canFollowCapture(paymentState, false, transactionEventType)
-        || payment.currencyId() != currency.getCurrencyId()
-        || payment.grossQuantity() != request.amount()) {
-      throw invalidCapture();
+    if (!lifecycle.canFollowCapture(paymentState, false, candidate)) {
+      throw new CaptureException(422, "INVALID_CAPTURE");
     }
     PendingFee pendingFee = repository.findPendingFee(payment.transactionId());
     if (!validPendingFee(payment, pendingFee)) {
       throw internal();
     }
 
+    String captureReference = "capture-" + UUID.randomUUID();
+    Currency currency = currency(payment.currencyId());
     StoredTransaction capture =
         repository.insertCaptureTransaction(
             payment.transactionId(),
             payment.merchantAccountId(),
-            request.captureReference(),
-            request.amount(),
-            currency.getCurrencyId());
+            captureReference,
+            payment.grossQuantity(),
+            payment.currencyId());
     if (capture == null) {
-      throw conflict();
+      throw new CaptureException(409, "REFERENCE_CONFLICT");
     }
     PaymentEvent event =
         repository.insertPaymentEvent(
-            capture.transactionId(), transactionEventType.getTransactionEventTypeId());
+            capture.transactionId(), candidate.getTransactionEventTypeId());
     if (event == null) {
       throw internal();
     }
@@ -110,33 +111,19 @@ public class CaptureService {
                   capture.transactionId(),
                   TransactionTypes.CAPTURE.getValue(),
                   merchantAccount,
-                  request.captureReference(),
+                  captureReference,
                   new Amount(currency, payment.grossQuantity()),
                   capture.createdAt()),
-              transactionEventType,
+              candidate,
               event.occurredAt());
     } catch (IllegalArgumentException exception) {
       throw internal();
     }
     journalEntryRepository.insertJournalEntry(journalEntry(payment, pendingFee, transactionEvent));
-    return new CaptureResponse(request.captureReference(), capture.createdAt());
-  }
-
-  private CaptureResponse replayOrReject(
-      CaptureRequest request, Currency currency, CaptureChild existing) {
-    if (!existing.reference().equals(request.captureReference())
-        || existing.quantity() != request.amount()
-        || existing.currencyId() != currency.getCurrencyId()
-        || existing.eventTypeId() == null
-        || existing.eventTypeId()
-            != transactionEventType(request.success()).getTransactionEventTypeId()) {
-      throw conflict();
-    }
-    return new CaptureResponse(existing.reference(), existing.createdTs());
   }
 
   private JournalEntry journalEntry(
-      PaymentFamily payment, PendingFee pendingFee, TransactionEvent transactionEvent) {
+      PaymentTransaction payment, PendingFee pendingFee, TransactionEvent transactionEvent) {
     try {
       Account platformAccount = repository.findPlatformAccount();
       if (platformAccount == null) {
@@ -191,7 +178,7 @@ public class CaptureService {
     return register;
   }
 
-  private static boolean validPendingFee(PaymentFamily payment, PendingFee fee) {
+  private static boolean validPendingFee(PaymentTransaction payment, PendingFee fee) {
     return fee != null
         && fee.fee() >= 0
         && fee.fee() <= payment.netQuantity()
@@ -208,47 +195,18 @@ public class CaptureService {
 
   private static TransactionEventType eventType(PaymentEvent event) {
     return Arrays.stream(TransactionEventTypes.values())
-        .map(com.outpost.accounting.TransactionEventTypes::getValue)
+        .map(TransactionEventTypes::getValue)
         .filter(type -> type.getTransactionEventTypeId() == event.transactionEventTypeId())
         .findFirst()
         .orElseThrow(CaptureService::internal);
   }
 
-  private static TransactionEventType transactionEventType(boolean success) {
-    return success
-        ? TransactionEventTypes.CAPTURED.getValue()
-        : TransactionEventTypes.CAPTURE_FAILED.getValue();
-  }
-
-  private static void validate(CaptureRequest request) {
-    if (request == null
-        || request.paymentReference() == null
-        || request.paymentReference().isBlank()
-        || request.captureReference() == null
-        || request.captureReference().isBlank()
-        || request.success() == null
-        || request.amount() == null
-        || request.amount() <= 0
-        || request.currency() == null
-        || request.currency().isBlank()) {
-      throw bad();
-    }
-  }
-
-  private static CaptureException bad() {
-    return new CaptureException(400, "INVALID_REQUEST");
-  }
-
-  private static CaptureException notFound() {
-    return new CaptureException(404, "PAYMENT_NOT_FOUND");
-  }
-
-  private static CaptureException conflict() {
-    return new CaptureException(409, "REFERENCE_CONFLICT");
-  }
-
-  private static CaptureException invalidCapture() {
-    return new CaptureException(422, "INVALID_CAPTURE");
+  private static Currency currency(long currencyId) {
+    return Arrays.stream(Currencies.values())
+        .map(Currencies::getValue)
+        .filter(value -> value.getCurrencyId() == currencyId)
+        .findFirst()
+        .orElseThrow(CaptureService::internal);
   }
 
   private static CaptureException internal() {

@@ -70,13 +70,6 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
-      - name: Scan Worker image
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: outpost-worker:latest
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
       - name: Scan PSP simulator image
         uses: aquasecurity/trivy-action@v0.36.0
         with:

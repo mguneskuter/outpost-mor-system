@@ -27,11 +27,7 @@ public record SimulatorProperties(
 
   /** The delays before each webhook event, all zero to report immediately. */
   public record DelaySettings(
-      Duration authorisationMin,
-      Duration authorisationMax,
-      Duration capture,
-      Duration refund,
-      Duration cancellation) {
+      Duration authorisationMin, Duration authorisationMax, Duration capture, Duration refund) {
 
     /** Validates that all webhook delays are present and non-negative. */
     public DelaySettings {
@@ -39,12 +35,10 @@ public record SimulatorProperties(
       requireNonNull(authorisationMax, "authorisationMax");
       requireNonNull(capture, "capture");
       requireNonNull(refund, "refund");
-      requireNonNull(cancellation, "cancellation");
       requireNonNegative(authorisationMin, "authorisationMin");
       requireNonNegative(authorisationMax, "authorisationMax");
       requireNonNegative(capture, "capture");
       requireNonNegative(refund, "refund");
-      requireNonNegative(cancellation, "cancellation");
       if (authorisationMax.compareTo(authorisationMin) < 0) {
         throw new IllegalArgumentException(
             "authorisationMax must not be earlier than authorisationMin");

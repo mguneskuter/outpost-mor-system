@@ -12,8 +12,8 @@ import com.outpost.ledger.payment.repository.CaptureChild;
 import com.outpost.ledger.payment.repository.CapturePosting;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.repository.PaymentTransaction;
 import com.outpost.ledger.payment.repository.PendingFee;
 import com.outpost.ledger.payment.repository.RefundChild;
 import com.outpost.ledger.payment.repository.StoredTransaction;
@@ -115,11 +115,11 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public PaymentFamily findPaymentFamilyForUpdate(String r) {
-    PaymentFamilyRow row = mapper.findPaymentFamilyForUpdate(r);
+  public PaymentTransaction findPaymentTransactionForUpdate(String originalReference) {
+    PaymentTransactionRow row = mapper.findPaymentTransactionForUpdate(originalReference);
     return row == null
         ? null
-        : new PaymentFamily(
+        : new PaymentTransaction(
             row.transactionId(),
             row.currencyId(),
             row.merchantAccountId(),
@@ -138,11 +138,6 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   @Override
   public CaptureChild findCaptureChild(long i) {
     return capture(mapper.findCaptureChild(i));
-  }
-
-  @Override
-  public CaptureChild findCaptureByReference(String r) {
-    return capture(mapper.findCaptureByReference(r));
   }
 
   @Override

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,13 +19,12 @@ import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
 import com.outpost.accounting.TransactionEventTypes;
-import com.outpost.accounting.api.CaptureRequest;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.payment.PaymentLifecycle;
 import com.outpost.common.iso.Currencies;
 import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.repository.PaymentTransaction;
 import com.outpost.ledger.payment.repository.PendingFee;
 import com.outpost.ledger.payment.repository.StoredTransaction;
 import java.time.Instant;
@@ -52,8 +53,8 @@ class CaptureServiceTest {
       new Register(20008L, merchant, RegisterTypes.PENDING_FEE.getValue());
   private final Register platformPendingFee =
       new Register(10008L, platform, RegisterTypes.PENDING_FEE.getValue());
-  private final PaymentFamily payment =
-      new PaymentFamily(
+  private final PaymentTransaction payment =
+      new PaymentTransaction(
           PAYMENT_ID, EUR, merchant.getAccountId(), 300L, 6L, 12_000L, 10_000L, 2_000L);
   private final CaptureService service =
       new CaptureService(repository, journalEntryRepository, new PaymentLifecycle());
@@ -65,7 +66,7 @@ class CaptureServiceTest {
         new PendingFee(
             500L, EUR, merchantPendingFee.getRegisterId(), platformPendingFee.getRegisterId()));
 
-    service.capture(request(false));
+    service.capture("payment-1", false);
 
     ArgumentCaptor<JournalEntry> stored = ArgumentCaptor.forClass(JournalEntry.class);
     verify(journalEntryRepository).insertJournalEntry(stored.capture());
@@ -87,7 +88,7 @@ class CaptureServiceTest {
             merchantPendingFee.getRegisterId(),
             platformPendingFee.getRegisterId()));
 
-    assertInternalErrorWithoutJournalWrites(request(false));
+    assertInternalErrorWithoutJournalWrites(false);
   }
 
   @Test
@@ -98,7 +99,7 @@ class CaptureServiceTest {
         new PendingFee(500L, EUR, foreign.getRegisterId(), platformPendingFee.getRegisterId()));
     when(repository.findRegister(merchant.getAccountId(), pendingFeeTypeId())).thenReturn(foreign);
 
-    assertInternalErrorWithoutJournalWrites(request(false));
+    assertInternalErrorWithoutJournalWrites(false);
   }
 
   @Test
@@ -123,12 +124,12 @@ class CaptureServiceTest {
             platform.getAccountId(), RegisterTypes.FEE_REVENUE.getValue().getRegisterTypeId()))
         .thenReturn(new Register(11005L, otherPlatform, RegisterTypes.FEE_REVENUE.getValue()));
 
-    assertInternalErrorWithoutJournalWrites(request(true));
+    assertInternalErrorWithoutJournalWrites(true);
   }
 
-  private void assertInternalErrorWithoutJournalWrites(CaptureRequest request) {
+  private void assertInternalErrorWithoutJournalWrites(boolean success) {
     CaptureException failure =
-        catchThrowableOfType(CaptureException.class, () -> service.capture(request));
+        catchThrowableOfType(CaptureException.class, () -> service.capture("payment-1", success));
 
     assertThat(failure.status()).isEqualTo(500);
     assertThat(failure.code()).isEqualTo("INTERNAL_ERROR");
@@ -137,7 +138,7 @@ class CaptureServiceTest {
 
   private void arrangePaymentAwaitingCapture(
       TransactionEventTypes transactionEventType, PendingFee pendingFee) {
-    when(repository.findPaymentFamilyForUpdate("payment-1")).thenReturn(payment);
+    when(repository.findPaymentTransactionForUpdate("payment-1")).thenReturn(payment);
     when(repository.findPaymentEvents(PAYMENT_ID))
         .thenReturn(
             List.of(
@@ -145,7 +146,11 @@ class CaptureServiceTest {
                 event(2L, TransactionEventTypes.AUTHORISED)));
     when(repository.findPendingFee(PAYMENT_ID)).thenReturn(pendingFee);
     when(repository.insertCaptureTransaction(
-            PAYMENT_ID, merchant.getAccountId(), "capture-1", 12_000L, EUR))
+            eq(PAYMENT_ID),
+            eq(merchant.getAccountId()),
+            startsWith("capture-"),
+            eq(12_000L),
+            eq(EUR)))
         .thenReturn(new StoredTransaction(CAPTURE_TRANSACTION_ID, NOW));
     when(repository.insertPaymentEvent(
             CAPTURE_TRANSACTION_ID, transactionEventType.getValue().getTransactionEventTypeId()))
@@ -168,9 +173,5 @@ class CaptureServiceTest {
 
   private static PaymentEvent event(long id, TransactionEventTypes type) {
     return new PaymentEvent(id, type.getValue().getTransactionEventTypeId(), NOW);
-  }
-
-  private static CaptureRequest request(boolean success) {
-    return new CaptureRequest("payment-1", "capture-1", success, 12_000L, "EUR");
   }
 }

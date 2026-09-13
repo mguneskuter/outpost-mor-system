@@ -14,13 +14,13 @@ class ModuleGraphSpec {
         ':framework:logging',
         ':framework:security',
         ':framework:healthprobe',
+        ':framework:queue-processor',
         ':account:repository',
         ':account:domain',
         ':merchant-configuration:repository',
         ':merchant-configuration:domain',
         ':accounting:domain',
         ':accounting:persistence',
-        ':accounting:queue-api',
         ':accounting:api',
         ':accounting:api-client',
         ':tax',
@@ -31,7 +31,6 @@ class ModuleGraphSpec {
         ':psp-integration:client',
         ':gateway-api',
         ':ledger-api',
-        ':outpost-worker',
         ':static-data-job'
     ] as Set
 
@@ -101,6 +100,7 @@ class ModuleGraphSpec {
         ':framework:logging': [],
         ':framework:security': [],
         ':framework:healthprobe': [],
+        ':framework:queue-processor': [':framework:logging'],
         ':account:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain'
@@ -128,12 +128,7 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
-        ':accounting:queue-api': [
-            ':platform-sanity:static-data-model',
-            ':platform-sanity:static-data-repository',
-            ':framework:persistence'
-        ],
-        ':accounting:api': [],
+        ':accounting:api': [':common-iso:domain', ':common-payment:domain'],
         ':accounting:api-client': [
             ':accounting:api',
             ':framework:security'
@@ -184,6 +179,7 @@ class ModuleGraphSpec {
             ':framework:persistence',
             ':framework:security',
             ':framework:healthprobe',
+            ':framework:queue-processor',
             ':account:domain',
             ':account:repository',
             ':merchant-configuration:domain',
@@ -193,7 +189,6 @@ class ModuleGraphSpec {
             ':payment:repository',
             ':psp-integration:domain',
             ':psp-integration:client',
-            ':accounting:queue-api',
             ':accounting:api',
             ':accounting:api-client'
         ],
@@ -206,6 +201,7 @@ class ModuleGraphSpec {
             ':framework:persistence',
             ':framework:security',
             ':framework:healthprobe',
+            ':framework:queue-processor',
             ':account:domain',
             ':merchant-configuration:domain',
             ':accounting:domain',
@@ -213,25 +209,6 @@ class ModuleGraphSpec {
             ':fx',
             ':accounting:api',
             ':accounting:api-client'
-        ],
-        ':outpost-worker': [
-            ':platform-sanity:static-data-check',
-            ':common-iso:domain',
-            ':common-payment:domain',
-            ':framework:logging',
-            ':framework:persistence',
-            ':framework:security',
-            ':framework:healthprobe',
-            ':account:domain',
-            ':merchant-configuration:domain',
-            ':payment:domain',
-            ':payment:repository',
-            ':accounting:domain',
-            ':accounting:queue-api',
-            ':accounting:api',
-            ':accounting:api-client',
-            ':psp-integration:domain',
-            ':psp-integration:client'
         ],
         ':static-data-job': [
             ':platform-sanity:static-data-check',
@@ -247,7 +224,6 @@ class ModuleGraphSpec {
             ':merchant-configuration:domain',
             ':accounting:domain',
             ':accounting:persistence',
-            ':accounting:queue-api',
             ':tax',
             ':fx',
             ':payment:domain',
@@ -273,7 +249,6 @@ class ModuleGraphSpec {
     static final Set<String> DEPLOYABLE_PROJECT_PATHS = [
         ':gateway-api',
         ':ledger-api',
-        ':outpost-worker',
         ':static-data-job'
     ] as Set
 

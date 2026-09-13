@@ -22,14 +22,12 @@ import com.outpost.accounting.payment.PaymentLifecycle;
 import com.outpost.common.iso.Currencies;
 import com.outpost.ledger.payment.repository.ExistingPayment;
 import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.ledger.payment.repository.PaymentTransaction;
 import com.outpost.ledger.payment.repository.PendingFee;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 
 class PaymentEventServiceTest {
@@ -54,8 +52,8 @@ class PaymentEventServiceTest {
       new Register(20008L, merchant, RegisterTypes.PENDING_FEE.getValue());
   private final Register platformPendingFee =
       new Register(10008L, platform, RegisterTypes.PENDING_FEE.getValue());
-  private final PaymentFamily payment =
-      new PaymentFamily(
+  private final PaymentTransaction payment =
+      new PaymentTransaction(
           PAYMENT_ID,
           EUR,
           merchant.getAccountId(),
@@ -67,14 +65,11 @@ class PaymentEventServiceTest {
   private final PaymentEventService service =
       new PaymentEventService(repository, journalEntryRepository, new PaymentLifecycle());
 
-  @ParameterizedTest
-  @EnumSource(
-      value = TransactionEventTypes.class,
-      names = {"REFUSED", "CANCELLED"})
-  void releasesThePendingFeeBookedAtCreation(TransactionEventTypes transactionEventType) {
-    arrangeRelease(transactionEventType, pendingFee(merchantPendingFee, platformPendingFee, EUR));
+  @Test
+  void releasesThePendingFeeOnRefusal() {
+    arrangeRelease(pendingFee(merchantPendingFee, platformPendingFee, EUR));
 
-    service.appendPaymentEvent(command(transactionEventType));
+    service.recordAuthorisation("payment-1", false);
 
     ArgumentCaptor<JournalEntry> stored = ArgumentCaptor.forClass(JournalEntry.class);
     verify(journalEntryRepository).insertJournalEntry(stored.capture());
@@ -89,7 +84,7 @@ class PaymentEventServiceTest {
   @Test
   void rejectsReleaseToNonPlatformPendingFeeRegisterBeforeJournalWrites() {
     Register notPlatform = new Register(30008L, psp, RegisterTypes.PENDING_FEE.getValue());
-    arrangeRelease(TransactionEventTypes.REFUSED, pendingFee(merchantPendingFee, notPlatform, EUR));
+    arrangeRelease(pendingFee(merchantPendingFee, notPlatform, EUR));
     when(repository.findRegister(platform.getAccountId(), PENDING_FEE)).thenReturn(notPlatform);
 
     assertInternalErrorWithoutJournalWrites();
@@ -99,8 +94,7 @@ class PaymentEventServiceTest {
   void rejectsReleaseFromMerchantRegisterOfTheWrongTypeBeforeJournalWrites() {
     Register merchantPayable =
         new Register(20001L, merchant, RegisterTypes.MERCHANT_PAYABLE.getValue());
-    arrangeRelease(
-        TransactionEventTypes.REFUSED, pendingFee(merchantPayable, platformPendingFee, EUR));
+    arrangeRelease(pendingFee(merchantPayable, platformPendingFee, EUR));
     when(repository.findRegister(merchant.getAccountId(), PENDING_FEE)).thenReturn(merchantPayable);
 
     assertInternalErrorWithoutJournalWrites();
@@ -109,7 +103,6 @@ class PaymentEventServiceTest {
   @Test
   void rejectsReleaseOfPendingFeeInAnotherCurrencyBeforeJournalWrites() {
     arrangeRelease(
-        TransactionEventTypes.REFUSED,
         pendingFee(
             merchantPendingFee, platformPendingFee, Currencies.USD.getValue().getCurrencyId()));
 
@@ -119,16 +112,16 @@ class PaymentEventServiceTest {
   private void assertInternalErrorWithoutJournalWrites() {
     PaymentEventException failure =
         catchThrowableOfType(
-            PaymentEventException.class,
-            () -> service.appendPaymentEvent(command(TransactionEventTypes.REFUSED)));
+            PaymentEventException.class, () -> service.recordAuthorisation("payment-1", false));
 
     assertThat(failure.status()).isEqualTo(500);
     assertThat(failure.code()).isEqualTo("INTERNAL_ERROR");
     verify(journalEntryRepository, never()).insertJournalEntry(any());
   }
 
-  private void arrangeRelease(TransactionEventTypes transactionEventType, PendingFee pendingFee) {
-    when(repository.findPaymentFamilyForUpdate("payment-1")).thenReturn(payment);
+  private void arrangeRelease(PendingFee pendingFee) {
+    TransactionEventTypes transactionEventType = TransactionEventTypes.REFUSED;
+    when(repository.findPaymentTransactionForUpdate("payment-1")).thenReturn(payment);
     when(repository.findByReference("payment-1"))
         .thenReturn(
             new ExistingPayment(
@@ -143,12 +136,8 @@ class PaymentEventServiceTest {
                 null,
                 10_000L,
                 2_000L));
-    PaymentEvent orderCreated = event(1L, TransactionEventTypes.ORDER_CREATED);
     when(repository.findPaymentEvents(PAYMENT_ID))
-        .thenReturn(
-            transactionEventType == TransactionEventTypes.CANCELLED
-                ? List.of(orderCreated, event(2L, TransactionEventTypes.AUTHORISED))
-                : List.of(orderCreated));
+        .thenReturn(List.of(event(1L, TransactionEventTypes.ORDER_CREATED)));
     when(repository.insertPaymentEvent(
             PAYMENT_ID, transactionEventType.getValue().getTransactionEventTypeId()))
         .thenReturn(
@@ -171,10 +160,5 @@ class PaymentEventServiceTest {
       Register merchantRegister, Register platformRegister, long currencyId) {
     return new PendingFee(
         500L, currencyId, merchantRegister.getRegisterId(), platformRegister.getRegisterId());
-  }
-
-  private static AppendPaymentEventCommand command(TransactionEventTypes transactionEventType) {
-    return new AppendPaymentEventCommand(
-        "payment-1", null, transactionEventType.getValue().getCode());
   }
 }

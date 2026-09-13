@@ -110,11 +110,12 @@ class MerchantFlow:
         assert_that(
             self.stored_order_count() == 1, "the idempotency key identifies exactly one order"
         )
-        payment_reference, psp_reference = self.payment_references(order["order_reference"])
+        original_reference = order["order_reference"]
+        psp_reference = self.psp_reference(original_reference)
 
         self.pay(order["payment_details"]["payment_link"], psp_reference, is_repeat)
         wait_for(
-            lambda: has_transaction_event(payment_reference, "CAPTURED"),
+            lambda: has_transaction_event(original_reference, "CAPTURED"),
             "the capture to be booked",
         )
         self.assert_owed_by_order(
@@ -129,10 +130,6 @@ class MerchantFlow:
         wait_for(
             lambda: has_transaction_event(refund_reference, "REFUNDED"),
             "the refund to be booked",
-        )
-        wait_for(
-            lambda: queued_requests_not_done(payment_reference) == 0,
-            "every queued request for the payment to be done",
         )
         refunds = psp_refund_count(psp_reference)
         assert_that(refunds == 1, f"the PSP issued one refund for the payment, found {refunds}")
@@ -270,13 +267,11 @@ class MerchantFlow:
         )
 
     @staticmethod
-    def payment_references(order_reference):
-        row = query(
-            "SELECT payment_reference || '|' || psp_reference FROM merchant_order "
+    def psp_reference(order_reference):
+        return query(
+            "SELECT psp_reference FROM merchant_order "
             f"WHERE order_reference = {sql_literal(order_reference)}"
         )
-        payment_reference, psp_reference = row.split("|")
-        return payment_reference, psp_reference
 
 
 def has_transaction_event(reference, event_code):
@@ -292,17 +287,6 @@ def has_transaction_event(reference, event_code):
             f"AND {sql_literal(reference)} IN (transaction.reference, parent.reference)"
         )
         != "0"
-    )
-
-
-def queued_requests_not_done(payment_reference):
-    return int(
-        query(
-            "SELECT (SELECT count(*) FROM accounting_request_queue "
-            f"WHERE original_reference = {sql_literal(payment_reference)} AND NOT done) + "
-            "(SELECT count(*) FROM psp_event_queue "
-            f"WHERE original_reference = {sql_literal(payment_reference)} AND NOT done)"
-        )
     )
 
 

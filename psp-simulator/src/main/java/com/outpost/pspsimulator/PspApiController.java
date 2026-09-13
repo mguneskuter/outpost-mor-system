@@ -61,7 +61,9 @@ public class PspApiController {
     return ResponseEntity.accepted().build();
   }
 
-  /** Refunds a captured order, echoing the caller's refund reference on the REFUND webhook. */
+  /**
+   * Refunds a captured order in full, echoing the caller's refund reference on the REFUND webhook.
+   */
   @PostMapping("/refund")
   public ResponseEntity<RefundResponse> refund(
       @PathVariable String pspCode,
@@ -71,17 +73,6 @@ public class PspApiController {
     RefundService.RefundResult result = refundService.refund(pspCode, request.toCommand());
     return ResponseEntity.ok(
         new RefundResponse(Long.toString(result.pspRefundReference()), result.accepted()));
-  }
-
-  /** Cancels an authorised order before it is captured. */
-  @PostMapping("/cancel")
-  public ResponseEntity<Void> cancel(
-      @PathVariable String pspCode,
-      @RequestBody CancelRequest request,
-      @RequestHeader(value = API_KEY_HEADER, required = false) @Nullable String apiKey) {
-    requirePspAccount(pspCode, apiKey);
-    orderService.cancel(pspCode, request.toCommand());
-    return ResponseEntity.accepted().build();
   }
 
   private PspAccount requirePspAccount(String pspCode, @Nullable String apiKey) {
