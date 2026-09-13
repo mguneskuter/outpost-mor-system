@@ -3,7 +3,6 @@ package com.outpost.payment.repository.mybatis;
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
 import com.outpost.payment.repository.PspEventRepository;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -54,8 +53,8 @@ public final class MyBatisPspEventRepository implements PspEventRepository {
   }
 
   @Override
-  public void complete(long queueId, PspEventResults result, Instant completedAt) {
-    if (mapper.markDone(queueId, result.getValue().getPspEventResultId(), completedAt) != 1) {
+  public void complete(long queueId, PspEventResults result) {
+    if (mapper.markDone(queueId, result.getValue().getPspEventResultId()) != 1) {
       throw new IllegalStateException("PSP event is not in progress: " + queueId);
     }
   }

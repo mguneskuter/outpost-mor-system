@@ -29,10 +29,10 @@ import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 class MyBatisOrderRepositoryIntegrationTest {
-  private static final Instant CREATED = Instant.parse("2026-09-12T00:00:00Z");
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_order_repository", "outpost_order_repository", "outpost_order_repository");
@@ -94,6 +94,29 @@ class MyBatisOrderRepositoryIntegrationTest {
         .contains(CountrySubdivisions.US_CA.getValue());
     assertThat(orders().findOrderByIdempotencyKey(merchantAccountId, "stored-key"))
         .contains(stored);
+  }
+
+  @Test
+  void insertingAnOrderStoresItsCreationTimeAsTheWritingTransactionTime() {
+    new TransactionTemplate(new DataSourceTransactionManager(Objects.requireNonNull(dataSource)))
+        .executeWithoutResult(
+            status -> {
+              Order stored =
+                  orders()
+                      .insertOrder(shopper("dated", "Dated Shopper"), anOrderWithTwoLines("dated"))
+                      .orElseThrow();
+
+              Instant transactionTime =
+                  Objects.requireNonNull(jdbc().queryForObject("SELECT now()", Instant.class));
+              assertThat(stored.getCreatedAt()).contains(transactionTime);
+              assertThat(
+                      jdbc()
+                          .queryForObject(
+                              "SELECT created_ts FROM merchant_order WHERE idempotency_key = ?",
+                              Instant.class,
+                              "dated-key"))
+                  .isEqualTo(transactionTime);
+            });
   }
 
   @Test
@@ -175,7 +198,7 @@ class MyBatisOrderRepositoryIntegrationTest {
         pspAccountId,
         null,
         null,
-        CREATED,
+        null,
         List.of(
             line(referenceSlug + "-line-1", 100L, 7L), line(referenceSlug + "-line-2", 200L, 14L)));
   }

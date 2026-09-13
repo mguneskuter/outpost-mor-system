@@ -30,9 +30,6 @@ import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,8 +57,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 class OrderServiceIntegrationTest {
   private static final String MERCHANT_CODE = "ORDER_MERCHANT";
   private static final String PSP_CODE = "ORDER_PSP";
-  private static final Clock CLOCK =
-      Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC);
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_gateway_order", "outpost_gateway_order", "outpost_gateway_order");
@@ -184,8 +179,7 @@ class OrderServiceIntegrationTest {
         ledger,
         psp,
         taxRates,
-        new LineTaxCalculator(),
-        CLOCK);
+        new LineTaxCalculator());
   }
 
   private static Outcome attempt(OrderService service, CreateOrderCommand command) {

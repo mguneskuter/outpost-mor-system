@@ -24,7 +24,6 @@ import com.outpost.ledger.payment.service.RefundReservationService;
 import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.ledger.report.service.BalanceReportService;
 import com.outpost.ledger.security.LedgerAuthenticationProperties;
-import java.time.Clock;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -41,11 +40,6 @@ public class ApplicationBeanConfiguration {
 
   /** The in-memory FX rate bound is sized as ordered currency pairs times this many days. */
   private static final int DAYS_OF_RATES_PER_PAIR = 31;
-
-  @Bean
-  Clock ledgerClock() {
-    return Clock.systemUTC();
-  }
 
   @Bean
   PaymentFeeCalculator paymentFeeCalculator() {
@@ -67,32 +61,29 @@ public class ApplicationBeanConfiguration {
   PaymentCreationService paymentCreationService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentFeeCalculator calculator,
-      Clock clock) {
-    return new PaymentCreationService(repository, journalEntryRepository, calculator, clock);
+      PaymentFeeCalculator calculator) {
+    return new PaymentCreationService(repository, journalEntryRepository, calculator);
   }
 
   @Bean
   PaymentEventService paymentEventService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle,
-      Clock clock) {
-    return new PaymentEventService(repository, journalEntryRepository, lifecycle, clock);
+      PaymentLifecycle lifecycle) {
+    return new PaymentEventService(repository, journalEntryRepository, lifecycle);
   }
 
   @Bean
   CaptureService captureService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle,
-      Clock clock) {
-    return new CaptureService(repository, journalEntryRepository, lifecycle, clock);
+      PaymentLifecycle lifecycle) {
+    return new CaptureService(repository, journalEntryRepository, lifecycle);
   }
 
   @Bean
-  RefundReservationService refundReservationService(PaymentRepository repository, Clock clock) {
-    return new RefundReservationService(repository, clock);
+  RefundReservationService refundReservationService(PaymentRepository repository) {
+    return new RefundReservationService(repository);
   }
 
   @Bean

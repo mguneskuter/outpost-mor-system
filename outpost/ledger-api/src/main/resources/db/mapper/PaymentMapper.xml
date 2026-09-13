@@ -103,13 +103,14 @@
            (SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND')
   </select>
 
-  <select id="insertRefundTransaction" resultType="java.lang.Long">
+  <select id="insertRefundTransaction"
+      resultType="com.outpost.ledger.payment.repository.StoredTransaction">
     INSERT INTO transaction (transaction_type_id, parent_transaction_id, account_id, reference,
                              quantity, currency_id, created_ts)
     VALUES ((SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND'),
             #{paymentTransactionId},#{merchantAccountId},#{reference},#{gross},#{currencyId},
-            #{createdAt})
-    ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
+            now())
+    ON CONFLICT (reference) DO NOTHING RETURNING transaction_id, created_ts
   </select>
 
   <insert id="insertRefundDetail">

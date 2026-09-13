@@ -36,9 +36,7 @@ import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -428,8 +426,7 @@ class OrderServiceTest {
               },
               new FakePspClient(pspRequests, pspResults),
               taxRates,
-              new LineTaxCalculator(),
-              Clock.fixed(Instant.parse("2026-09-12T00:00:00Z"), ZoneOffset.UTC));
+              new LineTaxCalculator());
     }
   }
 
@@ -513,6 +510,7 @@ class OrderServiceTest {
   }
 
   private static final class FakeOrderRepository implements OrderRepository {
+    private static final Instant STORED_AT = Instant.parse("2026-09-12T00:00:00Z");
     private final Map<String, Order> orders = new HashMap<>();
     private long nextId = 1;
 
@@ -595,7 +593,7 @@ class OrderServiceTest {
               order.getPspAccountId(),
               null,
               null,
-              order.getCreatedAt(),
+              STORED_AT,
               items);
       orders.put(order.getIdempotencyKey(), stored);
       return Optional.of(stored);
@@ -640,7 +638,7 @@ class OrderServiceTest {
           order.getPspAccountId(),
           pspReference,
           paymentLink,
-          order.getCreatedAt(),
+          order.getCreatedAt().orElse(null),
           order.getItems());
     }
   }

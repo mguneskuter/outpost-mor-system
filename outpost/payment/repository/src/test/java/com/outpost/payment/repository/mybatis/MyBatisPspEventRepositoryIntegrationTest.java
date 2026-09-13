@@ -22,10 +22,11 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 class MyBatisPspEventRepositoryIntegrationTest {
-  private static final Instant COMPLETED = Instant.parse("2026-09-13T00:00:00Z");
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_psp_event_repository",
@@ -92,9 +93,46 @@ class MyBatisPspEventRepositoryIntegrationTest {
 
     assertThat(statusCodeOf("event-1")).isEqualTo("IN_PROGRESS");
 
-    events().complete(claimed.queueId(), PspEventResults.SUCCESS, COMPLETED);
+    events().complete(claimed.queueId(), PspEventResults.SUCCESS);
 
     assertThat(statusCodeOf("event-1")).isEqualTo("DONE");
+  }
+
+  @Test
+  void completingAnEventStoresItsDoneTimeAsTheWritingTransactionTime() {
+    events()
+        .recordReceived(
+            new ReceivedPspEvent(
+                merchantAccountId,
+                pspAccountId,
+                "event-2",
+                "payment-2",
+                PspEventCodes.AUTHORISATION,
+                "{}"));
+    PspEvent claimed = events().claimNext().orElseThrow();
+
+    transactions()
+        .executeWithoutResult(
+            status -> {
+              events().complete(claimed.queueId(), PspEventResults.SUCCESS);
+
+              assertThat(
+                      jdbc()
+                          .queryForObject(
+                              "SELECT done_ts FROM psp_event_queue WHERE queue_id = ?",
+                              Instant.class,
+                              claimed.queueId()))
+                  .isEqualTo(jdbc().queryForObject("SELECT now()", Instant.class));
+            });
+  }
+
+  private static TransactionTemplate transactions() {
+    return new TransactionTemplate(
+        new DataSourceTransactionManager(Objects.requireNonNull(dataSource)));
+  }
+
+  private static JdbcTemplate jdbc() {
+    return Objects.requireNonNull(jdbcTemplate);
   }
 
   private static MyBatisPspEventRepository events() {

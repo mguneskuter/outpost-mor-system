@@ -1,7 +1,6 @@
 package com.outpost.accounting.queue.repository.mybatis;
 
 import com.outpost.framework.persistence.RegisteredMapper;
-import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Param;
 import org.jspecify.annotations.Nullable;
@@ -32,27 +31,29 @@ public interface AccountingRequestQueueMapper {
   /** Loads the lines for a request. */
   List<AccountingRequestLineRow> findLines(long queueId);
 
-  /** Takes the oldest eligible request row while retaining its row lock. */
-  @Nullable AccountingRequestRow claimCandidate(@Param("now") Instant now);
+  /**
+   * Takes the oldest eligible request row while retaining its row lock; a payment lock is live
+   * while its lease ends after the database transaction's time.
+   */
+  @Nullable AccountingRequestRow claimCandidate();
 
   /** Marks a request as in progress. */
   int markInProgress(@Param("queueId") long queueId);
 
-  /** Creates or takes over the lock for the request's payment. */
+  /**
+   * Creates or takes over the lock for the request's payment, leased from the database
+   * transaction's time for {@code leaseMicros} microseconds.
+   */
   int takePaymentLock(
       @Param("transactionId") long transactionId,
       @Param("queueId") long queueId,
-      @Param("lockedTs") Instant lockedTs,
-      @Param("leaseUntilTs") Instant leaseUntilTs);
+      @Param("leaseMicros") long leaseMicros);
 
   /** Marks an unknown-payment request as failed and done. */
-  int markMissingPaymentFailed(@Param("queueId") long queueId, @Param("doneTs") Instant doneTs);
+  int markMissingPaymentFailed(@Param("queueId") long queueId);
 
   /** Records a terminal outcome. */
-  int markDone(
-      @Param("queueId") long queueId,
-      @Param("resultId") long resultId,
-      @Param("doneTs") Instant doneTs);
+  int markDone(@Param("queueId") long queueId, @Param("resultId") long resultId);
 
   /** Releases the payment lock held by a request. */
   int deletePaymentLock(long queueId);

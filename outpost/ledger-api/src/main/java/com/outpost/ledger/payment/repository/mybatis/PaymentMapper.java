@@ -1,7 +1,7 @@
 package com.outpost.ledger.payment.repository.mybatis;
 
 import com.outpost.framework.persistence.RegisteredMapper;
-import java.time.Instant;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
@@ -86,15 +86,14 @@ public interface PaymentMapper {
       INSERT INTO transaction (transaction_type_id, account_id, reference, quantity, currency_id,
                                created_ts)
       VALUES ((SELECT transaction_type_id FROM transaction_type WHERE code = 'PAYMENT'),
-              #{merchantId},#{reference},#{gross},#{currencyId},#{createdAt})
-      ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
+              #{merchantId},#{reference},#{gross},#{currencyId},now())
+      ON CONFLICT (reference) DO NOTHING RETURNING transaction_id, created_ts
       """)
-  Long insertTransaction(
+  StoredTransaction insertTransaction(
       @Param("merchantId") long merchantId,
       @Param("reference") String reference,
       @Param("gross") long gross,
-      @Param("currencyId") long currencyId,
-      @Param("createdAt") Instant createdAt);
+      @Param("currencyId") long currencyId);
 
   /** Inserts payment detail. */
   @Insert(
@@ -121,10 +120,10 @@ public interface PaymentMapper {
       VALUES (#{transactionId},
               (SELECT transaction_event_type_id FROM transaction_event_type
                 WHERE code = 'ORDER_CREATED'),
-              #{at})
-      RETURNING transaction_event_id
+              now())
+      RETURNING transaction_event_id, transaction_event_type_id, event_ts
       """)
-  long insertEvent(@Param("transactionId") long transactionId, @Param("at") Instant at);
+  PaymentEventRow insertEvent(@Param("transactionId") long transactionId);
 
   /** Locks the payment family root before reading or appending lifecycle evidence. */
   @Select(
@@ -199,29 +198,26 @@ public interface PaymentMapper {
                                quantity, currency_id, created_ts)
       VALUES ((SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE'),
               #{paymentTransactionId},#{merchantAccountId},#{reference},#{amount},#{currencyId},
-              #{createdAt})
-      ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
+              now())
+      ON CONFLICT (reference) DO NOTHING RETURNING transaction_id, created_ts
       """)
-  Long insertCaptureTransaction(
+  StoredTransaction insertCaptureTransaction(
       @Param("paymentTransactionId") long paymentTransactionId,
       @Param("merchantAccountId") long merchantAccountId,
       @Param("reference") String reference,
       @Param("amount") long amount,
-      @Param("currencyId") long currencyId,
-      @Param("createdAt") Instant createdAt);
+      @Param("currencyId") long currencyId);
 
   /** Appends a payment lifecycle event while retaining the database idempotency guard. */
   @Select(
       """
       INSERT INTO transaction_event (transaction_id, transaction_event_type_id, event_ts)
-      VALUES (#{transactionId},#{eventTypeId},#{occurredAt})
+      VALUES (#{transactionId},#{eventTypeId},now())
       ON CONFLICT (transaction_id, transaction_event_type_id) DO NOTHING
-      RETURNING transaction_event_id
+      RETURNING transaction_event_id, transaction_event_type_id, event_ts
       """)
-  Long insertPaymentEvent(
-      @Param("transactionId") long transactionId,
-      @Param("eventTypeId") long eventTypeId,
-      @Param("occurredAt") Instant occurredAt);
+  PaymentEventRow insertPaymentEvent(
+      @Param("transactionId") long transactionId, @Param("eventTypeId") long eventTypeId);
 
   /** Reads the merchant and platform pending-fee lines for the payment. */
   @Select(
@@ -278,13 +274,12 @@ public interface PaymentMapper {
   RefundChildRow findRefundByReference(@Param("reference") String reference);
 
   /** Inserts a REFUND child transaction, atomically guarding its reference. */
-  Long insertRefundTransaction(
+  StoredTransaction insertRefundTransaction(
       @Param("paymentTransactionId") long paymentTransactionId,
       @Param("merchantAccountId") long merchantAccountId,
       @Param("reference") String reference,
       @Param("gross") long gross,
-      @Param("currencyId") long currencyId,
-      @Param("createdAt") Instant createdAt);
+      @Param("currencyId") long currencyId);
 
   /** Inserts refund detail. */
   void insertRefundDetail(

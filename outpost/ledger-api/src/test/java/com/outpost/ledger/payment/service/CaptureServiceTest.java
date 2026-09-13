@@ -25,9 +25,8 @@ import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.PendingFee;
-import java.time.Clock;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -57,11 +56,7 @@ class CaptureServiceTest {
       new PaymentFamily(
           PAYMENT_ID, EUR, merchant.getAccountId(), 300L, 6L, 12_000L, 10_000L, 2_000L);
   private final CaptureService service =
-      new CaptureService(
-          repository,
-          journalEntryRepository,
-          new PaymentLifecycle(),
-          Clock.fixed(NOW, ZoneOffset.UTC));
+      new CaptureService(repository, journalEntryRepository, new PaymentLifecycle());
 
   @Test
   void failedCaptureReleasesThePendingFeeBookedAtCreation() {
@@ -150,13 +145,11 @@ class CaptureServiceTest {
                 event(2L, TransactionEventTypes.AUTHORISED)));
     when(repository.findPendingFee(PAYMENT_ID)).thenReturn(pendingFee);
     when(repository.insertCaptureTransaction(
-            PAYMENT_ID, merchant.getAccountId(), "capture-1", 12_000L, EUR, NOW))
-        .thenReturn(CAPTURE_TRANSACTION_ID);
+            PAYMENT_ID, merchant.getAccountId(), "capture-1", 12_000L, EUR))
+        .thenReturn(new StoredTransaction(CAPTURE_TRANSACTION_ID, NOW));
     when(repository.insertPaymentEvent(
-            CAPTURE_TRANSACTION_ID,
-            transactionEventType.getValue().getTransactionEventTypeId(),
-            NOW))
-        .thenReturn(EVENT_ID);
+            CAPTURE_TRANSACTION_ID, transactionEventType.getValue().getTransactionEventTypeId()))
+        .thenReturn(event(EVENT_ID, transactionEventType));
     when(repository.findAccountById(merchant.getAccountId())).thenReturn(merchant);
     when(repository.findPlatformAccount()).thenReturn(platform);
     stubRegister(merchantPendingFee);

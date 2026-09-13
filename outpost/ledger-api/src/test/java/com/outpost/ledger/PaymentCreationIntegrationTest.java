@@ -24,8 +24,10 @@ import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import jakarta.servlet.Filter;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -596,6 +598,44 @@ class PaymentCreationIntegrationTest {
   }
 
   @Test
+  void paymentCaptureAndRefundReportTheTimeTheirTransactionStoredWithTheirEventAndEntry()
+      throws Exception {
+    String paymentReference = "dated-payment";
+    String payment = body(paymentReference);
+    String created =
+        perform(payment, signature(payment))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(createdAt(created)).isEqualTo(storedCreatedTime(paymentReference));
+    String authorised = eventBody(paymentReference, "AUTHORISED");
+    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
+
+    String capture = captureBody(paymentReference, "dated-capture", true, 12000, "EUR");
+    String captured =
+        performCapture(capture, workerSignature(capture))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(createdAt(captured)).isEqualTo(storedCreatedTime("dated-capture"));
+    assertEntryBookedAndPostedAtItsEventTime(transactionId("dated-capture"));
+
+    String refund = refundBody(paymentReference, "dated-refund", 8000, 2000, "EUR");
+    String reserved =
+        performRefund(refund, workerSignature(refund))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    assertThat(createdAt(reserved)).isEqualTo(storedCreatedTime("dated-refund"));
+    String refunded = refundEventBody(paymentReference, "dated-refund", "REFUNDED");
+    performEvent(refunded, workerSignature(refunded)).andExpect(status().isNoContent());
+    assertEntryBookedAndPostedAtItsEventTime(transactionId("dated-refund"));
+  }
+
+  @Test
   void refundReservationRejectsWhenNoSuccessfulFullCaptureExists() throws Exception {
     String paymentReference = "refund-no-capture";
     String payment = body(paymentReference);
@@ -1096,6 +1136,27 @@ class PaymentCreationIntegrationTest {
           refundId,
           eventTypeId);
     }
+  }
+
+  private static Instant createdAt(String response) throws Exception {
+    return Instant.parse(JSON.readTree(response).path("created_at").asText());
+  }
+
+  private Instant storedCreatedTime(String reference) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT created_ts FROM transaction WHERE reference = ?", Instant.class, reference));
+  }
+
+  private void assertEntryBookedAndPostedAtItsEventTime(long transactionId) {
+    Map<String, Object> times =
+        jdbcTemplate.queryForMap(
+            "SELECT te.event_ts, je.booked, je.posted FROM transaction_event te "
+                + "JOIN journal_entry je USING (transaction_event_id) "
+                + "WHERE te.transaction_id = ?",
+            transactionId);
+    assertThat(times.get("booked")).isEqualTo(times.get("event_ts"));
+    assertThat(times.get("posted")).isEqualTo(times.get("event_ts"));
   }
 
   private long transactionId(String reference) {

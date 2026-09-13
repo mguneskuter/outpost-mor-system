@@ -16,9 +16,6 @@ import com.outpost.payment.PspEventResults;
 import com.outpost.payment.repository.PspEventRepository;
 import com.outpost.payment.repository.PspEventRepository.PspEvent;
 import com.outpost.payment.repository.PspEventRepository.ReceivedPspEvent;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -255,12 +252,7 @@ class PspEventProcessorTest {
               TransactionCallback<?> callback = invocation.getArgument(0);
               return callback.doInTransaction(mock(TransactionStatus.class));
             });
-    return new PspEventProcessor(
-        events,
-        requests,
-        new ObjectMapper(),
-        transactions,
-        Clock.fixed(Instant.parse("2026-09-12T10:15:30Z"), ZoneOffset.UTC));
+    return new PspEventProcessor(events, requests, new ObjectMapper(), transactions);
   }
 
   private static Stream<Arguments> paymentReferenceEvents() {
@@ -291,7 +283,7 @@ class PspEventProcessorTest {
     }
 
     @Override
-    public void complete(long queueId, PspEventResults completedResult, Instant completedAt) {
+    public void complete(long queueId, PspEventResults completedResult) {
       result = completedResult;
     }
   }

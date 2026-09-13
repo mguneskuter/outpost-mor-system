@@ -28,7 +28,6 @@ import com.outpost.worker.accounting.repository.mybatis.LedgerTransactionMapper;
 import com.outpost.worker.accounting.repository.mybatis.MyBatisLedgerTransactionRepository;
 import com.outpost.worker.psp.PspEventPoller;
 import com.outpost.worker.psp.PspEventProcessor;
-import java.time.Clock;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -50,11 +49,6 @@ import tools.jackson.databind.ObjectMapper;
 @Import(LedgerClientConfiguration.class)
 public class WorkerConfiguration {
   @Bean
-  Clock workerClock() {
-    return Clock.systemUTC();
-  }
-
-  @Bean
   PspEventRepository pspEventRepository(PspEventQueueMapper mapper) {
     return new MyBatisPspEventRepository(mapper);
   }
@@ -64,10 +58,9 @@ public class WorkerConfiguration {
       PspEventRepository events,
       AccountingRequestQueue requests,
       ObjectMapper objectMapper,
-      PlatformTransactionManager transactionManager,
-      Clock clock) {
+      PlatformTransactionManager transactionManager) {
     return new PspEventProcessor(
-        events, requests, objectMapper, new TransactionTemplate(transactionManager), clock);
+        events, requests, objectMapper, new TransactionTemplate(transactionManager));
   }
 
   @Bean

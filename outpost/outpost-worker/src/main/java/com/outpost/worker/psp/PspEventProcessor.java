@@ -12,9 +12,6 @@ import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
 import com.outpost.payment.repository.PspEventRepository;
 import com.outpost.payment.repository.PspEventRepository.PspEvent;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -32,20 +29,17 @@ public final class PspEventProcessor {
   private final AccountingRequestQueue requests;
   private final ObjectMapper objectMapper;
   private final TransactionTemplate transactions;
-  private final Clock clock;
 
   /** Creates a processor that commits an event outcome with its accounting request. */
   public PspEventProcessor(
       PspEventRepository events,
       AccountingRequestQueue requests,
       ObjectMapper objectMapper,
-      TransactionTemplate transactions,
-      Clock clock) {
+      TransactionTemplate transactions) {
     this.events = events;
     this.requests = requests;
     this.objectMapper = objectMapper;
     this.transactions = transactions;
-    this.clock = clock;
   }
 
   /** Processes one eligible event when one is available. */
@@ -63,14 +57,14 @@ public final class PspEventProcessor {
               }
               try {
                 requests.submit(toCommand(event));
-                events.complete(event.queueId(), PspEventResults.SUCCESS, now());
+                events.complete(event.queueId(), PspEventResults.SUCCESS);
               } catch (PspEventMappingException | IllegalArgumentException exception) {
                 LOGGER.warn(
                     "PSP event could not be mapped",
                     exception,
                     new StructuredLogField(LogField.QUEUE_ID, Long.toString(event.queueId())),
                     new StructuredLogField(LogField.PAYMENT_REFERENCE, event.originalReference()));
-                events.complete(event.queueId(), PspEventResults.FAILED, now());
+                events.complete(event.queueId(), PspEventResults.FAILED);
               }
               return true;
             });
@@ -139,10 +133,6 @@ public final class PspEventProcessor {
     return Currencies.fromCurrencyCode(currency)
         .orElseThrow(() -> new PspEventMappingException("Unsupported currency"))
         .getCurrencyId();
-  }
-
-  private Instant now() {
-    return Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
   }
 
   private record PspEventPayload(

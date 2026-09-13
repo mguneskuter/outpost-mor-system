@@ -2,7 +2,6 @@ package com.outpost.payment.repository;
 
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
-import java.time.Instant;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
@@ -17,8 +16,11 @@ public interface PspEventRepository {
   /** Claims the oldest event whose payment has no unfinished earlier event. */
   Optional<PspEvent> claimNext();
 
-  /** Records the terminal processing result for a claimed event. */
-  void complete(long queueId, PspEventResults result, Instant completedAt);
+  /**
+   * Records the terminal processing result for a claimed event, completed at the time of the
+   * database transaction that records it.
+   */
+  void complete(long queueId, PspEventResults result);
 
   /**
    * Accounts associated with a payment.

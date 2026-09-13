@@ -16,8 +16,8 @@ import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.PendingFee;
 import com.outpost.ledger.payment.repository.RefundChild;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.stereotype.Repository;
@@ -100,8 +100,8 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public Long insertTransaction(long a, String r, long g, long c, Instant t) {
-    return mapper.insertTransaction(a, r, g, c, t);
+  public StoredTransaction insertTransaction(long a, String r, long g, long c) {
+    return mapper.insertTransaction(a, r, g, c);
   }
 
   @Override
@@ -110,8 +110,8 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public long insertEvent(long i, Instant t) {
-    return mapper.insertEvent(i, t);
+  public PaymentEvent insertEvent(long i) {
+    return event(mapper.insertEvent(i));
   }
 
   @Override
@@ -132,12 +132,7 @@ public class MyBatisPaymentRepository implements PaymentRepository {
 
   @Override
   public List<PaymentEvent> findPaymentEvents(long i) {
-    return mapper.findPaymentEvents(i).stream()
-        .map(
-            row ->
-                new PaymentEvent(
-                    row.transactionEventId(), row.transactionEventTypeId(), row.occurredAt()))
-        .toList();
+    return mapper.findPaymentEvents(i).stream().map(MyBatisPaymentRepository::event).toList();
   }
 
   @Override
@@ -170,13 +165,14 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public Long insertCaptureTransaction(long p, long m, String r, long a, long c, Instant t) {
-    return mapper.insertCaptureTransaction(p, m, r, a, c, t);
+  public StoredTransaction insertCaptureTransaction(long p, long m, String r, long a, long c) {
+    return mapper.insertCaptureTransaction(p, m, r, a, c);
   }
 
   @Override
-  public Long insertPaymentEvent(long i, long t, Instant at) {
-    return mapper.insertPaymentEvent(i, t, at);
+  public PaymentEvent insertPaymentEvent(long i, long t) {
+    PaymentEventRow row = mapper.insertPaymentEvent(i, t);
+    return row == null ? null : event(row);
   }
 
   @Override
@@ -244,8 +240,8 @@ public class MyBatisPaymentRepository implements PaymentRepository {
   }
 
   @Override
-  public Long insertRefundTransaction(long p, long m, String r, long g, long c, Instant t) {
-    return mapper.insertRefundTransaction(p, m, r, g, c, t);
+  public StoredTransaction insertRefundTransaction(long p, long m, String r, long g, long c) {
+    return mapper.insertRefundTransaction(p, m, r, g, c);
   }
 
   @Override
@@ -274,6 +270,11 @@ public class MyBatisPaymentRepository implements PaymentRepository {
         row.isActive(),
         row.createdTs(),
         parent);
+  }
+
+  private static PaymentEvent event(PaymentEventRow row) {
+    return new PaymentEvent(
+        row.transactionEventId(), row.transactionEventTypeId(), row.occurredAt());
   }
 
   private static CaptureChild capture(CaptureChildRow row) {

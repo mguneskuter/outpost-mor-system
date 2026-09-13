@@ -132,7 +132,7 @@ public final class MyBatisOrderRepository implements OrderRepository {
         order.getPspAccountId(),
         order.getPspReference().orElse(null),
         order.getPaymentLink().orElse(null),
-        order.getCreatedAt());
+        order.getCreatedAt().orElse(null));
   }
 
   private static OrderItem toStored(com.outpost.payment.order.OrderItem item, long orderId) {

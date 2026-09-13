@@ -22,10 +22,9 @@ import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.PendingFee;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import com.outpost.payment.common.Amount;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,18 +34,15 @@ public class CaptureService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
   private final PaymentLifecycle lifecycle;
-  private final Clock clock;
 
-  /** Creates a service using the ledger clock, persistence seams, and payment lifecycle. */
+  /** Creates a service using the persistence seams and payment lifecycle. */
   public CaptureService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle,
-      Clock clock) {
+      PaymentLifecycle lifecycle) {
     this.repository = repository;
     this.journalEntryRepository = journalEntryRepository;
     this.lifecycle = lifecycle;
-    this.clock = clock;
   }
 
   /** Stores a successful or failed capture, or returns the exact prior result. */
@@ -85,22 +81,20 @@ public class CaptureService {
       throw internal();
     }
 
-    Instant occurredAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
-    Long captureTransactionId =
+    StoredTransaction capture =
         repository.insertCaptureTransaction(
             payment.transactionId(),
             payment.merchantAccountId(),
             request.captureReference(),
             request.amount(),
-            currency.getCurrencyId(),
-            occurredAt);
-    if (captureTransactionId == null) {
+            currency.getCurrencyId());
+    if (capture == null) {
       throw conflict();
     }
-    Long eventId =
+    PaymentEvent event =
         repository.insertPaymentEvent(
-            captureTransactionId, transactionEventType.getTransactionEventTypeId(), occurredAt);
-    if (eventId == null) {
+            capture.transactionId(), transactionEventType.getTransactionEventTypeId());
+    if (event == null) {
       throw internal();
     }
     Account merchantAccount = repository.findAccountById(payment.merchantAccountId());
@@ -111,21 +105,21 @@ public class CaptureService {
     try {
       transactionEvent =
           new TransactionEvent(
-              eventId,
+              event.transactionEventId(),
               Transaction.of(
-                  captureTransactionId,
+                  capture.transactionId(),
                   TransactionTypes.CAPTURE.getValue(),
                   merchantAccount,
                   request.captureReference(),
                   new Amount(currency, payment.grossQuantity()),
-                  occurredAt),
+                  capture.createdAt()),
               transactionEventType,
-              occurredAt);
+              event.occurredAt());
     } catch (IllegalArgumentException exception) {
       throw internal();
     }
     journalEntryRepository.insertJournalEntry(journalEntry(payment, pendingFee, transactionEvent));
-    return new CaptureResponse(request.captureReference(), occurredAt);
+    return new CaptureResponse(request.captureReference(), capture.createdAt());
   }
 
   private CaptureResponse replayOrReject(

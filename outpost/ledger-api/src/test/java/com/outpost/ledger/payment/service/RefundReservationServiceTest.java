@@ -9,12 +9,12 @@ import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.common.iso.Currencies;
+import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentFamily;
 import com.outpost.ledger.payment.repository.PaymentRepository;
 import com.outpost.ledger.payment.repository.RefundChild;
-import java.time.Clock;
+import com.outpost.ledger.payment.repository.StoredTransaction;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -42,13 +42,12 @@ class RefundReservationServiceTest {
     when(repository.hasExactlyOneSuccessfulFullCapture(1L, 12000L, currencyId)).thenReturn(true);
     when(repository.findRefundChildren(1L)).thenReturn(List.of());
     when(repository.findAccountById(200L)).thenReturn(merchant);
-    when(repository.insertRefundTransaction(1L, 200L, "refund-1", 10000L, currencyId, createdAt))
-        .thenReturn(2L);
-    when(repository.insertPaymentEvent(2L, requestedEventTypeId, createdAt)).thenReturn(3L);
+    when(repository.insertRefundTransaction(1L, 200L, "refund-1", 10000L, currencyId))
+        .thenReturn(new StoredTransaction(2L, createdAt));
+    when(repository.insertPaymentEvent(2L, requestedEventTypeId))
+        .thenReturn(new PaymentEvent(3L, requestedEventTypeId, createdAt));
 
-    ReserveRefundResult result =
-        new RefundReservationService(repository, Clock.fixed(createdAt, ZoneOffset.UTC))
-            .reserve(command);
+    ReserveRefundResult result = new RefundReservationService(repository).reserve(command);
 
     assertThat(result).isEqualTo(new ReserveRefundResult("refund-1", createdAt));
     verify(repository).findAccountById(200L);
@@ -77,8 +76,7 @@ class RefundReservationServiceTest {
     when(repository.findPaymentFamilyForUpdate("payment-1")).thenReturn(payment);
     when(repository.findRefundByReference("refund-1")).thenReturn(existing);
 
-    ReserveRefundResult result =
-        new RefundReservationService(repository, Clock.systemUTC()).reserve(command);
+    ReserveRefundResult result = new RefundReservationService(repository).reserve(command);
 
     assertThat(result).isEqualTo(new ReserveRefundResult("refund-1", createdAt));
   }
