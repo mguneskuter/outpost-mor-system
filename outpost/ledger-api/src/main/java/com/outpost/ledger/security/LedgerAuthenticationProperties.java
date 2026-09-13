@@ -1,10 +1,10 @@
-package com.outpost.ledger.payment.api;
+package com.outpost.ledger.security;
 
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-/** HMAC credentials accepted by Ledger service routes. */
+/** HMAC secrets with which the Gateway and the Worker sign their Ledger requests. */
 @Validated
 @ConfigurationProperties("outpost.ledger")
 public record LedgerAuthenticationProperties(

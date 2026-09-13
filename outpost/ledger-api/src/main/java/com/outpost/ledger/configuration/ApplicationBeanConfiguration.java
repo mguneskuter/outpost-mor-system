@@ -20,6 +20,7 @@ import com.outpost.ledger.payment.service.PaymentEventService;
 import com.outpost.ledger.payment.service.RefundReservationService;
 import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.ledger.report.service.BalanceReportService;
+import com.outpost.ledger.security.LedgerAuthenticationProperties;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -27,12 +28,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
 /** Wires FX persistence and validates all loaded data before exposing the provider. */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(LedgerAuthenticationProperties.class)
 public class ApplicationBeanConfiguration {
 
   @Bean
