@@ -13,6 +13,8 @@ import com.outpost.common.iso.CountrySubdivisions;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.framework.logging.StructuredLogger;
+import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.integration.psp.service.CreateOrderRequest;
 import com.outpost.integration.psp.service.PspClient;
@@ -37,10 +39,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 
 /** Creates merchant orders and the payment that collects each of them. */
 public final class OrderService {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(OrderService.class));
+
   private final OrderRepository orders;
   private final AccountRepository accounts;
   private final MerchantPspRepository merchantPsps;
@@ -76,8 +82,10 @@ public final class OrderService {
    *
    * <p>The shopper, the order, and its lines are stored as one unit, which stores nothing when
    * another request has already used the idempotency key. The PSP is called afterwards, outside any
-   * transaction; when it accepts, the order's creation is queued for the Ledger. A repeated request
-   * whose order has no PSP reference calls the PSP again with the order's reference.
+   * transaction; when it accepts, the order's creation is queued for the Ledger. When the
+   * accounting queue holds its capacity, the order is still answered and its unqueued creation is
+   * logged at error. A repeated request whose order has no PSP reference calls the PSP again with
+   * the order's reference.
    *
    * @throws OrderCreationException for a request the platform cannot price or book, a different
    *     request under a used idempotency key, or a failed PSP call
@@ -91,15 +99,13 @@ public final class OrderService {
     }
     Checkout checkout = checkout(merchantAccountId, command);
     Optional<Order> created =
-        orders.insertOrder(
-            checkout.shopper(),
-            unsavedOrder(merchantAccountId, idempotencyKey, fingerprint, checkout));
+        orders.insertOrder(checkout.shopper(), unsavedOrder(idempotencyKey, fingerprint, checkout));
     if (created.isEmpty()) {
       Order winner =
           orders
               .findOrderByIdempotencyKey(merchantAccountId, idempotencyKey)
               .orElseThrow(
-                  () -> new IllegalStateException("idempotency key is used by no stored order"));
+                  () -> new IllegalStateException("Idempotency key is used by no stored order"));
       return repeat(merchantAccountId, winner, command, fingerprint);
     }
     return pay(merchantAccountId, created.orElseThrow(), checkout);
@@ -116,14 +122,13 @@ public final class OrderService {
     return pay(merchantAccountId, order, checkout(merchantAccountId, command));
   }
 
-  private Order unsavedOrder(
-      long merchantAccountId, String idempotencyKey, String fingerprint, Checkout checkout) {
+  private Order unsavedOrder(String idempotencyKey, String fingerprint, Checkout checkout) {
     ShopperDetail shopper = checkout.shopper();
     return new Order(
         null,
         "order-" + UUID.randomUUID(),
         checkout.merchantReference(),
-        merchantAccountId,
+        checkout.merchant(),
         null,
         shopper.getCountry(),
         shopper.getCountrySubdivision().orElse(null),
@@ -132,7 +137,7 @@ public final class OrderService {
         checkout.grossAmount(),
         idempotencyKey,
         fingerprint,
-        checkout.psp().getAccountId(),
+        checkout.psp(),
         null,
         null,
         null,
@@ -143,11 +148,19 @@ public final class OrderService {
     PspOrder pspOrder = createPspOrder(order, checkout.psp().getCode());
     orders.updateOrderPspReferenceAndPaymentLink(
         order.getOrderReference(), pspOrder.pspReference(), pspOrder.paymentLink());
-    accountingQueue.add(orderCreated(order, checkout, pspOrder));
+    AccountingQueueRequest orderCreated = orderCreated(order, checkout, pspOrder);
+    try {
+      accountingQueue.add(orderCreated);
+    } catch (QueueFullException full) {
+      LOGGER.error(
+          "Order creation not queued for the Ledger: the accounting queue is full",
+          full,
+          orderCreated.logFields());
+    }
     return result(
         orders
             .findOrderByIdempotencyKey(merchantAccountId, order.getIdempotencyKey())
-            .orElseThrow(() -> new IllegalStateException("stored order disappeared")));
+            .orElseThrow(() -> new IllegalStateException("Stored order disappeared")));
   }
 
   private static AccountingQueueRequest orderCreated(
@@ -350,14 +363,14 @@ public final class OrderService {
         order.getOrderReference(),
         order
             .getCreatedAt()
-            .orElseThrow(() -> new IllegalStateException("order has no stored creation time")),
+            .orElseThrow(() -> new IllegalStateException("Order has no stored creation time")),
         order.getNetAmount().quantity(),
         order.getNetAmount().currency().getCurrencyCode(),
         order.getTaxAmount().quantity(),
         order.getGrossAmount().quantity(),
         order
             .getPaymentLink()
-            .orElseThrow(() -> new IllegalStateException("order has no payment link")),
+            .orElseThrow(() -> new IllegalStateException("Order has no payment link")),
         order.getItems().stream()
             .map(
                 item ->

@@ -1,6 +1,7 @@
 package com.outpost.ledger.accountingrequest.api;
 
 import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingQueueResult;
 import com.outpost.accounting.api.AccountingRequestApi;
 import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
 import org.springframework.http.ResponseEntity;
@@ -17,8 +18,8 @@ public final class AccountingRequestController implements AccountingRequestApi {
   }
 
   @Override
-  public ResponseEntity<Void> submit(AccountingQueueRequest request) {
+  public ResponseEntity<AccountingQueueResult> submit(AccountingQueueRequest request) {
     service.accept(request);
-    return ResponseEntity.accepted().build();
+    return ResponseEntity.accepted().body(AccountingQueueResult.accepted(request));
   }
 }

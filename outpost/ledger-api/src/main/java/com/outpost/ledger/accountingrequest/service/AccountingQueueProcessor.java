@@ -3,8 +3,6 @@ package com.outpost.ledger.accountingrequest.service;
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.transactionlock.TransactionLock;
 import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
-import com.outpost.framework.logging.LogFields;
-import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.queue.QueueItemHandler;
 import com.outpost.framework.queue.QueueItemResults;
@@ -20,7 +18,7 @@ public final class AccountingQueueProcessor
     implements QueueItemHandler<LockedAccountingQueueRequest> {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(AccountingQueueProcessor.class));
-  private static final String BOOKED = "accounting request booked";
+  private static final String BOOKED = "Accounting request booked";
 
   private final PaymentCreationService paymentCreation;
   private final PaymentEventService paymentEvents;
@@ -70,12 +68,12 @@ public final class AccountingQueueProcessor
                 refunds.refund(request.originalReference(), required(request.refundReference()));
                 yield BOOKED;
               }
-              yield "refund failed at the PSP";
+              yield "Refund failed at the PSP";
             }
           };
-      LOGGER.info(outcome, fields(request));
+      LOGGER.info(outcome, request.logFields());
     } catch (RuntimeException exception) {
-      LOGGER.error("accounting request not booked", exception, fields(request));
+      LOGGER.error("Accounting request not booked", exception, request.logFields());
     } finally {
       release(item.transactionLock(), request);
     }
@@ -86,37 +84,14 @@ public final class AccountingQueueProcessor
     try {
       transactionLocks.deleteTransactionLock(lock);
     } catch (RuntimeException exception) {
-      LOGGER.error("transaction lock not released", exception, fields(request));
+      LOGGER.error("Transaction lock not released", exception, request.logFields());
     }
   }
 
   private static <T> T required(@Nullable T value) {
     if (value == null) {
-      throw new IllegalStateException("accepted request lacks a field its type requires");
+      throw new IllegalStateException("Accepted request lacks a field its type requires");
     }
     return value;
-  }
-
-  private static StructuredLogField[] fields(AccountingQueueRequest request) {
-    return new StructuredLogField[] {
-      new StructuredLogField(LogField.REQUEST_TYPE, request.type().name()),
-      new StructuredLogField(LogField.ORIGINAL_REFERENCE, request.originalReference())
-    };
-  }
-
-  private enum LogField implements LogFields {
-    REQUEST_TYPE("request_type"),
-    ORIGINAL_REFERENCE("original_reference");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
-    }
   }
 }

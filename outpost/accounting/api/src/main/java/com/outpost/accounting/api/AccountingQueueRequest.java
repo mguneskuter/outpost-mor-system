@@ -2,14 +2,16 @@ package com.outpost.accounting.api;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.outpost.accounting.api.json.AmountDeserializer;
-import com.outpost.accounting.api.json.AmountSerializer;
-import com.outpost.accounting.api.json.CountryIsoCodeDeserializer;
-import com.outpost.accounting.api.json.CountryIsoCodeSerializer;
-import com.outpost.accounting.api.json.CountrySubdivisionCodeDeserializer;
-import com.outpost.accounting.api.json.CountrySubdivisionCodeSerializer;
+import com.outpost.accounting.api.serializer.AmountDeserializer;
+import com.outpost.accounting.api.serializer.AmountSerializer;
+import com.outpost.accounting.api.serializer.CountryIsoCodeDeserializer;
+import com.outpost.accounting.api.serializer.CountryIsoCodeSerializer;
+import com.outpost.accounting.api.serializer.CountrySubdivisionCodeDeserializer;
+import com.outpost.accounting.api.serializer.CountrySubdivisionCodeSerializer;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.payment.common.Amount;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.annotation.JsonDeserialize;
@@ -45,4 +47,29 @@ public record AccountingQueueRequest(
     @JsonProperty("gross_amount")
         @JsonSerialize(using = AmountSerializer.class)
         @JsonDeserialize(using = AmountDeserializer.class)
-        @Nullable Amount grossAmount) {}
+        @Nullable Amount grossAmount) {
+
+  /** Returns the fields that identify this request on a log line: its type and reference. */
+  public StructuredLogField[] logFields() {
+    return new StructuredLogField[] {
+      new StructuredLogField(LogField.REQUEST_TYPE, type.name()),
+      new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference)
+    };
+  }
+
+  private enum LogField implements LogFields {
+    REQUEST_TYPE("request_type"),
+    ORIGINAL_REFERENCE("original_reference");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
+    }
+  }
+}

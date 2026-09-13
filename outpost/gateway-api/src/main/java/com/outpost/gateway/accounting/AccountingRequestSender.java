@@ -2,8 +2,6 @@ package com.outpost.gateway.accounting;
 
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.AccountingRequestApi;
-import com.outpost.framework.logging.LogFields;
-import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.queue.QueueItemHandler;
 import com.outpost.framework.queue.QueueItemResults;
@@ -12,15 +10,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 
 /** Delivers queued accounting requests to the Ledger. */
-public final class LedgerAccountingRequestSender
-    implements QueueItemHandler<AccountingQueueRequest> {
+public final class AccountingRequestSender implements QueueItemHandler<AccountingQueueRequest> {
   private static final StructuredLogger LOGGER =
-      new StructuredLogger(LoggerFactory.getLogger(LedgerAccountingRequestSender.class));
+      new StructuredLogger(LoggerFactory.getLogger(AccountingRequestSender.class));
 
   private final AccountingRequestApi accountingRequestApi;
 
   /** Creates a sender over the Ledger's accounting request proxy. */
-  public LedgerAccountingRequestSender(AccountingRequestApi accountingRequestApi) {
+  public AccountingRequestSender(AccountingRequestApi accountingRequestApi) {
     this.accountingRequestApi = accountingRequestApi;
   }
 
@@ -32,41 +29,18 @@ public final class LedgerAccountingRequestSender
   public QueueItemResults handle(AccountingQueueRequest request) {
     try {
       accountingRequestApi.submit(request);
-      LOGGER.info("accounting request delivered", fields(request));
+      LOGGER.info("Accounting request delivered", request.logFields());
       return QueueItemResults.DONE;
     } catch (HttpClientErrorException exception) {
       if (exception.getStatusCode().value() == HttpStatus.CONFLICT.value()) {
-        LOGGER.info("accounting request deferred", fields(request));
+        LOGGER.info("Accounting request deferred", request.logFields());
         return QueueItemResults.RETRY_LATER;
       }
-      LOGGER.error("accounting request rejected by the Ledger", exception, fields(request));
+      LOGGER.error("Accounting request rejected by the Ledger", exception, request.logFields());
       return QueueItemResults.DONE;
     } catch (RuntimeException exception) {
-      LOGGER.warn("accounting request not delivered", exception, fields(request));
+      LOGGER.warn("Accounting request not delivered", exception, request.logFields());
       return QueueItemResults.RETRY_LATER;
-    }
-  }
-
-  private static StructuredLogField[] fields(AccountingQueueRequest request) {
-    return new StructuredLogField[] {
-      new StructuredLogField(LogField.REQUEST_TYPE, request.type().name()),
-      new StructuredLogField(LogField.ORIGINAL_REFERENCE, request.originalReference())
-    };
-  }
-
-  private enum LogField implements LogFields {
-    REQUEST_TYPE("request_type"),
-    ORIGINAL_REFERENCE("original_reference");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
     }
   }
 }

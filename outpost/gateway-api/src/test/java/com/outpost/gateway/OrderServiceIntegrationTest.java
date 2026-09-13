@@ -162,7 +162,7 @@ class OrderServiceIntegrationTest {
   @Test
   void keepsTheStoredOrderWithoutPspFactsAndQueuesNothingWhenThePspAnswerIsLost() {
     TimeOrderedQueue<AccountingQueueRequest> accountingQueue =
-        new TimeOrderedQueue<>(Clock.systemUTC());
+        new TimeOrderedQueue<>(Clock.systemUTC(), 10);
     OrderService service = service(rate(), new UnreachablePsp(), accountingQueue);
 
     OrderCreationException failure =
@@ -220,7 +220,7 @@ class OrderServiceIntegrationTest {
   }
 
   private OrderService service(TaxRateProvider taxRates, PspClient psp) {
-    return service(taxRates, psp, new TimeOrderedQueue<>(Clock.systemUTC()));
+    return service(taxRates, psp, new TimeOrderedQueue<>(Clock.systemUTC(), 10));
   }
 
   private OrderService service(

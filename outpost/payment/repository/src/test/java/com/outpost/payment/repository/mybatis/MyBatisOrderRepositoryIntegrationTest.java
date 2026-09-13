@@ -2,6 +2,7 @@ package com.outpost.payment.repository.mybatis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.CountrySubdivisions;
@@ -40,7 +41,8 @@ class MyBatisOrderRepositoryIntegrationTest {
   private static @Nullable MyBatisOrderRepository orders;
   private static @Nullable JdbcTemplate jdbcTemplate;
   private static long merchantAccountId;
-  private static long pspAccountId;
+  private static @Nullable Account merchantAccount;
+  private static @Nullable Account pspAccount;
 
   @BeforeAll
   static void migrateAndSeed() throws Exception {
@@ -61,15 +63,22 @@ class MyBatisOrderRepositoryIntegrationTest {
     SqlSessionFactoryBean sessionFactory = new SqlSessionFactoryBean();
     sessionFactory.setDataSource(database);
     sessionFactory.setMapperLocations(new ClassPathResource("db/mapper/payment/OrderMapper.xml"));
-    orders =
-        new MyBatisOrderRepository(
-            new SqlSessionTemplate(Objects.requireNonNull(sessionFactory.getObject())),
-            new DataSourceTransactionManager(database));
     JdbcTemplate jdbc = new JdbcTemplate(database);
     jdbcTemplate = jdbc;
     seedReferenceData(jdbc);
     merchantAccountId = account(jdbc, AccountTypes.MERCHANT, "REPOSITORY_MERCHANT");
-    pspAccountId = account(jdbc, AccountTypes.PSP, "REPOSITORY_PSP");
+    Account merchant =
+        KnownAccounts.underRoot(merchantAccountId, AccountTypes.MERCHANT, "REPOSITORY_MERCHANT");
+    Account psp =
+        KnownAccounts.underRoot(
+            account(jdbc, AccountTypes.PSP, "REPOSITORY_PSP"), AccountTypes.PSP, "REPOSITORY_PSP");
+    merchantAccount = merchant;
+    pspAccount = psp;
+    orders =
+        new MyBatisOrderRepository(
+            new SqlSessionTemplate(Objects.requireNonNull(sessionFactory.getObject())),
+            new DataSourceTransactionManager(database),
+            new KnownAccounts(merchant, psp));
   }
 
   @AfterAll
@@ -196,7 +205,7 @@ class MyBatisOrderRepositoryIntegrationTest {
         null,
         referenceSlug + "-order",
         referenceSlug + "-merchant-order",
-        merchantAccountId,
+        Objects.requireNonNull(merchantAccount),
         null,
         Countries.UNITED_STATES.getValue(),
         CountrySubdivisions.US_CA.getValue(),
@@ -205,7 +214,7 @@ class MyBatisOrderRepositoryIntegrationTest {
         usd(321L),
         keySlug + "-key",
         referenceSlug + "-fingerprint",
-        pspAccountId,
+        Objects.requireNonNull(pspAccount),
         null,
         null,
         null,

@@ -81,15 +81,16 @@ class GatewayApiIntegrationTest {
         "INSERT INTO tax_rate (country_id, rate) VALUES (?, ?)",
         Countries.AUSTRIA.getValue().getCountryId(),
         new BigDecimal("0.2000"));
-    long merchantAccount =
+    long rootAccount =
         Objects.requireNonNull(
             seed.queryForObject(
                 "INSERT INTO account (account_type_id, code, name, is_active, created_ts) "
-                    + "VALUES ((SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), "
-                    + "'WEBHOOK_MERCHANT', 'Webhook merchant', true, now()) RETURNING account_id",
+                    + "VALUES ((SELECT account_type_id FROM account_type WHERE code = 'ROOT'), "
+                    + "'WEBHOOK_ROOT', 'Webhook root', true, now()) RETURNING account_id",
                 Long.class));
-    long pspAccount = account(seed, "PSP", PSP_CODE);
-    long foreignPspAccount = account(seed, "PSP", "FOREIGN_WEBHOOK_PSP");
+    long merchantAccount = account(seed, "MERCHANT", "WEBHOOK_MERCHANT", rootAccount);
+    long pspAccount = account(seed, "PSP", PSP_CODE, rootAccount);
+    long foreignPspAccount = account(seed, "PSP", "FOREIGN_WEBHOOK_PSP", rootAccount);
     seed.update(
         "INSERT INTO psp_configuration (account_id, account_type_id, base_url, api_key, "
             + "hmac_secret) "
@@ -121,7 +122,7 @@ class GatewayApiIntegrationTest {
   @AfterEach
   void emptyTheQueue() {
     // The senders drain only every minute here; the queue is shared between tests.
-    while (accountingQueue.pollDue().isPresent()) {
+    while (accountingQueue.poll().isPresent()) {
       continue;
     }
   }
@@ -169,7 +170,7 @@ class GatewayApiIntegrationTest {
     String valid = payload(PSP_CODE, ORDER_REFERENCE, PSP_REFERENCE);
     assertResult(postWebhook(PSP_CODE, valid, signature(valid)), 200, "ACCEPTED");
     assertThat(accountingQueue.size()).isEqualTo(1);
-    QueuedItem<AccountingQueueRequest> queued = accountingQueue.pollDue().orElseThrow();
+    QueuedItem<AccountingQueueRequest> queued = accountingQueue.poll().orElseThrow();
     assertThat(queued.payload().type()).isEqualTo(AccountingQueueRequestTypes.AUTHORISATION);
     assertThat(queued.payload().originalReference()).isEqualTo(ORDER_REFERENCE);
     assertThat(queued.payload().pspCode()).isEqualTo(PSP_CODE);
@@ -241,15 +242,18 @@ class GatewayApiIntegrationTest {
         String.class);
   }
 
-  private static long account(JdbcTemplate jdbcTemplate, String accountTypeCode, String code) {
+  private static long account(
+      JdbcTemplate jdbcTemplate, String accountTypeCode, String code, long parentAccountId) {
     return Objects.requireNonNull(
         jdbcTemplate.queryForObject(
-            "INSERT INTO account (account_type_id, code, name, is_active, created_ts) "
-                + "VALUES ((SELECT account_type_id FROM account_type WHERE code = ?), ?, ?, true, "
-                + "now()) "
+            "INSERT INTO account "
+                + "(account_type_id, parent_account_id, code, name, is_active, created_ts) "
+                + "VALUES ((SELECT account_type_id FROM account_type WHERE code = ?), ?, ?, ?, "
+                + "true, now()) "
                 + "RETURNING account_id",
             Long.class,
             accountTypeCode,
+            parentAccountId,
             code,
             code));
   }

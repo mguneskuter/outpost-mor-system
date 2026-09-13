@@ -20,7 +20,7 @@ import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
-import com.outpost.accounting.payment.PaymentLifecycle;
+import com.outpost.accounting.payment.PaymentProcessorStateMachine;
 import com.outpost.common.iso.Currencies;
 import com.outpost.ledger.payment.repository.PaymentEvent;
 import com.outpost.ledger.payment.repository.PaymentRepository;
@@ -57,7 +57,7 @@ class CaptureServiceTest {
       new PaymentTransaction(
           PAYMENT_ID, EUR, merchant.getAccountId(), 300L, 6L, 12_000L, 10_000L, 2_000L);
   private final CaptureService service =
-      new CaptureService(repository, journalEntryRepository, new PaymentLifecycle());
+      new CaptureService(repository, journalEntryRepository, new PaymentProcessorStateMachine());
 
   @Test
   void failedCaptureReleasesThePendingFeeBookedAtCreation() {

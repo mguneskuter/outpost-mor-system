@@ -9,10 +9,11 @@ import org.springframework.web.service.annotation.PostExchange;
 @HttpExchange("/v1/accounting-request")
 public interface AccountingRequestApi {
   /**
-   * Submits one accounting request. 202 when the Ledger took the payment's transaction lock and
-   * queued the request; 409 with code TRANSACTION_LOCKED when the lock is held; 400 with code
-   * INVALID_REQUEST when a field the type requires is missing.
+   * Submits one accounting request and answers an {@link AccountingQueueResult} for it: 202 when
+   * the Ledger took the payment's transaction lock and queued the request; 400 INVALID_REQUEST when
+   * a field the type requires is missing; 409 TRANSACTION_LOCKED when the lock is held; 503
+   * QUEUE_FULL when the Ledger's queue holds its capacity.
    */
   @PostExchange
-  ResponseEntity<Void> submit(@RequestBody AccountingQueueRequest request);
+  ResponseEntity<AccountingQueueResult> submit(@RequestBody AccountingQueueRequest request);
 }

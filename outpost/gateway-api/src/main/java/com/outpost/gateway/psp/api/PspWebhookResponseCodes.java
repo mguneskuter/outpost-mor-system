@@ -4,31 +4,24 @@ import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.gateway.psp.service.PspWebhookProcessResultCodes;
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * Answers PSP event notifications. Every notification that is not queued is logged without its
- * payload and counted in {@code outpost.webhook.rejected}, tagged by {@code reason}.
+ * Answers PSP event notifications. Every notification that is not queued is logged once, without
+ * its payload, under its {@code rejection_reason}.
  */
-public final class PspWebhookResponses {
+final class PspWebhookResponseCodes {
   private static final StructuredLogger LOGGER =
-      new StructuredLogger(LoggerFactory.getLogger(PspWebhookResponses.class));
-  private static final String REJECTED_METER = "outpost.webhook.rejected";
-  private final MeterRegistry meterRegistry;
+      new StructuredLogger(LoggerFactory.getLogger(PspWebhookResponseCodes.class));
 
-  /** Creates responses that count rejections in {@code meterRegistry}. */
-  public PspWebhookResponses(MeterRegistry meterRegistry) {
-    this.meterRegistry = meterRegistry;
-  }
+  private PspWebhookResponseCodes() {}
 
-  ResponseEntity<PspWebhookEventResponse> respond(PspWebhookProcessResultCodes code) {
+  static ResponseEntity<PspWebhookEventResponse> respond(PspWebhookProcessResultCodes code) {
     if (code != PspWebhookProcessResultCodes.ACCEPTED) {
       LOGGER.warn(
           "PSP webhook rejected", new StructuredLogField(LogField.REJECTION_REASON, code.name()));
-      meterRegistry.counter(REJECTED_METER, "reason", code.name()).increment();
     }
     return ResponseEntity.status(status(code)).body(new PspWebhookEventResponse(code.name()));
   }
@@ -42,6 +35,8 @@ public final class PspWebhookResponses {
       // An authenticated event that matches no stored payment is acknowledged as processed with a
       // negative result, so the PSP does not redeliver it; it is never queued.
       case UNKNOWN_PAYMENT, FOREIGN_PAYMENT, PSP_REFERENCE_MISMATCH -> HttpStatus.OK;
+      // A full queue refuses the event without acknowledging it, so the PSP redelivers it.
+      case QUEUE_FULL -> HttpStatus.SERVICE_UNAVAILABLE;
     };
   }
 

@@ -22,4 +22,7 @@ public record LedgerAccountingQueueProperties(
     @NotNull(message = "must be set")
         @DurationMin(seconds = 1, message = "must be between 1s and 1h")
         @DurationMax(hours = 1, message = "must be between 1s and 1h")
-        Duration transactionLockLease) {}
+        Duration transactionLockLease,
+    @Min(value = 1, message = "must be between 1 and 1000000")
+        @Max(value = 1_000_000, message = "must be between 1 and 1000000")
+        int capacity) {}

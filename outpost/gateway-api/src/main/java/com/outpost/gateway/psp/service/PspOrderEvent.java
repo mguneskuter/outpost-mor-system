@@ -9,7 +9,7 @@ import org.jspecify.annotations.Nullable;
  * @param pspReference the PSP's reference for the order the event concerns
  * @param refundReference Outpost's refund reference; present on a REFUND event
  */
-public record PspWebhookEvent(
+public record PspOrderEvent(
     String pspCode,
     String pspReference,
     String orderReference,

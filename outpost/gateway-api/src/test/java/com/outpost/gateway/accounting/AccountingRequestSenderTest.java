@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.AccountingQueueRequestTypes;
+import com.outpost.accounting.api.AccountingQueueResult;
 import com.outpost.accounting.api.AccountingRequestApi;
 import com.outpost.framework.queue.QueueItemResults;
 import java.util.stream.Stream;
@@ -17,7 +18,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
-class LedgerAccountingRequestSenderTest {
+class AccountingRequestSenderTest {
   private static final AccountingQueueRequest REQUEST =
       new AccountingQueueRequest(
           AccountingQueueRequestTypes.CAPTURE,
@@ -38,8 +39,7 @@ class LedgerAccountingRequestSenderTest {
   @MethodSource("ledgerOutcomes")
   void mapsEachLedgerOutcome(
       String outcome, @Nullable RuntimeException failure, QueueItemResults expected) {
-    LedgerAccountingRequestSender sender =
-        new LedgerAccountingRequestSender(new AnsweringLedger(failure));
+    AccountingRequestSender sender = new AccountingRequestSender(new AnsweringLedger(failure));
 
     assertThat(sender.handle(REQUEST)).isEqualTo(expected);
   }
@@ -74,11 +74,11 @@ class LedgerAccountingRequestSenderTest {
     }
 
     @Override
-    public ResponseEntity<Void> submit(AccountingQueueRequest request) {
+    public ResponseEntity<AccountingQueueResult> submit(AccountingQueueRequest request) {
       if (failure != null) {
         throw failure;
       }
-      return ResponseEntity.accepted().build();
+      return ResponseEntity.accepted().body(AccountingQueueResult.accepted(request));
     }
   }
 }

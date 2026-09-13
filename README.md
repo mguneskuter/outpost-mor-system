@@ -30,6 +30,7 @@ part of the local platform.
 make setup                 # once: scanners into bin/, Git hooks installed
 cp .env.example .env       # then set the secrets; .env is gitignored
 make smoke                 # build images, start the platform, migrate, seed, run one merchant flow
+make tail ledger           # follow logs: gateway, ledger, psp-simulator, postgres; none for all
 make down                  # stop the platform and remove its volume
 ```
 
@@ -87,12 +88,16 @@ Every request is signed with `X-Outpost-Signature` under the Gateway's key; an u
 request answers `401 UNAUTHENTICATED`, a signed request to a route the caller is not granted
 `403 FORBIDDEN`, and a body over 1 MiB `413 BODY_TOO_LARGE`.
 
-| Route                                            | Success | Errors                                          |
-| ------------------------------------------------ | ------- | ----------------------------------------------- |
-| `POST /v1/accounting-request`                    | `202`   | `400 INVALID_REQUEST`; `409 TRANSACTION_LOCKED` |
-| `GET /v1/report/balance/tax`                     | `200`   |                                                 |
-| `GET /v1/report/balance/merchant`                | `200`   |                                                 |
-| `GET /v1/report/balance/merchant/{merchantCode}` | `200`   |                                                 |
+| Route                                            | Success | Errors                                                            |
+| ------------------------------------------------ | ------- | ----------------------------------------------------------------- |
+| `POST /v1/accounting-request`                    | `202`   | `400 INVALID_REQUEST`; `409 TRANSACTION_LOCKED`; `503 QUEUE_FULL` |
+| `GET /v1/report/balance/tax`                     | `200`   |                                                                   |
+| `GET /v1/report/balance/merchant`                | `200`   |                                                                   |
+| `GET /v1/report/balance/merchant/{merchantCode}` | `200`   |                                                                   |
+
+`POST /v1/accounting-request` answers `202`, `400`, `409`, and `503` with the request's result:
+`success`, `result_code`, `reason`, and the request's `type`, `original_reference`,
+`merchant_reference`, `psp_reference`, `psp_code`, `merchant_code`, and `refund_reference`.
 
 ## How a payment flows
 
@@ -104,8 +109,12 @@ request answers `401 UNAUTHENTICATED`, a signed request to a route the caller is
 1. A Gateway thread pool sends each request to the Ledger, which takes a per-payment
    transaction lock, answers `202`, and books it: the payment and its pending fee, the
    authorisation, the capture that moves the net to the merchant and the tax to the tax
-   authority, and the refund that reverses them. A `409 TRANSACTION_LOCKED` answer makes the
-   Gateway re-queue the request after a delay.
+   authority, and the refund that reverses them. A `409 TRANSACTION_LOCKED` or
+   `503 QUEUE_FULL` answer makes the Gateway re-queue the request after a delay.
+1. Each in-memory accounting queue holds at most `accounting-queue.capacity` requests (10,000).
+   When the Gateway's queue is full, the PSP webhook answers `503 QUEUE_FULL` so the PSP
+   redelivers, and order creation still answers the order but logs its unqueued
+   `ORDER_CREATED` request at error.
 1. `POST /v1/order/modification` refunds the whole order at the PSP synchronously and stores
    the accepted refund; the Ledger books it when the PSP's `REFUND` event arrives.
 

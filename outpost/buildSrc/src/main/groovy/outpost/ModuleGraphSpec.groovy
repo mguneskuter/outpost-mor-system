@@ -128,7 +128,11 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
-        ':accounting:api': [':common-iso:domain', ':common-payment:domain'],
+        ':accounting:api': [
+            ':common-iso:domain',
+            ':common-payment:domain',
+            ':framework:logging'
+        ],
         ':accounting:api-client': [
             ':accounting:api',
             ':framework:security'
@@ -144,6 +148,7 @@ class ModuleGraphSpec {
         ],
         ':payment:domain': [
             ':platform-sanity:static-data-model',
+            ':account:domain',
             ':common-iso:domain',
             ':common-payment:domain',
             ':tax',

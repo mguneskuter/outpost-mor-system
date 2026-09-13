@@ -1,4 +1,4 @@
-package com.outpost.accounting.api.json;
+package com.outpost.accounting.api.serializer;
 
 import com.outpost.common.iso.Currencies;
 import com.outpost.payment.common.Amount;
@@ -13,7 +13,7 @@ import tools.jackson.databind.ValueDeserializer;
  * shape or an unknown currency fails deserialization.
  */
 public final class AmountDeserializer extends ValueDeserializer<Amount> {
-  private static final String EXPECTED_SHAPE =
+  private static final String ERROR_MESSAGE =
       "amount must be {\"quantity\": <minor units>, \"currency\": <ISO 4217 code>}";
 
   @Override
@@ -26,10 +26,10 @@ public final class AmountDeserializer extends ValueDeserializer<Amount> {
         || !quantity.canConvertToExactIntegral()
         || currencyCode == null
         || !currencyCode.isString()) {
-      return context.reportInputMismatch(this, EXPECTED_SHAPE);
+      return context.reportInputMismatch(this, ERROR_MESSAGE);
     }
     return Currencies.fromCurrencyCode(currencyCode.stringValue())
         .map(currency -> new Amount(currency, quantity.longValue()))
-        .orElseGet(() -> context.reportInputMismatch(this, EXPECTED_SHAPE));
+        .orElseGet(() -> context.reportInputMismatch(this, ERROR_MESSAGE));
   }
 }

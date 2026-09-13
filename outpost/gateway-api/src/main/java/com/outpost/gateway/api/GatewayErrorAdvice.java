@@ -56,7 +56,7 @@ public final class GatewayErrorAdvice {
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<ErrorResponse> unreadable(HttpMessageNotReadableException exception) {
-    LOGGER.warn("request body could not be read", exception);
+    LOGGER.warn("Request body could not be read", exception);
     return respond(HttpStatus.BAD_REQUEST.value(), ErrorResponse.INVALID_REQUEST);
   }
 
@@ -64,7 +64,7 @@ public final class GatewayErrorAdvice {
   ResponseEntity<ErrorResponse> unexpected(RuntimeException exception) {
     String correlationId = UUID.randomUUID().toString();
     LOGGER.error(
-        "request failed",
+        "Request failed",
         exception,
         new StructuredLogField(LogField.CORRELATION_ID, correlationId));
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

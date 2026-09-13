@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.AccountingQueueRequestTypes;
+import com.outpost.accounting.api.AccountingQueueResult;
 import com.outpost.accounting.api.AccountingRequestApi;
 import com.outpost.accounting.api.BalanceReportApi;
 import com.outpost.accounting.api.client.LedgerClientConfiguration;
@@ -31,6 +32,7 @@ import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -185,7 +187,12 @@ class LedgerApiIntegrationTest {
               null,
               null);
 
-      assertThat(accountingRequests.submit(capture).getStatusCode().is2xxSuccessful()).isTrue();
+      ResponseEntity<AccountingQueueResult> answer = accountingRequests.submit(capture);
+
+      assertThat(answer.getStatusCode().is2xxSuccessful()).isTrue();
+      assertThat(answer.getBody())
+          .extracting(AccountingQueueResult::resultCode)
+          .isEqualTo(AccountingQueueResult.ACCEPTED);
     }
   }
 

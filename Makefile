@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify smoke smoke-flow
+.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify smoke smoke-flow tail
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -30,8 +30,17 @@ build:
 test:
 	./outpost/gradlew -p outpost test
 
+# `make tail ledger gateway` names the services to follow, so while `tail` is the first goal the
+# words after it are service names, not targets (psp-simulator is otherwise the bootRun target).
+ifeq ($(firstword $(MAKECMDGOALS)),tail)
+TAIL_SERVICES := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+.PHONY: $(TAIL_SERVICES)
+$(TAIL_SERVICES):
+	@:
+else
 psp-simulator:
 	./outpost/gradlew -p psp-simulator bootRun
+endif
 
 images:
 	./outpost/gradlew -p outpost :gateway-api:bootBuildImage :ledger-api:bootBuildImage :static-data-job:bootBuildImage
@@ -58,6 +67,10 @@ up: images
 
 down:
 	docker compose --env-file .env -f local/docker-compose.yml down --volumes
+
+# Follows the logs of the named services (gateway, ledger, psp-simulator, postgres), or of all of them.
+tail:
+	docker compose --env-file .env -f local/docker-compose.yml logs --follow --tail=200 $(patsubst gateway,gateway-api,$(patsubst ledger,ledger-api,$(TAIL_SERVICES)))
 
 status:
 	docker compose --env-file .env -f local/docker-compose.yml ps
