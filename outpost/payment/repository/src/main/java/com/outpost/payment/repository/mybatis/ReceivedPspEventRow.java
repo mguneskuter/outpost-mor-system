@@ -4,7 +4,6 @@ package com.outpost.payment.repository.mybatis;
 public record ReceivedPspEventRow(
     long merchantAccountId,
     long pspAccountId,
-    long statusId,
     String reference,
     String originalReference,
     long eventCodeId,

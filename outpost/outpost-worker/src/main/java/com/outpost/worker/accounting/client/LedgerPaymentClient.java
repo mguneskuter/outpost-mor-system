@@ -1,13 +1,18 @@
 package com.outpost.worker.accounting.client;
 
+import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import org.jspecify.annotations.Nullable;
 
 /** Records Worker-observed payment outcomes in Ledger. */
 public interface LedgerPaymentClient {
   /**
-   * Records a payment or refund lifecycle event; {@code refundReference} is absent for a payment.
+   * Appends a payment or refund lifecycle event in Ledger; {@code refundReference} is absent for a
+   * payment event.
    */
-  void recordEvent(String paymentReference, @Nullable String refundReference, String event);
+  void appendPaymentEvent(
+      String paymentReference,
+      @Nullable String refundReference,
+      TransactionEventType transactionEventType);
 
   /** Records a PSP capture outcome. */
   void recordCapture(

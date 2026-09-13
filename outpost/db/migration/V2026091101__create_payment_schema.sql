@@ -32,7 +32,6 @@ CREATE TABLE merchant_order (
     CONSTRAINT fk_merchant_order_account_type
     FOREIGN KEY (account_id, account_type_id)
     REFERENCES account (account_id, account_type_id),
-    CONSTRAINT chk_merchant_order_merchant_type CHECK (account_type_id = 2),
     CONSTRAINT chk_merchant_order_amounts_non_negative CHECK (
         net_amount >= 0 AND tax_amount >= 0 AND gross_amount >= 0
     ),
@@ -40,6 +39,21 @@ CREATE TABLE merchant_order (
         gross_amount = net_amount + tax_amount
     )
 );
+
+CREATE FUNCTION validate_merchant_order_account_type() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.account_type_id IS DISTINCT FROM
+        (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT') THEN
+        RAISE EXCEPTION 'merchant order account must have MERCHANT type';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER merchant_order_account_type
+BEFORE INSERT OR UPDATE ON merchant_order
+FOR EACH ROW EXECUTE FUNCTION validate_merchant_order_account_type();
 
 CREATE SEQUENCE order_item_seq;
 CREATE TABLE order_item (

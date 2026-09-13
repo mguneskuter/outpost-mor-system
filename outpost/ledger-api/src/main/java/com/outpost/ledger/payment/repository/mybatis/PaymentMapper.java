@@ -85,7 +85,8 @@ public interface PaymentMapper {
       """
       INSERT INTO transaction (transaction_type_id, account_id, reference, quantity, currency_id,
                                created_ts)
-      VALUES (1,#{merchantId},#{reference},#{gross},#{currencyId},#{createdAt})
+      VALUES ((SELECT transaction_type_id FROM transaction_type WHERE code = 'PAYMENT'),
+              #{merchantId},#{reference},#{gross},#{currencyId},#{createdAt})
       ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
       """)
   Long insertTransaction(
@@ -101,7 +102,9 @@ public interface PaymentMapper {
       INSERT INTO payment_detail (transaction_id, transaction_type_id, shopper_country_id,
                                   shopper_country_subdivision_id, psp_account_id, net_quantity,
                                   tax_quantity)
-      VALUES (#{transactionId},1,#{countryId},#{subdivisionId},#{pspId},#{net},#{tax})
+      VALUES (#{transactionId},
+              (SELECT transaction_type_id FROM transaction_type WHERE code = 'PAYMENT'),
+              #{countryId},#{subdivisionId},#{pspId},#{net},#{tax})
       """)
   void insertPaymentDetail(
       @Param("transactionId") long transactionId,
@@ -115,7 +118,11 @@ public interface PaymentMapper {
   @Select(
       """
       INSERT INTO transaction_event (transaction_id, transaction_event_type_id, event_ts)
-      VALUES (#{transactionId},1,#{at}) RETURNING transaction_event_id
+      VALUES (#{transactionId},
+              (SELECT transaction_event_type_id FROM transaction_event_type
+                WHERE code = 'ORDER_CREATED'),
+              #{at})
+      RETURNING transaction_event_id
       """)
   long insertEvent(@Param("transactionId") long transactionId, @Param("at") Instant at);
 
@@ -129,9 +136,10 @@ public interface PaymentMapper {
         JOIN transaction root
           ON root.transaction_id = COALESCE(target.parent_transaction_id, target.transaction_id)
         JOIN payment_detail pd ON pd.transaction_id = root.transaction_id
+        JOIN transaction_type payment_type ON payment_type.code = 'PAYMENT'
        WHERE target.reference = #{reference}
-         AND target.transaction_type_id = 1
-         AND root.transaction_type_id = 1
+         AND target.transaction_type_id = payment_type.transaction_type_id
+         AND root.transaction_type_id = payment_type.transaction_type_id
        FOR UPDATE OF root
       """)
   PaymentFamilyRow findPaymentFamilyForUpdate(@Param("reference") String reference);
@@ -154,7 +162,8 @@ public interface PaymentMapper {
         FROM transaction child
         LEFT JOIN transaction_event capture_event ON capture_event.transaction_id = child.transaction_id
        WHERE child.parent_transaction_id = #{paymentTransactionId}
-         AND child.transaction_type_id = 2
+         AND child.transaction_type_id =
+             (SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE')
        ORDER BY child.transaction_id
        LIMIT 1
       """)
@@ -168,7 +177,8 @@ public interface PaymentMapper {
         FROM transaction child
         LEFT JOIN transaction_event capture_event ON capture_event.transaction_id = child.transaction_id
        WHERE child.reference = #{reference}
-         AND child.transaction_type_id = 2
+         AND child.transaction_type_id =
+             (SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE')
       """)
   CaptureChildRow findCaptureByReference(@Param("reference") String reference);
 
@@ -187,7 +197,8 @@ public interface PaymentMapper {
       """
       INSERT INTO transaction (transaction_type_id, parent_transaction_id, account_id, reference,
                                quantity, currency_id, created_ts)
-      VALUES (2,#{paymentTransactionId},#{merchantAccountId},#{reference},#{amount},#{currencyId},
+      VALUES ((SELECT transaction_type_id FROM transaction_type WHERE code = 'CAPTURE'),
+              #{paymentTransactionId},#{merchantAccountId},#{reference},#{amount},#{currencyId},
               #{createdAt})
       ON CONFLICT (reference) DO NOTHING RETURNING transaction_id
       """)

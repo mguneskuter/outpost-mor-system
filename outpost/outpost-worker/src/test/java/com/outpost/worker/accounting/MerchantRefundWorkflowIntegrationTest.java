@@ -2,6 +2,8 @@ package com.outpost.worker.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.queue.AccountingRequest;
 import com.outpost.accounting.queue.AccountingRequestLine;
 import com.outpost.accounting.queue.AccountingRequestQueue;
@@ -121,7 +123,11 @@ class MerchantRefundWorkflowIntegrationTest {
             new RefundRequest(
                 "DEMO_PSP", "psp-" + paymentReference, "refund-captured", amount(1190)));
     assertThat(ledger.events)
-        .containsExactly(new RecordedEvent(paymentReference, "refund-captured", "REFUND_ACCEPTED"));
+        .containsExactly(
+            new AppendedEvent(
+                paymentReference,
+                "refund-captured",
+                TransactionEventTypes.REFUND_ACCEPTED.getValue()));
     assertThat(result).isEqualTo(AccountingRequestResults.SUCCESS);
   }
 
@@ -148,7 +154,10 @@ class MerchantRefundWorkflowIntegrationTest {
 
     assertThat(ledger.events)
         .containsExactly(
-            new RecordedEvent(paymentReference, "refund-psp-failure", "REFUND_FAILED"));
+            new AppendedEvent(
+                paymentReference,
+                "refund-psp-failure",
+                TransactionEventTypes.REFUND_FAILED.getValue()));
     assertThat(result).isEqualTo(AccountingRequestResults.FAILED);
   }
 
@@ -433,8 +442,10 @@ class MerchantRefundWorkflowIntegrationTest {
     return location;
   }
 
-  private record RecordedEvent(
-      String paymentReference, @Nullable String refundReference, String event) {}
+  private record AppendedEvent(
+      String paymentReference,
+      @Nullable String refundReference,
+      TransactionEventType transactionEventType) {}
 
   private record Reservation(
       String paymentReference,
@@ -449,13 +460,15 @@ class MerchantRefundWorkflowIntegrationTest {
    * Stands in for Ledger, whose reservation creates a real REFUND transaction in the shared schema.
    */
   private final class FakeLedgerPaymentClient implements LedgerPaymentClient {
-    private final List<RecordedEvent> events = new ArrayList<>();
+    private final List<AppendedEvent> events = new ArrayList<>();
     private final List<Reservation> reservations = new ArrayList<>();
 
     @Override
-    public void recordEvent(
-        String paymentReference, @Nullable String refundReference, String event) {
-      events.add(new RecordedEvent(paymentReference, refundReference, event));
+    public void appendPaymentEvent(
+        String paymentReference,
+        @Nullable String refundReference,
+        TransactionEventType transactionEventType) {
+      events.add(new AppendedEvent(paymentReference, refundReference, transactionEventType));
     }
 
     @Override

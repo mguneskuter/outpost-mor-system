@@ -1,6 +1,7 @@
 package com.outpost.worker.accounting.client.ledger;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.worker.accounting.client.LedgerPaymentClient;
@@ -51,8 +52,13 @@ public final class LedgerPaymentHttpClient implements LedgerPaymentClient {
   }
 
   @Override
-  public void recordEvent(String paymentReference, @Nullable String refundReference, String event) {
-    post("/v1/payment/event", new EventRequest(paymentReference, refundReference, event));
+  public void appendPaymentEvent(
+      String paymentReference,
+      @Nullable String refundReference,
+      TransactionEventType transactionEventType) {
+    post(
+        "/v1/payment/event",
+        new EventRequest(paymentReference, refundReference, transactionEventType.getCode()));
   }
 
   @Override

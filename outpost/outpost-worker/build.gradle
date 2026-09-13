@@ -28,6 +28,7 @@ dependencies {
     implementation project(':merchant-configuration:domain')
     implementation project(':payment:domain')
     implementation project(':payment:repository')
+    implementation project(':accounting:domain')
     implementation project(':accounting:queue-api')
     implementation project(':psp-integration:domain')
     implementation project(':psp-integration:client')

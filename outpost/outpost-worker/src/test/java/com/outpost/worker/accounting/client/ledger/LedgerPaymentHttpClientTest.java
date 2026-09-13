@@ -3,6 +3,7 @@ package com.outpost.worker.accounting.client.ledger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.hmac.HmacSignature;
@@ -51,21 +52,26 @@ class LedgerPaymentHttpClientTest {
   }
 
   @Test
-  void signsAndSendsPaymentEvent() {
-    client.recordEvent("payment-1", null, "AUTHORISED");
+  void signsAndSendsPaymentEventWithItsWireCode() {
+    client.appendPaymentEvent("payment-1", null, TransactionEventTypes.AUTHORISED.getValue());
 
     assertThat(paths).containsExactly("/v1/payment/event");
     assertSignedBody(
-        "{\"payment_reference\":\"payment-1\",\"refund_reference\":null,\"event\":\"AUTHORISED\"}");
+        "{\"payment_reference\":\"payment-1\",\"refund_reference\":null,\"event\":\""
+            + TransactionEventTypes.AUTHORISED.getValue().getCode()
+            + "\"}");
   }
 
   @Test
   void signsAndSendsRefundEventWithItsReference() {
-    client.recordEvent("payment-1", "refund-1", "REFUND_ACCEPTED");
+    client.appendPaymentEvent(
+        "payment-1", "refund-1", TransactionEventTypes.REFUND_ACCEPTED.getValue());
 
     assertSignedBody(
         "{\"payment_reference\":\"payment-1\",\"refund_reference\":\"refund-1\","
-            + "\"event\":\"REFUND_ACCEPTED\"}");
+            + "\"event\":\""
+            + TransactionEventTypes.REFUND_ACCEPTED.getValue().getCode()
+            + "\"}");
   }
 
   @Test
@@ -92,7 +98,10 @@ class LedgerPaymentHttpClientTest {
   void throwsClassifiedExceptionOnFailureResponse() {
     responseStatus = 409;
 
-    assertThatThrownBy(() -> client.recordEvent("payment-1", null, "AUTHORISED"))
+    assertThatThrownBy(
+            () ->
+                client.appendPaymentEvent(
+                    "payment-1", null, TransactionEventTypes.AUTHORISED.getValue()))
         .isInstanceOf(LedgerPaymentClientException.class);
   }
 

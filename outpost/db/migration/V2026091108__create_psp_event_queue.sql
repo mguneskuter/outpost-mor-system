@@ -33,20 +33,47 @@ CREATE TABLE psp_event_queue (
         account_id, account_type_id
     )
     REFERENCES account (account_id, account_type_id),
-    CONSTRAINT chk_psp_event_merchant_type CHECK (account_type_id = 2),
     CONSTRAINT fk_psp_event_psp_account FOREIGN KEY (
         psp_account_id, psp_account_type_id
     )
     REFERENCES account (account_id, account_type_id),
-    CONSTRAINT chk_psp_event_psp_type CHECK (psp_account_type_id = 4),
     CONSTRAINT uq_psp_event UNIQUE (psp_account_id, reference, type_id),
-    CONSTRAINT chk_psp_event_done_status CHECK (
-        done = (status_id = 3)
-    ),
     CONSTRAINT chk_psp_event_done_fields CHECK (
         (done_ts IS NOT null) = done AND (result_id IS NOT null) = done
     )
 );
+
+CREATE FUNCTION validate_psp_event_account_types() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.account_type_id IS DISTINCT FROM
+        (SELECT account_type_id FROM account_type WHERE code = 'MERCHANT')
+        OR NEW.psp_account_type_id IS DISTINCT FROM
+        (SELECT account_type_id FROM account_type WHERE code = 'PSP') THEN
+        RAISE EXCEPTION 'PSP event accounts must have MERCHANT and PSP types';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER psp_event_queue_account_types
+BEFORE INSERT OR UPDATE ON psp_event_queue
+FOR EACH ROW EXECUTE FUNCTION validate_psp_event_account_types();
+
+CREATE FUNCTION validate_psp_event_done_status() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.done IS DISTINCT FROM (NEW.status_id IS NOT DISTINCT FROM
+        (SELECT psp_event_status_id FROM psp_event_status WHERE code = 'DONE')) THEN
+        RAISE EXCEPTION 'PSP event done flag must match DONE status';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER psp_event_queue_done_status
+BEFORE INSERT OR UPDATE ON psp_event_queue
+FOR EACH ROW EXECUTE FUNCTION validate_psp_event_done_status();
 
 CREATE INDEX ix_psp_event_queue_original_reference -- noqa: PG01
 ON psp_event_queue (original_reference, queue_id)

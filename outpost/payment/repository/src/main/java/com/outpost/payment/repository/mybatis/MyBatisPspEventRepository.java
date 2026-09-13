@@ -2,7 +2,6 @@ package com.outpost.payment.repository.mybatis;
 
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
-import com.outpost.payment.PspEventStatuses;
 import com.outpost.payment.repository.PspEventRepository;
 import java.time.Instant;
 import java.util.Arrays;
@@ -29,7 +28,6 @@ public final class MyBatisPspEventRepository implements PspEventRepository {
         new ReceivedPspEventRow(
             event.merchantAccountId(),
             event.pspAccountId(),
-            PspEventStatuses.RECEIVED.getValue().getPspEventStatusId(),
             event.reference(),
             event.originalReference(),
             event.eventCode().getValue().getPspEventCodeId(),

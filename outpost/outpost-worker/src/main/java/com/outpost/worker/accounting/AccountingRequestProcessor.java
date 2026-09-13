@@ -1,5 +1,7 @@
 package com.outpost.worker.accounting;
 
+import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.queue.AccountingRequest;
 import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.accounting.queue.AccountingRequestResults;
@@ -76,20 +78,28 @@ public final class AccountingRequestProcessor {
   }
 
   private AccountingRequestResults applyAuthorisationResult(AccountingRequest request) {
-    String event = Boolean.TRUE.equals(request.getSuccess()) ? "AUTHORISED" : "REFUSED";
-    return recordEvent(request.getOriginalReference(), null, event);
+    TransactionEventType transactionEventType =
+        Boolean.TRUE.equals(request.getSuccess())
+            ? TransactionEventTypes.AUTHORISED.getValue()
+            : TransactionEventTypes.REFUSED.getValue();
+    return appendPaymentEvent(request.getOriginalReference(), null, transactionEventType);
   }
 
   private AccountingRequestResults applyCancellationResult(AccountingRequest request) {
     if (!Boolean.TRUE.equals(request.getSuccess())) {
       return AccountingRequestResults.FAILED;
     }
-    return recordEvent(request.getOriginalReference(), null, "CANCELLED");
+    return appendPaymentEvent(
+        request.getOriginalReference(), null, TransactionEventTypes.CANCELLED.getValue());
   }
 
   private AccountingRequestResults applyRefundResult(AccountingRequest request) {
-    String event = Boolean.TRUE.equals(request.getSuccess()) ? "REFUNDED" : "REFUND_FAILED";
-    return recordEvent(request.getOriginalReference(), request.getReference(), event);
+    TransactionEventType transactionEventType =
+        Boolean.TRUE.equals(request.getSuccess())
+            ? TransactionEventTypes.REFUNDED.getValue()
+            : TransactionEventTypes.REFUND_FAILED.getValue();
+    return appendPaymentEvent(
+        request.getOriginalReference(), request.getReference(), transactionEventType);
   }
 
   private AccountingRequestResults applyCaptureResult(AccountingRequest request) {
@@ -102,9 +112,11 @@ public final class AccountingRequestProcessor {
     return AccountingRequestResults.SUCCESS;
   }
 
-  private AccountingRequestResults recordEvent(
-      String paymentReference, @Nullable String refundReference, String event) {
-    ledger.recordEvent(paymentReference, refundReference, event);
+  private AccountingRequestResults appendPaymentEvent(
+      String paymentReference,
+      @Nullable String refundReference,
+      TransactionEventType transactionEventType) {
+    ledger.appendPaymentEvent(paymentReference, refundReference, transactionEventType);
     return AccountingRequestResults.SUCCESS;
   }
 

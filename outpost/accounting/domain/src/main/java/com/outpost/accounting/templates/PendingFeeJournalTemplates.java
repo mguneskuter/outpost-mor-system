@@ -123,6 +123,7 @@ public enum PendingFeeJournalTemplates {
     entry.addLine(
         new JournalEntryLine(
             entry, platformPendingFeeRegister, new Amount(fee.currency(), -merchantQuantity)));
+    VALIDATOR.requireBalanced(entry);
     return entry;
   }
 }

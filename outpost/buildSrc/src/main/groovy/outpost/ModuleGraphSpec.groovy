@@ -214,6 +214,7 @@ class ModuleGraphSpec {
             ':merchant-configuration:domain',
             ':payment:domain',
             ':payment:repository',
+            ':accounting:domain',
             ':accounting:queue-api',
             ':psp-integration:domain',
             ':psp-integration:client'
