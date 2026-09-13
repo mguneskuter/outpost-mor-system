@@ -87,7 +87,10 @@ class ModuleGraphSpec {
             ':common-iso:domain'
         ],
         ':framework:persistence': [
-            ':account:domain'
+            ':account:domain',
+            ':common-iso:domain',
+            ':accounting:domain',
+            ':merchant-configuration:domain'
         ],
         ':framework:logging': [],
         ':framework:security': [],

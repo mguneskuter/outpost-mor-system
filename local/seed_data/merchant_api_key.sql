@@ -11,7 +11,8 @@ CREATE TEMP TABLE seed_merchant_api_key (
 INSERT INTO seed_merchant_api_key
 SELECT
     account.account_id,
-    encode(digest('demo-outpost-api-key', 'sha256'), 'hex') AS api_key_hash,
+    '8e76b4677297200712e7f3e1348767a1fb76e1b43072209a2726e0057f8e36c6'
+        AS api_key_hash,
     'MTIzNDU2Nzg5MDEypG6klax6DJlGPy5yHDDXUn370yQJZ3t0WBCnZ/UkxYA='
         AS hmac_secret,
     TRUE AS is_active
@@ -20,6 +21,18 @@ INNER JOIN account_type
     ON account.account_type_id = account_type.account_type_id
 WHERE account_type.code = 'MERCHANT';
 
+INSERT INTO merchant_api_key (
+    account_id, account_type_id, api_key_hash, hmac_secret, is_active
+)
+SELECT
+    seed.account_id,
+    account_type.account_type_id,
+    seed.api_key_hash,
+    seed.hmac_secret,
+    seed.is_active
+FROM seed_merchant_api_key AS seed
+INNER JOIN account_type ON account_type.code = 'MERCHANT'
+ON CONFLICT DO NOTHING;
 DO $$
 BEGIN
     IF EXISTS (
@@ -35,16 +48,4 @@ BEGIN
     END IF;
 END
 $$;
-INSERT INTO merchant_api_key (
-    account_id, account_type_id, api_key_hash, hmac_secret, is_active
-)
-SELECT
-    seed.account_id,
-    account_type.account_type_id,
-    seed.api_key_hash,
-    seed.hmac_secret,
-    seed.is_active
-FROM seed_merchant_api_key AS seed
-INNER JOIN account_type ON account_type.code = 'MERCHANT'
-ON CONFLICT DO NOTHING;
 DROP TABLE seed_merchant_api_key;
