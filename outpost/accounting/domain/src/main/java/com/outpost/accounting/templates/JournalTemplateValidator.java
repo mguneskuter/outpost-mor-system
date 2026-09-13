@@ -1,14 +1,22 @@
 package com.outpost.accounting.templates;
 
 import com.outpost.account.AccountTypes.AccountType;
+import com.outpost.accounting.JournalEntry;
+import com.outpost.accounting.JournalEntryLine;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes.RegisterType;
 import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes.TransactionType;
+import com.outpost.common.iso.Currencies.Currency;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
-/** Validates the source event and the registers that journal templates post against. */
+/**
+ * Validates the source event, the registers that journal templates post against, and the balance of
+ * the entries they build.
+ */
 final class JournalTemplateValidator {
 
   /**
@@ -66,6 +74,29 @@ final class JournalTemplateValidator {
       throw new IllegalArgumentException(
           register.getRegisterType().getCode()
               + " register must belong to the source transaction's merchant account");
+    }
+  }
+
+  /**
+   * Requires the lines of {@code entry} to sum to zero in each currency.
+   *
+   * @throws IllegalArgumentException if the lines in any currency do not sum to zero
+   */
+  void requireBalanced(JournalEntry entry) {
+    Objects.requireNonNull(entry, "entry");
+    Map<Currency, Long> sumByCurrency = new LinkedHashMap<>();
+    for (JournalEntryLine line : entry.getJournalEntryLines()) {
+      sumByCurrency.merge(line.getAmount().currency(), line.getAmount().quantity(), Math::addExact);
+    }
+    for (Map.Entry<Currency, Long> sum : sumByCurrency.entrySet()) {
+      if (sum.getValue() != 0) {
+        throw new IllegalArgumentException(
+            "journal entry lines in "
+                + sum.getKey().getCurrencyCode()
+                + " sum to "
+                + sum.getValue()
+                + " instead of zero");
+      }
     }
   }
 }

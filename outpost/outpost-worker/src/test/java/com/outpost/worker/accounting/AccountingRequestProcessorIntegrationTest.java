@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.queue.AccountingRequestLine;
 import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.accounting.queue.AccountingRequestResults;
@@ -102,7 +104,9 @@ class AccountingRequestProcessorIntegrationTest {
     processor().processNext();
 
     assertThat(ledger.events)
-        .containsExactly(new RecordedEvent("payment-auth-ok", null, "AUTHORISED"));
+        .containsExactly(
+            new AppendedEvent(
+                "payment-auth-ok", null, TransactionEventTypes.AUTHORISED.getValue()));
     assertThat(resultOf("payment-auth-ok")).isEqualTo(AccountingRequestResults.SUCCESS);
   }
 
@@ -120,7 +124,9 @@ class AccountingRequestProcessorIntegrationTest {
     processor().processNext();
 
     assertThat(ledger.events)
-        .containsExactly(new RecordedEvent("payment-auth-refused", null, "REFUSED"));
+        .containsExactly(
+            new AppendedEvent(
+                "payment-auth-refused", null, TransactionEventTypes.REFUSED.getValue()));
     assertThat(resultOf("payment-auth-refused")).isEqualTo(AccountingRequestResults.SUCCESS);
   }
 
@@ -150,7 +156,9 @@ class AccountingRequestProcessorIntegrationTest {
     processor().processNext();
 
     assertThat(ledger.events)
-        .containsExactly(new RecordedEvent("payment-cancel-ok", null, "CANCELLED"));
+        .containsExactly(
+            new AppendedEvent(
+                "payment-cancel-ok", null, TransactionEventTypes.CANCELLED.getValue()));
     assertThat(resultOf("payment-cancel-ok")).isEqualTo(AccountingRequestResults.SUCCESS);
   }
 
@@ -185,7 +193,11 @@ class AccountingRequestProcessorIntegrationTest {
     processor().processNext();
 
     assertThat(ledger.events)
-        .containsExactly(new RecordedEvent("payment-refund-result", "refund-result-1", "REFUNDED"));
+        .containsExactly(
+            new AppendedEvent(
+                "payment-refund-result",
+                "refund-result-1",
+                TransactionEventTypes.REFUNDED.getValue()));
   }
 
   @Test
@@ -447,8 +459,10 @@ class AccountingRequestProcessorIntegrationTest {
     return location;
   }
 
-  private record RecordedEvent(
-      String paymentReference, @Nullable String refundReference, String event) {}
+  private record AppendedEvent(
+      String paymentReference,
+      @Nullable String refundReference,
+      TransactionEventType transactionEventType) {}
 
   private record RecordedCapture(
       String paymentReference,
@@ -458,7 +472,7 @@ class AccountingRequestProcessorIntegrationTest {
       String currency) {}
 
   private static final class FakeLedgerPaymentClient implements LedgerPaymentClient {
-    private final List<RecordedEvent> events = new ArrayList<>();
+    private final List<AppendedEvent> events = new ArrayList<>();
     private final List<RecordedCapture> captures = new ArrayList<>();
     private boolean failNextEvent;
 
@@ -469,12 +483,14 @@ class AccountingRequestProcessorIntegrationTest {
     }
 
     @Override
-    public void recordEvent(
-        String paymentReference, @Nullable String refundReference, String event) {
+    public void appendPaymentEvent(
+        String paymentReference,
+        @Nullable String refundReference,
+        TransactionEventType transactionEventType) {
       if (failNextEvent) {
         throw new LedgerPaymentClientException("stubbed failure");
       }
-      events.add(new RecordedEvent(paymentReference, refundReference, event));
+      events.add(new AppendedEvent(paymentReference, refundReference, transactionEventType));
     }
 
     @Override
@@ -514,8 +530,10 @@ class AccountingRequestProcessorIntegrationTest {
     }
 
     @Override
-    public void recordEvent(
-        String paymentReference, @Nullable String refundReference, String event) {
+    public void appendPaymentEvent(
+        String paymentReference,
+        @Nullable String refundReference,
+        TransactionEventType transactionEventType) {
       paymentsInFlight.add(paymentReference);
       inFlight.countDown();
       await();

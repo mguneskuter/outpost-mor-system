@@ -1,5 +1,7 @@
 package com.outpost.worker.accounting;
 
+import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.queue.AccountingRequest;
 import com.outpost.accounting.queue.AccountingRequestLine;
 import com.outpost.accounting.queue.AccountingRequestResults;
@@ -123,11 +125,17 @@ public final class MerchantRefundWorkflow {
                 new Amount(currencyUnit.currency(), totalNet + totalTax)));
     return switch (pspResult.resultCode()) {
       case ACCEPTED ->
-          recordRefundOutcome(
-              paymentReference, request, "REFUND_ACCEPTED", AccountingRequestResults.SUCCESS);
+          appendRefundEvent(
+              paymentReference,
+              request,
+              TransactionEventTypes.REFUND_ACCEPTED.getValue(),
+              AccountingRequestResults.SUCCESS);
       case REJECTED ->
-          recordRefundOutcome(
-              paymentReference, request, "REFUND_FAILED", AccountingRequestResults.FAILED);
+          appendRefundEvent(
+              paymentReference,
+              request,
+              TransactionEventTypes.REFUND_FAILED.getValue(),
+              AccountingRequestResults.FAILED);
       // An unknown PSP outcome must not release the Ledger reservation: the PSP may have
       // actually processed the refund, so reporting REFUND_FAILED here would let the amount
       // be refunded again while reconciliation is still pending.
@@ -135,17 +143,17 @@ public final class MerchantRefundWorkflow {
     };
   }
 
-  private AccountingRequestResults recordRefundOutcome(
+  private AccountingRequestResults appendRefundEvent(
       String paymentReference,
       AccountingRequest request,
-      String event,
-      AccountingRequestResults onRecorded) {
+      TransactionEventType transactionEventType,
+      AccountingRequestResults onAppended) {
     try {
-      ledger.recordEvent(paymentReference, request.getReference(), event);
+      ledger.appendPaymentEvent(paymentReference, request.getReference(), transactionEventType);
     } catch (LedgerPaymentClientException exception) {
       return AccountingRequestResults.FAILED;
     }
-    return onRecorded;
+    return onAppended;
   }
 
   private List<LineRefund> plan(Order order, AccountingRequest request) {

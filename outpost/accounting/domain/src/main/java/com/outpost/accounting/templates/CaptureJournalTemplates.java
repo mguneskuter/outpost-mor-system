@@ -75,6 +75,7 @@ public enum CaptureJournalTemplates {
     addLine(entry, feeRevenueRegister, fee.negated());
     addLine(entry, merchantPendingFeeRegister, fee.negated());
     addLine(entry, platformPendingFeeRegister, fee);
+    VALIDATOR.requireBalanced(entry);
     return entry;
   }
 

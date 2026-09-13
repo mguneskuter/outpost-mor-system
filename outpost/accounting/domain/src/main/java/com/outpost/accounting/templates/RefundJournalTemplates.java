@@ -54,6 +54,7 @@ public enum RefundJournalTemplates {
     addLine(entry, pspReceivableRegister, gross.negated());
     addLine(entry, taxPayableRegister, tax);
     addLine(entry, merchantPayableRegister, net);
+    VALIDATOR.requireBalanced(entry);
     return entry;
   }
 

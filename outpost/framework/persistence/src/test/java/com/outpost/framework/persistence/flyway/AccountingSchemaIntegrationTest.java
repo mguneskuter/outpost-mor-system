@@ -356,6 +356,107 @@ class AccountingSchemaIntegrationTest {
   }
 
   @Test
+  void accountTypeRestrictionsResolveByCodeRegardlessOfSeededIdentifiers() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(
+          connection,
+          "INSERT INTO account_type VALUES (20, 'MERCHANT'), (40, 'PSP'), (50, 'TAX_AUTHORITY')");
+      execute(
+          connection, "INSERT INTO country VALUES (1, 'NL', 'Netherlands'), (2, 'DE', 'Germany')");
+      execute(connection, "INSERT INTO psp_event_code VALUES (1, 'AUTHORISATION')");
+      execute(connection, "INSERT INTO psp_event_status VALUES (1, 'RECEIVED')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (100, 20, 'merchant', 'Merchant', true, now()), "
+              + "(101, 40, 'psp', 'PSP', true, now()), "
+              + "(102, 50, 'tax-authority', 'Tax Authority', true, now())");
+      execute(
+          connection,
+          "INSERT INTO psp_configuration "
+              + "(account_id, account_type_id, base_url, api_key, hmac_secret) "
+              + "VALUES (101, 40, 'http://psp', 'key', 'hmac')");
+      execute(
+          connection,
+          "INSERT INTO merchant_api_key "
+              + "(account_id, account_type_id, api_key_hash, hmac_secret, is_active) "
+              + "VALUES (100, 20, 'hash', 'hmac', true)");
+      execute(
+          connection,
+          "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
+              + "VALUES (1, 102, 50)");
+      execute(
+          connection,
+          "INSERT INTO psp_event_queue "
+              + "(created_ts, status_id, type_id, reference, original_reference, account_id, "
+              + "account_type_id, psp_account_id, psp_account_type_id, payload) VALUES "
+              + "(now(), 1, 1, 'event-1', 'payment-1', 100, 20, 101, 40, '{}'::jsonb)");
+      connection.commit();
+
+      assertRejected(
+          connection,
+          "INSERT INTO psp_configuration "
+              + "(account_id, account_type_id, base_url, api_key, hmac_secret) "
+              + "VALUES (100, 20, 'http://psp', 'key', 'hmac')");
+      assertRejected(
+          connection,
+          "INSERT INTO merchant_api_key "
+              + "(account_id, account_type_id, api_key_hash, hmac_secret, is_active) "
+              + "VALUES (101, 40, 'hash', 'hmac', true)");
+      assertRejected(
+          connection,
+          "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
+              + "VALUES (2, 100, 20)");
+      assertRejected(
+          connection,
+          "INSERT INTO psp_event_queue "
+              + "(created_ts, status_id, type_id, reference, original_reference, account_id, "
+              + "account_type_id, psp_account_id, psp_account_type_id, payload) VALUES "
+              + "(now(), 1, 1, 'event-2', 'payment-2', 101, 40, 100, 20, '{}'::jsonb)");
+    }
+  }
+
+  @Test
+  void pspEventCompletionResolvesDoneStatusByCodeRegardlessOfSeededIdentifiers()
+      throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(connection, "INSERT INTO account_type VALUES (2, 'MERCHANT'), (4, 'PSP')");
+      execute(connection, "INSERT INTO psp_event_code VALUES (1, 'AUTHORISATION')");
+      execute(
+          connection,
+          "INSERT INTO psp_event_status VALUES (3, 'RECEIVED'), (1, 'IN_PROGRESS'), (2, 'DONE')");
+      execute(connection, "INSERT INTO psp_event_result VALUES (1, 'SUCCESS')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (100, 2, 'merchant', 'Merchant', true, now()), "
+              + "(101, 4, 'psp', 'PSP', true, now())");
+      execute(
+          connection,
+          "INSERT INTO psp_event_queue "
+              + "(created_ts, status_id, type_id, reference, original_reference, account_id, "
+              + "account_type_id, psp_account_id, psp_account_type_id, payload) VALUES "
+              + "(now(), 3, 1, 'event-1', 'payment-1', 100, 2, 101, 4, '{}'::jsonb)");
+      execute(
+          connection,
+          "UPDATE psp_event_queue SET status_id = 2, done = true, done_ts = now(), result_id = 1 "
+              + "WHERE reference = 'event-1'");
+      connection.commit();
+
+      assertRejected(
+          connection,
+          "INSERT INTO psp_event_queue "
+              + "(created_ts, done, done_ts, result_id, status_id, type_id, reference, "
+              + "original_reference, account_id, account_type_id, psp_account_id, "
+              + "psp_account_type_id, payload) VALUES "
+              + "(now(), true, now(), 1, 3, 1, 'event-2', 'payment-2', 100, 2, 101, 4, "
+              + "'{}'::jsonb)");
+    }
+  }
+
+  @Test
   void enforcesPspEventQueueKeysReferencesUniquenessAndCompletionRules() throws SQLException {
     try (Connection connection = database.createConnection("")) {
       execute(connection, "INSERT INTO psp_event_code VALUES (1, 'AUTHORISATION')");
@@ -423,6 +524,11 @@ class AccountingSchemaIntegrationTest {
               + "WHERE reference = 'event-1'");
       assertThat(queryLong(connection, "SELECT COUNT(*) FROM psp_event_queue")).isEqualTo(1);
     }
+  }
+
+  private static void assertRejected(Connection connection, String sql) throws SQLException {
+    assertThatThrownBy(() -> execute(connection, sql)).isInstanceOf(SQLException.class);
+    connection.rollback();
   }
 
   private void seedAccountTypes(Connection connection) throws SQLException {

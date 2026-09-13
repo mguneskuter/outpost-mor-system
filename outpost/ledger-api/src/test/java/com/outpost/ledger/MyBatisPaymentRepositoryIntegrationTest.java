@@ -11,6 +11,7 @@ import com.outpost.ledger.payment.repository.mybatis.MyBatisPaymentRepository;
 import com.outpost.ledger.payment.repository.mybatis.PaymentMapper;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 @SpringBootTest(classes = MyBatisPaymentRepositoryIntegrationTest.TestApplication.class)
@@ -30,11 +32,16 @@ class MyBatisPaymentRepositoryIntegrationTest {
 
   private static final long PAYMENT_TRANSACTION_ID = 200L;
   private static final long MERCHANT_ACCOUNT_ID = 100L;
+  private static final long PSP_ACCOUNT_ID = 101L;
+  private static final long COUNTRY_ID = 1L;
+  private static final long COUNTRY_SUBDIVISION_ID = 1L;
+  private static final Instant CREATED = Instant.parse("2026-09-13T00:00:00Z");
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_payment_repository", "outpost_payment_repository", "outpost_payment_repository");
 
   @Autowired private PaymentRepository repository;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   @BeforeAll
   static void migrateAndSeed() {
@@ -52,7 +59,7 @@ class MyBatisPaymentRepositoryIntegrationTest {
                 .password(DATABASE.getPassword())
                 .build());
     LedgerStaticDataFixtures.materialize(seed);
-    reassignRefundTransactionTypeIdentifier(seed);
+    reassignTransactionAndEventTypeIdentifiers(seed);
     seedPayment(seed);
   }
 
@@ -82,10 +89,52 @@ class MyBatisPaymentRepositoryIntegrationTest {
     assertThat(children.get(0).quantity()).isEqualTo(200L);
   }
 
-  private static void reassignRefundTransactionTypeIdentifier(JdbcTemplate seed) {
+  @Test
+  @Transactional
+  void paymentCaptureAndOrderCreatedStatementsResolveTypesByCodeRegardlessOfSeededIdentifiers() {
+    long eurCurrencyId = Currencies.EUR.getValue().getCurrencyId();
+    Long paymentTransactionId =
+        repository.insertTransaction(
+            MERCHANT_ACCOUNT_ID, "payment-by-code", 1000L, eurCurrencyId, CREATED);
+    repository.insertPaymentDetail(
+        paymentTransactionId, COUNTRY_ID, COUNTRY_SUBDIVISION_ID, PSP_ACCOUNT_ID, 900L, 100L);
+    long orderCreatedEventId = repository.insertEvent(paymentTransactionId, CREATED);
+    Long captureTransactionId =
+        repository.insertCaptureTransaction(
+            paymentTransactionId,
+            MERCHANT_ACCOUNT_ID,
+            "capture-by-code",
+            1000L,
+            eurCurrencyId,
+            CREATED);
+
+    assertThat(eventTypeCodeOf(orderCreatedEventId)).isEqualTo("ORDER_CREATED");
+    assertThat(repository.findPaymentFamilyForUpdate("payment-by-code").transactionId())
+        .isEqualTo(paymentTransactionId);
+    assertThat(repository.findCaptureChild(paymentTransactionId).transactionId())
+        .isEqualTo(captureTransactionId);
+    assertThat(repository.findCaptureByReference("capture-by-code").transactionId())
+        .isEqualTo(captureTransactionId);
+  }
+
+  private String eventTypeCodeOf(long transactionEventId) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT event_type.code FROM transaction_event event "
+                + "JOIN transaction_event_type event_type "
+                + "ON event_type.transaction_event_type_id = event.transaction_event_type_id "
+                + "WHERE event.transaction_event_id = ?",
+            String.class,
+            transactionEventId));
+  }
+
+  private static void reassignTransactionAndEventTypeIdentifiers(JdbcTemplate seed) {
     seed.update("DELETE FROM transaction_type");
     seed.update(
-        "INSERT INTO transaction_type VALUES (1, 'PAYMENT'), (2, 'CAPTURE'), (99, 'REFUND')");
+        "INSERT INTO transaction_type VALUES (97, 'PAYMENT'), (98, 'CAPTURE'), (99, 'REFUND')");
+    seed.update(
+        "UPDATE transaction_event_type "
+            + "SET transaction_event_type_id = transaction_event_type_id + 100");
   }
 
   private static void seedPayment(JdbcTemplate seed) {
@@ -94,6 +143,19 @@ class MyBatisPaymentRepositoryIntegrationTest {
             + "SELECT ?, account_type_id, 'merchant', 'Merchant', true, now() "
             + "FROM account_type WHERE code = 'MERCHANT'",
         MERCHANT_ACCOUNT_ID);
+    seed.update(
+        "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+            + "SELECT ?, account_type_id, 'psp', 'PSP', true, now() "
+            + "FROM account_type WHERE code = 'PSP'",
+        PSP_ACCOUNT_ID);
+    seed.update(
+        "INSERT INTO country (country_id, iso_code, name) VALUES (?, 'NL', 'Netherlands')",
+        COUNTRY_ID);
+    seed.update(
+        "INSERT INTO country_subdivision (country_subdivision_id, country_id, code, name) "
+            + "VALUES (?, ?, 'NL-NH', 'Noord-Holland')",
+        COUNTRY_SUBDIVISION_ID,
+        COUNTRY_ID);
     seed.update(
         "INSERT INTO transaction (transaction_id, transaction_type_id, account_id, reference, "
             + "quantity, currency_id, created_ts) "

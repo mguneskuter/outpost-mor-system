@@ -231,6 +231,49 @@ class PaymentSchemaIntegrationTest {
     }
   }
 
+  @Test
+  void orderMerchantAccountTypeResolvesByCodeRegardlessOfSeededIdentifiers() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      connection.setAutoCommit(false);
+      execute(connection, "INSERT INTO country VALUES (1, 'NL', 'Netherlands')");
+      execute(connection, "INSERT INTO currency VALUES (1, 'EUR', 2)");
+      execute(connection, "INSERT INTO account_type VALUES (20, 'MERCHANT'), (40, 'PSP')");
+      execute(
+          connection,
+          "INSERT INTO account (account_id, account_type_id, code, name, is_active, created_ts) "
+              + "VALUES (100, 20, 'merchant', 'Merchant', true, now()), "
+              + "(101, 40, 'psp', 'PSP', true, now())");
+      execute(
+          connection,
+          "INSERT INTO shopper_detail (shopper_id, email, full_name, country_id) "
+              + "VALUES (1, 'shopper@example.com', 'Shopper', 1)");
+      execute(
+          connection,
+          "INSERT INTO merchant_order (order_id, order_reference, merchant_reference, "
+              + "account_id, account_type_id, shopper_id, currency_id, net_amount, tax_amount, "
+              + "gross_amount, idempotency_key, payment_reference, psp_account_id, "
+              + "shopper_country_id, request_fingerprint, created_ts) "
+              + "VALUES (1, 'order-ref', 'merchant-ref', 100, 20, 1, 1, 1000, 210, 1210, "
+              + "'idem-key', 'payment-ref', 101, 1, 'fingerprint', now())");
+      connection.commit();
+
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO merchant_order (order_id, order_reference, "
+                          + "merchant_reference, account_id, account_type_id, shopper_id, "
+                          + "currency_id, net_amount, tax_amount, gross_amount, "
+                          + "idempotency_key, payment_reference, psp_account_id, "
+                          + "shopper_country_id, request_fingerprint, created_ts) "
+                          + "VALUES (2, 'order-ref-2', 'merchant-ref-2', 101, 40, 1, 1, 1000, "
+                          + "210, 1210, 'idem-key-2', 'payment-ref-2', 101, 1, "
+                          + "'fingerprint', now())"))
+          .isInstanceOf(SQLException.class);
+      connection.rollback();
+    }
+  }
+
   private void seedReferenceData(Connection connection) throws SQLException {
     execute(connection, "INSERT INTO country VALUES (1, 'NL', 'Netherlands')");
     execute(connection, "INSERT INTO currency VALUES (1, 'EUR', 2)");

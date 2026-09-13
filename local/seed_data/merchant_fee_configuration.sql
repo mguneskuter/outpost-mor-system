@@ -18,9 +18,12 @@ SELECT
     500 AS fee_rate_bps,
     NULL AS fee_fixed
 FROM account
+INNER JOIN
+    account_type
+    ON account.account_type_id = account_type.account_type_id
 INNER JOIN currency ON currency.currency_code IN ('EUR', 'USD')
 INNER JOIN fee_mode ON fee_mode.code = 'PERCENTAGE'
-WHERE account.account_type_id = 2;
+WHERE account_type.code = 'MERCHANT';
 
 DO $$
 BEGIN
