@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.outpost.account.AccountTypes;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import org.flywaydb.core.Flyway;
@@ -355,6 +356,39 @@ class AccountingSchemaIntegrationTest {
                           + "SELECT account_id, account_type_id, 'http://simulator', 'key', 'hmac' "
                           + "FROM account WHERE code = 'merchant'"))
           .isInstanceOf(SQLException.class);
+    }
+  }
+
+  @Test
+  void rejectsApiKeyHashAlreadyUsedByDifferentMerchant() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      seedAccountTypes(connection);
+      execute(
+          connection,
+          "INSERT INTO account (account_type_id, code, name, is_active, created_ts) "
+              + "SELECT account_type_id, merchant.code, merchant.code, true, now() "
+              + "FROM account_type, "
+              + "(VALUES ('merchant'), ('different-merchant')) AS merchant (code) "
+              + "WHERE account_type.code = 'MERCHANT'");
+      insertMerchantApiKey(connection, "merchant");
+
+      assertThatThrownBy(() -> insertMerchantApiKey(connection, "different-merchant"))
+          .isInstanceOf(SQLException.class)
+          .extracting(exception -> ((SQLException) exception).getSQLState())
+          .isEqualTo(PSQLState.UNIQUE_VIOLATION.getState());
+    }
+  }
+
+  private static void insertMerchantApiKey(Connection connection, String merchantCode)
+      throws SQLException {
+    try (PreparedStatement statement =
+        connection.prepareStatement(
+            "INSERT INTO merchant_api_key "
+                + "(account_id, account_type_id, api_key_hash, hmac_secret, is_active) "
+                + "SELECT account_id, account_type_id, 'hash', 'hmac', true "
+                + "FROM account WHERE code = ?")) {
+      statement.setString(1, merchantCode);
+      statement.executeUpdate();
     }
   }
 

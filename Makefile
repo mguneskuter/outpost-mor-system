@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify
+.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify smoke smoke-flow
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -91,6 +91,15 @@ journal-controls:
 		./local/run-journal-controls.sh
 
 lifecycle: migrate ensure-static-data seed
+
+smoke: up
+	$(MAKE) smoke-flow
+
+# Credentials reach the driver through its environment, never its command line or make's echo.
+export OUTPOST_MERCHANT_API_KEY OUTPOST_MERCHANT_HMAC_SECRET OUTPOST_OPERATOR_API_KEY OUTPOST_PSP_SIMULATOR_API_KEY
+smoke-flow:
+	@python3 local/merchant_flow.py $(if $(SMOKE_RUN),--run "$(SMOKE_RUN)")
+
 generate-fx-seed:
 	java local/fx/GenerateFxSeed.java
 

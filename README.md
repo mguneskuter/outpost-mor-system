@@ -39,6 +39,8 @@ It downloads verified, pinned TruffleHog and Gitleaks binaries into `bin/`, then
 | `make seed`               | Run deterministic non-enum seed SQL explicitly.          |
 | `make lifecycle`          | Run migration, enum materialisation, then seed SQL.      |
 | `make journal-controls`   | Run the read-only journal integrity controls.            |
+| `make smoke`              | Start the platform and lifecycle, then run the flow.     |
+| `make smoke-flow`         | Run only the flow; needs `make up`, skips the lifecycle. |
 
 ## Framework foundation
 
