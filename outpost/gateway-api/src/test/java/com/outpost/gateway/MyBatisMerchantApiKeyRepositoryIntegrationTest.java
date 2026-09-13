@@ -88,7 +88,7 @@ class MyBatisMerchantApiKeyRepositoryIntegrationTest {
     seed.update(
         "INSERT INTO account (account_type_id, code, name, is_active, created_ts) "
             + "VALUES ((SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), "
-            + "'API_KEY_MERCHANT', 'API key merchant', true, now())");
+            + "'DEMO_MERCHANT', 'Demo Merchant', true, now())");
     try (Connection connection = DATABASE.createConnection("")) {
       execute(connection, Files.readString(seedFile(), StandardCharsets.UTF_8));
     } catch (IOException exception) {

@@ -105,7 +105,7 @@ services:
   psp-simulator:
     image: psp-simulator:latest
     environment:
-      OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
+      OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost?currentSchema=psp_simulator
       OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
       OUTPOST_DB_PASSWORD: ${OUTPOST_DB_PASSWORD:?OUTPOST_DB_PASSWORD must be set in .env}
       OUTPOST_PSP_SIMULATOR_API_KEY: ${OUTPOST_PSP_SIMULATOR_API_KEY:?OUTPOST_PSP_SIMULATOR_API_KEY must be set in .env}
