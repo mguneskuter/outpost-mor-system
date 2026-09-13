@@ -1,13 +1,13 @@
 package com.outpost.gateway.psp.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.outpost.gateway.psp.service.PspWebhookEvent;
+import com.outpost.gateway.psp.service.PspOrderEvent;
 import com.outpost.gateway.psp.service.PspWebhookEventCodes;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** A PSP event notification as the PSP sends it. */
-public record PspWebhookEventRequest(
+public record PspWebhookEvent(
     @JsonProperty("psp_code") String pspCode,
     @JsonProperty("psp_reference") String pspReference,
     @JsonProperty("psp_refund_reference") @Nullable String pspRefundReference,
@@ -21,7 +21,7 @@ public record PspWebhookEventRequest(
     @JsonProperty("refund_reference") @Nullable String refundReference) {
 
   /** Rejects a notification missing a field its event code requires. */
-  public PspWebhookEventRequest {
+  public PspWebhookEvent {
     Objects.requireNonNull(pspCode, "pspCode");
     Objects.requireNonNull(pspReference, "pspReference");
     Objects.requireNonNull(paymentReference, "paymentReference");
@@ -30,8 +30,8 @@ public record PspWebhookEventRequest(
     Objects.requireNonNull(currency, "currency");
   }
 
-  PspWebhookEvent toEvent() {
-    return new PspWebhookEvent(
+  PspOrderEvent toOrderEvent() {
+    return new PspOrderEvent(
         pspCode, pspReference, paymentReference, eventCode, success, refundReference);
   }
 }

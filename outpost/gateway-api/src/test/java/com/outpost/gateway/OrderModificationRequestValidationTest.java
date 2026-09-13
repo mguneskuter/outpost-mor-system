@@ -36,7 +36,6 @@ class OrderModificationRequestValidationTest {
               new OrderModificationController(
                   new OrderModificationService(
                       fakes.repository,
-                      fakes.accounts,
                       fakes.psp,
                       refund -> {
                         throw new UnsupportedOperationException();

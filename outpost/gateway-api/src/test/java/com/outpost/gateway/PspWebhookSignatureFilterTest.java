@@ -12,11 +12,9 @@ import ch.qos.logback.core.read.ListAppender;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.web.SizeBoundedRequestBody;
-import com.outpost.gateway.psp.api.PspWebhookResponses;
 import com.outpost.gateway.psp.api.PspWebhookSignatureFilter;
 import com.outpost.integration.psp.simulator.repository.PspConfiguration;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,12 +25,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import tools.jackson.databind.ObjectMapper;
 
 class PspWebhookSignatureFilterTest {
-  private static final String REJECTION_LOGGER = "com.outpost.gateway.psp.api.PspWebhookResponses";
+  private static final String REJECTION_LOGGER =
+      "com.outpost.gateway.psp.api.PspWebhookResponseCodes";
   private static final String PAYLOAD = "shopper@example.test";
-
-  private static PspWebhookResponses responses() {
-    return new PspWebhookResponses(new SimpleMeterRegistry());
-  }
 
   @Test
   void rejectsUnknownPspWithOneWarningThatOmitsPayloadAndSignature() throws Exception {
@@ -68,7 +63,7 @@ class PspWebhookSignatureFilterTest {
     AtomicBoolean dispatched = new AtomicBoolean();
 
     MockHttpServletResponse response = new MockHttpServletResponse();
-    new PspWebhookSignatureFilter(configurations, new ObjectMapper(), responses())
+    new PspWebhookSignatureFilter(configurations, new ObjectMapper())
         .doFilter(
             webhook("PSP", "bm90LWEtc2lnbmF0dXJl"), response, (req, res) -> dispatched.set(true));
 
@@ -92,7 +87,7 @@ class PspWebhookSignatureFilterTest {
     AtomicBoolean dispatched = new AtomicBoolean();
 
     MockHttpServletResponse response = new MockHttpServletResponse();
-    new PspWebhookSignatureFilter(configurations, new ObjectMapper(), responses())
+    new PspWebhookSignatureFilter(configurations, new ObjectMapper())
         .doFilter(request, response, (req, res) -> dispatched.set(true));
 
     assertThat(response.getStatus()).isEqualTo(200);
@@ -109,7 +104,7 @@ class PspWebhookSignatureFilterTest {
     AtomicBoolean dispatched = new AtomicBoolean();
 
     MockHttpServletResponse response = new MockHttpServletResponse();
-    new PspWebhookSignatureFilter(configurations, new ObjectMapper(), responses())
+    new PspWebhookSignatureFilter(configurations, new ObjectMapper())
         .doFilter(request, response, (req, res) -> dispatched.set(true));
 
     assertThat(response.getStatus()).isEqualTo(413);
@@ -120,7 +115,7 @@ class PspWebhookSignatureFilterTest {
   private static MockHttpServletResponse filter(
       PspConfigurationRepository configurations, MockHttpServletRequest request) throws Exception {
     MockHttpServletResponse response = new MockHttpServletResponse();
-    new PspWebhookSignatureFilter(configurations, new ObjectMapper(), responses())
+    new PspWebhookSignatureFilter(configurations, new ObjectMapper())
         .doFilter(request, response, (req, res) -> {});
     return response;
   }

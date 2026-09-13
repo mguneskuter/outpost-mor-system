@@ -1,4 +1,4 @@
-package com.outpost.accounting.api.json;
+package com.outpost.accounting.api.serializer;
 
 import com.outpost.payment.common.Amount;
 import tools.jackson.core.JsonGenerator;

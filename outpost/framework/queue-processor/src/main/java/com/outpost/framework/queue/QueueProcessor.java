@@ -80,7 +80,7 @@ public final class QueueProcessor<T> {
 
   private void drain() {
     while (true) {
-      Optional<QueuedItem<T>> due = queue.pollDue();
+      Optional<QueuedItem<T>> due = queue.poll();
       if (due.isEmpty()) {
         return;
       }
@@ -90,19 +90,19 @@ public final class QueueProcessor<T> {
         result = handler.handle(item.payload());
       } catch (RuntimeException exception) {
         LOGGER.error(
-            "queue item handling failed", exception, queueField(), attemptsField(item.attempts()));
+            "Queue item handling failed", exception, queueField(), attemptsField(item.attempts()));
         result = QueueItemResults.RETRY_LATER;
       }
       if (result == QueueItemResults.RETRY_LATER) {
         int attempts = item.attempts() + 1;
         if (attempts >= settings.maxAttempts()) {
           LOGGER.error(
-              "queue item dropped",
+              "Queue item dropped",
               new QueueItemDroppedException(),
               queueField(),
               attemptsField(attempts));
         } else {
-          queue.addAgain(item, settings.retryDelay());
+          queue.add(item, settings.retryDelay());
         }
       }
     }

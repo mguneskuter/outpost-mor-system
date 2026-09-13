@@ -1,11 +1,12 @@
 package com.outpost.ledger.api;
 
+import com.outpost.accounting.api.AccountingQueueResult;
+import com.outpost.accounting.api.AccountingRequestErrorTypes;
 import com.outpost.accounting.api.LedgerErrorResponse;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
-import com.outpost.ledger.accountingrequest.service.InvalidAccountingRequestException;
-import com.outpost.ledger.accountingrequest.service.TransactionLockedException;
+import com.outpost.ledger.accountingrequest.service.AccountingRequestRefusedException;
 import java.util.UUID;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -15,44 +16,49 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * Answers every controller failure with {@link LedgerErrorResponse}. A controlled failure carries
- * its status and code; an unexpected one is logged exactly once, at error, under the correlation
- * identifier the response carries.
+ * Answers every controller failure with {@link LedgerErrorResponse}, except an accounting request
+ * the Ledger refuses, which is answered with its {@link AccountingQueueResult}. A controlled
+ * failure carries its status and code; an unexpected one is logged exactly once, at error, under
+ * the correlation identifier the response carries.
  */
 @RestControllerAdvice
 public final class LedgerErrorAdvice {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(LedgerErrorAdvice.class));
 
-  @ExceptionHandler(InvalidAccountingRequestException.class)
-  ResponseEntity<LedgerErrorResponse> invalid(InvalidAccountingRequestException exception) {
-    return respond(HttpStatus.BAD_REQUEST, LedgerErrorResponse.INVALID_REQUEST);
+  @ExceptionHandler(AccountingRequestRefusedException.class)
+  ResponseEntity<AccountingQueueResult> refused(AccountingRequestRefusedException exception) {
+    AccountingRequestErrorTypes error = exception.getError();
+    HttpStatus status =
+        switch (error) {
+          case INVALID_REQUEST -> HttpStatus.BAD_REQUEST;
+          case TRANSACTION_LOCKED -> HttpStatus.CONFLICT;
+          case QUEUE_FULL -> HttpStatus.SERVICE_UNAVAILABLE;
+        };
+    AccountingQueueResult result =
+        exception
+            .getRequest()
+            .map(request -> AccountingQueueResult.refused(request, error))
+            .orElseGet(() -> AccountingQueueResult.refused(error));
+    return ResponseEntity.status(status).body(result);
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<LedgerErrorResponse> unreadable(HttpMessageNotReadableException exception) {
-    LOGGER.warn("request body could not be read", exception);
-    return respond(HttpStatus.BAD_REQUEST, LedgerErrorResponse.INVALID_REQUEST);
-  }
-
-  @ExceptionHandler(TransactionLockedException.class)
-  ResponseEntity<LedgerErrorResponse> locked(TransactionLockedException exception) {
-    return respond(HttpStatus.CONFLICT, LedgerErrorResponse.TRANSACTION_LOCKED);
+    LOGGER.warn("Request body could not be read", exception);
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+        .body(LedgerErrorResponse.of(LedgerErrorResponse.INVALID_REQUEST));
   }
 
   @ExceptionHandler(RuntimeException.class)
   ResponseEntity<LedgerErrorResponse> unexpected(RuntimeException exception) {
     String correlationId = UUID.randomUUID().toString();
     LOGGER.error(
-        "request failed",
+        "Request failed",
         exception,
         new StructuredLogField(LogField.CORRELATION_ID, correlationId));
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(new LedgerErrorResponse(LedgerErrorResponse.INTERNAL_ERROR, correlationId));
-  }
-
-  private static ResponseEntity<LedgerErrorResponse> respond(HttpStatus status, String code) {
-    return ResponseEntity.status(status).body(LedgerErrorResponse.of(code));
   }
 
   private enum LogField implements LogFields {

@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class QueueProcessorTest {
   private static final Duration ONE_MILLISECOND = Duration.ofMillis(1);
 
-  private final TimeOrderedQueue<String> queue = new TimeOrderedQueue<>(Clock.systemUTC());
+  private final TimeOrderedQueue<String> queue = new TimeOrderedQueue<>(Clock.systemUTC(), 10);
   private final List<String> handled = new CopyOnWriteArrayList<>();
   private @Nullable QueueProcessor<String> processor;
 

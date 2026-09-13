@@ -15,6 +15,7 @@ dependencies {
     api 'tools.jackson.core:jackson-databind'
     api project(':common-iso:domain')
     api project(':common-payment:domain')
+    api project(':framework:logging')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

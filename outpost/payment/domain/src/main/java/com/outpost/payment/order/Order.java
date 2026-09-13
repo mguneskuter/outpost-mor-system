@@ -1,5 +1,6 @@
 package com.outpost.payment.order;
 
+import com.outpost.account.Account;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.payment.common.Amount;
@@ -20,7 +21,7 @@ public final class Order {
   @Nullable private final Long orderId;
   private final String orderReference;
   private final String merchantReference;
-  private final long accountId;
+  private final Account merchantAccount;
   @Nullable private final Long shopperId;
   private final Country shopperCountry;
   @Nullable private final CountrySubdivision shopperCountrySubdivision;
@@ -29,7 +30,7 @@ public final class Order {
   private final Amount grossAmount;
   private final String idempotencyKey;
   private final String requestFingerprint;
-  private final long pspAccountId;
+  private final Account pspAccount;
   @Nullable private final String pspReference;
   @Nullable private final String paymentLink;
   @Nullable private final Instant createdAt;
@@ -50,7 +51,7 @@ public final class Order {
       @Nullable Long orderId,
       String orderReference,
       String merchantReference,
-      long accountId,
+      Account merchantAccount,
       @Nullable Long shopperId,
       Country shopperCountry,
       @Nullable CountrySubdivision shopperCountrySubdivision,
@@ -59,29 +60,27 @@ public final class Order {
       Amount grossAmount,
       String idempotencyKey,
       String requestFingerprint,
-      long pspAccountId,
+      Account pspAccount,
       @Nullable String pspReference,
       @Nullable String paymentLink,
       @Nullable Instant createdAt,
       List<OrderItem> items) {
     if (orderId != null && orderId <= 0) {
-      throw new IllegalArgumentException("orderId must be positive: " + orderId);
+      throw new IllegalArgumentException("Order id must be positive: " + orderId);
     }
     this.orderId = orderId;
     this.orderReference = requireText(orderReference, "orderReference");
     this.merchantReference = requireText(merchantReference, "merchantReference");
-    if (accountId <= 0) {
-      throw new IllegalArgumentException("accountId must be positive: " + accountId);
-    }
-    this.accountId = accountId;
+    this.merchantAccount = Objects.requireNonNull(merchantAccount, "merchantAccount");
     if (shopperId != null && shopperId <= 0) {
-      throw new IllegalArgumentException("shopperId must be positive: " + shopperId);
+      throw new IllegalArgumentException("Shopper id must be positive: " + shopperId);
     }
     this.shopperId = shopperId;
     this.shopperCountry = Objects.requireNonNull(shopperCountry, "shopperCountry");
     if (shopperCountrySubdivision != null
         && !shopperCountrySubdivision.getCountry().equals(shopperCountry)) {
-      throw new IllegalArgumentException("shopperCountrySubdivision must belong to shopperCountry");
+      throw new IllegalArgumentException(
+          "Shopper country subdivision must belong to the shopper country");
     }
     this.shopperCountrySubdivision = shopperCountrySubdivision;
     this.netAmount = Objects.requireNonNull(netAmount, "netAmount");
@@ -92,30 +91,26 @@ public final class Order {
     requireNonNegative(grossAmount, "grossAmount");
     if (!netAmount.currency().equals(taxAmount.currency())
         || !netAmount.currency().equals(grossAmount.currency())) {
-      throw new IllegalArgumentException(
-          "netAmount, taxAmount, and grossAmount must share one currency");
+      throw new IllegalArgumentException("Net, tax, and gross amounts must share one currency");
     }
     if (grossAmount.quantity() != netAmount.quantity() + taxAmount.quantity()) {
-      throw new IllegalArgumentException("grossAmount must equal netAmount plus taxAmount");
+      throw new IllegalArgumentException("Gross amount must equal net amount plus tax amount");
     }
     this.idempotencyKey = requireText(idempotencyKey, "idempotencyKey");
     this.requestFingerprint = requireText(requestFingerprint, "requestFingerprint");
-    if (pspAccountId <= 0) {
-      throw new IllegalArgumentException("pspAccountId must be positive: " + pspAccountId);
-    }
-    this.pspAccountId = pspAccountId;
+    this.pspAccount = Objects.requireNonNull(pspAccount, "pspAccount");
     if (pspReference != null && pspReference.isBlank()) {
-      throw new IllegalArgumentException("pspReference must not be blank when supplied");
+      throw new IllegalArgumentException("PSP reference must not be blank when supplied");
     }
     this.pspReference = pspReference;
     if (paymentLink != null && paymentLink.isBlank()) {
-      throw new IllegalArgumentException("paymentLink must not be blank when supplied");
+      throw new IllegalArgumentException("Payment link must not be blank when supplied");
     }
     this.paymentLink = paymentLink;
     this.createdAt = createdAt;
     Objects.requireNonNull(items, "items");
     if (items.isEmpty()) {
-      throw new IllegalArgumentException("an order must carry at least one line");
+      throw new IllegalArgumentException("An order must carry at least one line");
     }
     requireDistinctReferences(items);
     requireLinesSumToOrderTotals(netAmount, taxAmount, items);
@@ -132,7 +127,7 @@ public final class Order {
     }
     if (netSum != netAmount.quantity() || taxSum != taxAmount.quantity()) {
       throw new IllegalArgumentException(
-          "order net and tax amounts must equal the sum of their lines");
+          "Order net and tax amounts must equal the sum of their lines");
     }
   }
 
@@ -154,15 +149,15 @@ public final class Order {
     Set<String> merchantLineReferences = new HashSet<>();
     for (OrderItem item : items) {
       if (!item.getNetAmount().currency().equals(netAmount.currency())) {
-        throw new IllegalArgumentException("every line must use the order's currency");
+        throw new IllegalArgumentException("Every line must use the order's currency");
       }
       if (!orderLineReferences.add(item.getOrderLineReference())) {
         throw new IllegalArgumentException(
-            "duplicate orderLineReference within the order: " + item.getOrderLineReference());
+            "Duplicate orderLineReference within the order: " + item.getOrderLineReference());
       }
       if (!merchantLineReferences.add(item.getMerchantLineReference())) {
         throw new IllegalArgumentException(
-            "duplicate merchantLineReference within the order: " + item.getMerchantLineReference());
+            "Duplicate merchantLineReference within the order: " + item.getMerchantLineReference());
       }
     }
   }
@@ -186,8 +181,8 @@ public final class Order {
   }
 
   /** Returns the merchant account this order was placed against. */
-  public long getAccountId() {
-    return accountId;
+  public Account getMerchantAccount() {
+    return merchantAccount;
   }
 
   /** Returns the shopper this order was created for; empty until the order is stored. */
@@ -237,8 +232,8 @@ public final class Order {
   }
 
   /** Returns the PSP account this order's payment is routed to. */
-  public long getPspAccountId() {
-    return pspAccountId;
+  public Account getPspAccount() {
+    return pspAccount;
   }
 
   /** Returns the PSP's own reference, once the PSP has created its order. */
@@ -270,9 +265,9 @@ public final class Order {
       return false;
     }
     return Objects.equals(orderId, that.orderId)
-        && accountId == that.accountId
+        && Objects.equals(merchantAccount, that.merchantAccount)
         && Objects.equals(shopperId, that.shopperId)
-        && pspAccountId == that.pspAccountId
+        && Objects.equals(pspAccount, that.pspAccount)
         && Objects.equals(orderReference, that.orderReference)
         && Objects.equals(merchantReference, that.merchantReference)
         && Objects.equals(shopperCountry, that.shopperCountry)
@@ -294,7 +289,7 @@ public final class Order {
         orderId,
         orderReference,
         merchantReference,
-        accountId,
+        merchantAccount,
         shopperId,
         shopperCountry,
         shopperCountrySubdivision,
@@ -303,7 +298,7 @@ public final class Order {
         grossAmount,
         idempotencyKey,
         requestFingerprint,
-        pspAccountId,
+        pspAccount,
         pspReference,
         paymentLink,
         createdAt,

@@ -1,7 +1,5 @@
 package com.outpost.gateway.order.service;
 
-import com.outpost.account.Account;
-import com.outpost.account.repository.AccountRepository;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.service.RefundRequest;
 import com.outpost.integration.psp.service.RefundResult;
@@ -16,15 +14,12 @@ import org.springframework.http.HttpStatus;
 public final class OrderModificationService {
   private static final String REFUND_TYPE = "REFUND";
   private final OrderRepository orders;
-  private final AccountRepository accounts;
   private final PspClient psp;
   private final RefundRepository refunds;
 
-  /** Creates a service over the order and refund stores, the accounts, and the PSP. */
-  public OrderModificationService(
-      OrderRepository orders, AccountRepository accounts, PspClient psp, RefundRepository refunds) {
+  /** Creates a service over the order and refund stores and the PSP. */
+  public OrderModificationService(OrderRepository orders, PspClient psp, RefundRepository refunds) {
     this.orders = orders;
-    this.accounts = accounts;
     this.psp = psp;
     this.refunds = refunds;
   }
@@ -42,22 +37,19 @@ public final class OrderModificationService {
     Order order =
         orders
             .findOrderByOrderReference(command.orderReference())
-            .filter(found -> found.getAccountId() == merchantAccountId)
+            .filter(found -> found.getMerchantAccount().getAccountId() == merchantAccountId)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND.value(), "ORDER_NOT_FOUND"));
     String pspReference =
         order
             .getPspReference()
             .orElseThrow(() -> failure(HttpStatus.CONFLICT.value(), "ORDER_NOT_PAID"));
-    String pspCode =
-        accounts
-            .findAccountById(order.getPspAccountId())
-            .map(Account::getCode)
-            .orElseThrow(() -> new IllegalStateException("order PSP account is not stored"));
     String refundReference = "refund-" + UUID.randomUUID();
 
     RefundResult pspResult;
     try {
-      pspResult = psp.refund(new RefundRequest(pspCode, pspReference, refundReference));
+      pspResult =
+          psp.refund(
+              new RefundRequest(order.getPspAccount().getCode(), pspReference, refundReference));
     } catch (RuntimeException exception) {
       throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     }

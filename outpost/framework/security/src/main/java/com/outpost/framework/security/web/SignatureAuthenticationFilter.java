@@ -2,22 +2,13 @@ package com.outpost.framework.security.web;
 
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
-import com.outpost.framework.security.hmac.HmacSignature;
 import jakarta.servlet.FilterChain;
-import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -38,7 +29,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * SizeBoundedRequestBody} is answered {@code 413 BODY_TOO_LARGE} and goes no further.
  */
 public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
-  static final String SIGNATURE_HEADER = "X-Outpost-Signature";
+  /** The header that carries the Base64 HMAC-SHA-256 signature of the exact request body. */
+  public static final String SIGNATURE_HEADER = "X-Outpost-Signature";
 
   /** The error code of a signed body larger than {@link SizeBoundedRequestBody#MAX_SIZE_BYTES}. */
   public static final String BODY_TOO_LARGE = "BODY_TOO_LARGE";
@@ -63,7 +55,7 @@ public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
     for (int i = 0; i < keys.size(); i++) {
       for (int j = i + 1; j < keys.size(); j++) {
         if (keys.get(i).equals(keys.get(j))) {
-          throw new IllegalArgumentException("callers must not share an HMAC key");
+          throw new IllegalArgumentException("Callers must not share an HMAC key");
         }
       }
     }
@@ -96,60 +88,11 @@ public final class SignatureAuthenticationFilter extends OncePerRequestFilter {
   }
 
   private @Nullable String caller(byte[] body, String encodedSignature) {
-    HmacSignature signature;
-    try {
-      signature = HmacSignature.fromBase64(encodedSignature);
-    } catch (IllegalArgumentException malformed) {
-      return null;
-    }
     for (Map.Entry<String, HmacKey> entry : keysByCaller.entrySet()) {
-      if (HmacSha256.verify(entry.getValue(), body, signature)) {
+      if (HmacSha256.verifyBase64(entry.getValue(), body, encodedSignature)) {
         return entry.getKey();
       }
     }
     return null;
-  }
-
-  private static final class CachedBodyRequest extends HttpServletRequestWrapper {
-    private final byte[] body;
-
-    CachedBodyRequest(HttpServletRequest request, byte[] body) {
-      super(request);
-      this.body = Objects.requireNonNull(body);
-    }
-
-    @Override
-    public ServletInputStream getInputStream() {
-      ByteArrayInputStream in = new ByteArrayInputStream(body);
-      return new ServletInputStream() {
-        @Override
-        public int read() {
-          return in.read();
-        }
-
-        @Override
-        public int read(byte[] b, int off, int len) {
-          return in.read(b, off, len);
-        }
-
-        @Override
-        public boolean isFinished() {
-          return in.available() == 0;
-        }
-
-        @Override
-        public boolean isReady() {
-          return true;
-        }
-
-        @Override
-        public void setReadListener(ReadListener l) {}
-      };
-    }
-
-    @Override
-    public BufferedReader getReader() {
-      return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
-    }
   }
 }

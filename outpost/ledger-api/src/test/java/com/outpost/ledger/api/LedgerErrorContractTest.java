@@ -10,6 +10,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.LedgerErrorResponse;
 import com.outpost.accounting.transactionlock.TransactionLock;
 import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
@@ -23,9 +24,12 @@ import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.ledger.report.service.BalanceReportService;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -38,8 +42,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Every Ledger controller failure answers the one Ledger error body. The services are real; the
- * boundary they call fails as each case chooses.
+ * Every Ledger controller failure answers its documented body: a refused accounting request its
+ * result, every other failure the Ledger error body. The services are real; the boundary they call
+ * fails as each case chooses.
  */
 class LedgerErrorContractTest {
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -53,26 +58,23 @@ class LedgerErrorContractTest {
 
   private final FailingTransactionLocks transactionLocks = new FailingTransactionLocks();
   private final FailingBalances balances = new FailingBalances();
+  private final TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue =
+      new TimeOrderedQueue<>(Clock.systemUTC(), 1);
   private final MockMvc mockMvc =
       MockMvcBuilders.standaloneSetup(
               new AccountingRequestController(
                   new AccountingRequestService(
-                      transactionLocks,
-                      new TimeOrderedQueue<LockedAccountingQueueRequest>(Clock.systemUTC()),
-                      Duration.ofMinutes(5))),
+                      transactionLocks, accountingQueue, Duration.ofMinutes(5))),
               new BalanceReportController(new BalanceReportService(balances)))
           .setControllerAdvice(new LedgerErrorAdvice())
           .build();
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("controlledFailures")
-  void answersControlledFailureWithItsStatusAndCode(
-      String scenario, MockHttpServletRequestBuilder request, int status, String code)
+  void answersControlledFailureWithItsStatusAndBody(
+      String scenario, MockHttpServletRequestBuilder request, int status, String body)
       throws Exception {
-    mockMvc
-        .perform(request)
-        .andExpect(status().is(status))
-        .andExpect(content().json("{\"code\":\"%s\"}".formatted(code)));
+    mockMvc.perform(request).andExpect(status().is(status)).andExpect(content().json(body));
   }
 
   static Stream<Arguments> controlledFailures() {
@@ -81,14 +83,45 @@ class LedgerErrorContractTest {
             "an incomplete accounting request",
             accountingRequest(CAPTURE_REQUEST.replace("\"success\":true", "\"success\":null")),
             400,
-            "INVALID_REQUEST"),
+            """
+            {"success":false,"result_code":"INVALID_REQUEST","type":"CAPTURE",
+            "original_reference":"order-1"}
+            """),
         Arguments.of(
-            "an unreadable accounting request", accountingRequest("{"), 400, "INVALID_REQUEST"),
+            "an unreadable accounting request",
+            accountingRequest("{"),
+            400,
+            "{\"code\":\"INVALID_REQUEST\"}"),
         Arguments.of(
             "a locked payment",
             accountingRequest(CAPTURE_REQUEST.replace("order-1", FailingTransactionLocks.LOCKED)),
             409,
-            "TRANSACTION_LOCKED"));
+            """
+            {"success":false,"result_code":"TRANSACTION_LOCKED","type":"CAPTURE",
+            "original_reference":"locked-order"}
+            """));
+  }
+
+  @Test
+  void answersFullQueueWithServiceUnavailableAndReleasesTheLockItTook() throws Exception {
+    AccountingQueueRequest waiting = JSON.readValue(CAPTURE_REQUEST, AccountingQueueRequest.class);
+    accountingQueue.add(
+        new LockedAccountingQueueRequest(waiting, FailingTransactionLocks.lock("order-1")));
+
+    mockMvc
+        .perform(
+            accountingRequest(CAPTURE_REQUEST.replace("order-1", FailingTransactionLocks.FREE)))
+        .andExpect(status().isServiceUnavailable())
+        .andExpect(
+            content()
+                .json(
+                    """
+                    {"success":false,"result_code":"QUEUE_FULL","original_reference":"free-order"}
+                    """));
+
+    assertThat(transactionLocks.released)
+        .extracting(TransactionLock::originalReference)
+        .containsExactly(FailingTransactionLocks.FREE);
   }
 
   @ParameterizedTest(name = "{0}")
@@ -132,9 +165,19 @@ class LedgerErrorContractTest {
     return post("/v1/accounting-request").contentType(MediaType.APPLICATION_JSON).content(body);
   }
 
-  /** Reports one reference as locked and fails unexpectedly for every other. */
+  /**
+   * Reports one reference as locked, takes the lock of one free reference, and fails unexpectedly
+   * for every other.
+   */
   private static final class FailingTransactionLocks implements TransactionLockRepository {
     private static final String LOCKED = "locked-order";
+    private static final String FREE = "free-order";
+    private final List<TransactionLock> released = new ArrayList<>();
+
+    static TransactionLock lock(String originalReference) {
+      Instant lockedAt = Instant.parse("2026-09-13T10:00:00Z");
+      return new TransactionLock(originalReference, lockedAt, lockedAt.plus(Duration.ofMinutes(5)));
+    }
 
     @Override
     public Optional<TransactionLock> insertTransactionLock(
@@ -142,12 +185,15 @@ class LedgerErrorContractTest {
       if (LOCKED.equals(originalReference)) {
         return Optional.empty();
       }
-      throw new IllegalStateException("lock store unreachable");
+      if (FREE.equals(originalReference)) {
+        return Optional.of(lock(originalReference));
+      }
+      throw new IllegalStateException("Lock store unreachable");
     }
 
     @Override
     public void deleteTransactionLock(TransactionLock lock) {
-      throw new UnsupportedOperationException();
+      released.add(lock);
     }
   }
 

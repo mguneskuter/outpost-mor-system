@@ -17,10 +17,9 @@ import com.outpost.framework.queue.QueueProcessor;
 import com.outpost.framework.queue.QueueProcessorSettings;
 import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.framework.security.hmac.HmacKey;
-import com.outpost.gateway.accounting.LedgerAccountingRequestSender;
+import com.outpost.gateway.accounting.AccountingRequestSender;
 import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.gateway.order.service.OrderService;
-import com.outpost.gateway.psp.api.PspWebhookResponses;
 import com.outpost.gateway.psp.api.PspWebhookSignatureFilter;
 import com.outpost.gateway.psp.service.PspWebhookService;
 import com.outpost.gateway.report.client.LedgerReportClient;
@@ -51,7 +50,6 @@ import com.outpost.payment.repository.mybatis.RefundMapper;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.util.List;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -125,18 +123,10 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  PspWebhookResponses pspWebhookResponses(MeterRegistry meterRegistry) {
-    return new PspWebhookResponses(meterRegistry);
-  }
-
-  @Bean
   FilterRegistrationBean<PspWebhookSignatureFilter> pspWebhookSignatureFilter(
-      PspConfigurationRepository configurations,
-      ObjectMapper objectMapper,
-      PspWebhookResponses responses) {
+      PspConfigurationRepository configurations, ObjectMapper objectMapper) {
     var registration =
-        new FilterRegistrationBean<>(
-            new PspWebhookSignatureFilter(configurations, objectMapper, responses));
+        new FilterRegistrationBean<>(new PspWebhookSignatureFilter(configurations, objectMapper));
     registration.setOrder(2);
     return registration;
   }
@@ -155,8 +145,10 @@ public class ApplicationBeanConfiguration {
 
   @Bean
   OrderRepository orderRepository(
-      SqlSessionTemplate sqlSessionTemplate, PlatformTransactionManager transactionManager) {
-    return new MyBatisOrderRepository(sqlSessionTemplate, transactionManager);
+      SqlSessionTemplate sqlSessionTemplate,
+      PlatformTransactionManager transactionManager,
+      AccountRepository accounts) {
+    return new MyBatisOrderRepository(sqlSessionTemplate, transactionManager, accounts);
   }
 
   @Bean
@@ -197,19 +189,20 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  TimeOrderedQueue<AccountingQueueRequest> accountingQueue() {
-    return new TimeOrderedQueue<>(Clock.systemUTC());
+  TimeOrderedQueue<AccountingQueueRequest> accountingQueue(
+      GatewayAccountingQueueProperties properties) {
+    return new TimeOrderedQueue<>(Clock.systemUTC(), properties.capacity());
   }
 
   @Bean
-  LedgerAccountingRequestSender ledgerAccountingRequestSender(AccountingRequestApi api) {
-    return new LedgerAccountingRequestSender(api);
+  AccountingRequestSender accountingRequestSender(AccountingRequestApi api) {
+    return new AccountingRequestSender(api);
   }
 
   @Bean(initMethod = "start", destroyMethod = "stop")
   QueueProcessor<AccountingQueueRequest> accountingQueueSenders(
       TimeOrderedQueue<AccountingQueueRequest> accountingQueue,
-      LedgerAccountingRequestSender sender,
+      AccountingRequestSender sender,
       GatewayAccountingQueueProperties properties) {
     return new QueueProcessor<>(
         "gateway-accounting-queue",
@@ -229,8 +222,8 @@ public class ApplicationBeanConfiguration {
 
   @Bean
   OrderModificationService orderModificationService(
-      OrderRepository orders, AccountRepository accounts, PspClient psp, RefundRepository refunds) {
-    return new OrderModificationService(orders, accounts, psp, refunds);
+      OrderRepository orders, PspClient psp, RefundRepository refunds) {
+    return new OrderModificationService(orders, psp, refunds);
   }
 
   @Bean

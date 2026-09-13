@@ -51,6 +51,9 @@ class JavaConventionsPlugin implements Plugin<Project> {
         }
         project.dependencies.add('compileOnly', JSPECIFY_ANNOTATIONS)
         project.dependencies.add('testCompileOnly', JSPECIFY_ANNOTATIONS)
+        project.plugins.withId('java-test-fixtures') {
+            project.dependencies.add('testFixturesCompileOnly', JSPECIFY_ANNOTATIONS)
+        }
         project.dependencies.add('errorprone', NULLAWAY)
         project.dependencies.add('errorprone', 'com.google.errorprone:error_prone_core:2.50.0')
 

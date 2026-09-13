@@ -1,5 +1,7 @@
 package com.outpost.payment.repository.mybatis;
 
+import com.outpost.account.Account;
+import com.outpost.account.repository.AccountRepository;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions;
@@ -22,29 +24,34 @@ import org.springframework.transaction.support.TransactionTemplate;
 public final class MyBatisOrderRepository implements OrderRepository {
   private final OrderMapper mapper;
   private final TransactionTemplate orderWrite;
+  private final AccountRepository accounts;
 
   /**
    * Creates a repository over a Spring-managed {@code sqlSession}, so its statements join the
-   * transactions {@code transactionManager} opens.
+   * transactions {@code transactionManager} opens. A found order's merchant and PSP accounts are
+   * read through {@code accounts}.
    */
   public MyBatisOrderRepository(
-      SqlSession sqlSession, PlatformTransactionManager transactionManager) {
+      SqlSession sqlSession,
+      PlatformTransactionManager transactionManager,
+      AccountRepository accounts) {
     this.mapper = sqlSession.getMapper(OrderMapper.class);
     this.orderWrite = new TransactionTemplate(transactionManager);
+    this.accounts = accounts;
   }
 
   @Override
   public Optional<com.outpost.payment.order.Order> findOrderByIdempotencyKey(
       long accountId, String idempotencyKey) {
     return Optional.ofNullable(mapper.findOrderByIdempotencyKey(accountId, idempotencyKey))
-        .map(this::withItems);
+        .map(this::toFoundOrder);
   }
 
   @Override
   public Optional<com.outpost.payment.order.Order> findOrderByOrderReference(
       String orderReference) {
     return Optional.ofNullable(mapper.findOrderByOrderReference(orderReference))
-        .map(this::withItems);
+        .map(this::toFoundOrder);
   }
 
   @Override
@@ -66,7 +73,9 @@ public final class MyBatisOrderRepository implements OrderRepository {
               for (com.outpost.payment.order.OrderItem item : order.getItems()) {
                 storedItems.add(mapper.insertOrderItem(toStored(item, orderId)));
               }
-              return Optional.of(toOrder(storedOrder, storedItems));
+              return Optional.of(
+                  toOrder(
+                      storedOrder, storedItems, order.getMerchantAccount(), order.getPspAccount()));
             }));
   }
 
@@ -82,13 +91,23 @@ public final class MyBatisOrderRepository implements OrderRepository {
       stored = mapper.findShopperDetailByEmail(shopper.getEmail());
     }
     if (stored == null) {
-      throw new IllegalStateException("shopper was neither inserted nor found");
+      throw new IllegalStateException("Shopper was neither inserted nor found");
     }
     return Objects.requireNonNull(stored.shopperId(), "shopperId");
   }
 
-  private com.outpost.payment.order.Order withItems(Order row) {
-    return toOrder(row, mapper.findOrderItems(Objects.requireNonNull(row.orderId(), "orderId")));
+  private com.outpost.payment.order.Order toFoundOrder(Order row) {
+    return toOrder(
+        row,
+        mapper.findOrderItems(Objects.requireNonNull(row.orderId(), "orderId")),
+        storedAccount(row.accountId()),
+        storedAccount(row.pspAccountId()));
+  }
+
+  private Account storedAccount(long accountId) {
+    return accounts
+        .findAccountById(accountId)
+        .orElseThrow(() -> new IllegalStateException("Stored order account is missing"));
   }
 
   private static ShopperDetail toStored(com.outpost.payment.ShopperDetail shopper) {
@@ -106,7 +125,7 @@ public final class MyBatisOrderRepository implements OrderRepository {
         null,
         order.getOrderReference(),
         order.getMerchantReference(),
-        order.getAccountId(),
+        order.getMerchantAccount().getAccountId(),
         shopperId,
         order.getShopperCountry().getIsoCode(),
         order.getShopperCountrySubdivision().map(CountrySubdivision::getCode).orElse(null),
@@ -116,7 +135,7 @@ public final class MyBatisOrderRepository implements OrderRepository {
         order.getGrossAmount().quantity(),
         order.getIdempotencyKey(),
         order.getRequestFingerprint(),
-        order.getPspAccountId(),
+        order.getPspAccount().getAccountId(),
         order.getPspReference().orElse(null),
         order.getPaymentLink().orElse(null),
         order.getCreatedAt().orElse(null));
@@ -134,19 +153,20 @@ public final class MyBatisOrderRepository implements OrderRepository {
         item.getTaxRate());
   }
 
-  private static com.outpost.payment.order.Order toOrder(Order row, List<OrderItem> items) {
+  private static com.outpost.payment.order.Order toOrder(
+      Order row, List<OrderItem> items, Account merchantAccount, Account pspAccount) {
     Currency currency =
         Currencies.fromCurrencyCode(row.currency())
-            .orElseThrow(() -> new IllegalStateException("stored currency is not supported"));
+            .orElseThrow(() -> new IllegalStateException("Stored currency is not supported"));
     Country shopperCountry =
         Countries.fromIsoCode(row.shopperCountry())
             .orElseThrow(
-                () -> new IllegalStateException("stored shopper country is not supported"));
+                () -> new IllegalStateException("Stored shopper country is not supported"));
     return new com.outpost.payment.order.Order(
         row.orderId(),
         row.orderReference(),
         row.merchantReference(),
-        row.accountId(),
+        merchantAccount,
         row.shopperId(),
         shopperCountry,
         subdivision(shopperCountry, row.shopperCountrySubdivision()),
@@ -155,7 +175,7 @@ public final class MyBatisOrderRepository implements OrderRepository {
         new Amount(currency, row.grossAmount()),
         row.idempotencyKey(),
         row.requestFingerprint(),
-        row.pspAccountId(),
+        pspAccount,
         row.pspReference(),
         row.paymentLink(),
         row.createdAt(),
@@ -166,7 +186,7 @@ public final class MyBatisOrderRepository implements OrderRepository {
     return new com.outpost.payment.order.OrderItem(
         row.orderItemId(),
         ProductTypes.fromCode(row.productType())
-            .orElseThrow(() -> new IllegalStateException("stored product type is not supported")),
+            .orElseThrow(() -> new IllegalStateException("Stored product type is not supported")),
         row.orderLineReference(),
         row.merchantLineReference(),
         new Amount(currency, row.netAmount()),
@@ -180,6 +200,6 @@ public final class MyBatisOrderRepository implements OrderRepository {
     }
     return CountrySubdivisions.fromCode(country, code)
         .orElseThrow(
-            () -> new IllegalStateException("stored shopper subdivision is not supported"));
+            () -> new IllegalStateException("Stored shopper subdivision is not supported"));
   }
 }

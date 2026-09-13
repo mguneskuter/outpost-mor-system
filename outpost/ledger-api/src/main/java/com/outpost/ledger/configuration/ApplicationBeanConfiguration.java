@@ -4,7 +4,7 @@ import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.journalentry.repository.mybatis.JournalEntryMapper;
 import com.outpost.accounting.journalentry.repository.mybatis.MyBatisJournalEntryRepository;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
-import com.outpost.accounting.payment.PaymentLifecycle;
+import com.outpost.accounting.payment.PaymentProcessorStateMachine;
 import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
 import com.outpost.accounting.transactionlock.repository.mybatis.MyBatisTransactionLockRepository;
 import com.outpost.accounting.transactionlock.repository.mybatis.TransactionLockMapper;
@@ -60,8 +60,8 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  PaymentLifecycle paymentLifecycle() {
-    return new PaymentLifecycle();
+  PaymentProcessorStateMachine paymentProcessorStateMachine() {
+    return new PaymentProcessorStateMachine();
   }
 
   @Bean
@@ -82,16 +82,16 @@ public class ApplicationBeanConfiguration {
   PaymentEventService paymentEventService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle) {
-    return new PaymentEventService(repository, journalEntryRepository, lifecycle);
+      PaymentProcessorStateMachine stateMachine) {
+    return new PaymentEventService(repository, journalEntryRepository, stateMachine);
   }
 
   @Bean
   CaptureService captureService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle) {
-    return new CaptureService(repository, journalEntryRepository, lifecycle);
+      PaymentProcessorStateMachine stateMachine) {
+    return new CaptureService(repository, journalEntryRepository, stateMachine);
   }
 
   @Bean
@@ -106,8 +106,9 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue() {
-    return new TimeOrderedQueue<>(Clock.systemUTC());
+  TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue(
+      LedgerAccountingQueueProperties properties) {
+    return new TimeOrderedQueue<>(Clock.systemUTC(), properties.capacity());
   }
 
   @Bean
@@ -192,7 +193,7 @@ public class ApplicationBeanConfiguration {
     for (FxFee fee : fees) {
       CurrencyPair pair = new CurrencyPair(fee.baseCurrency(), fee.quoteCurrency());
       if (!actualPairs.add(pair)) {
-        throw new IllegalStateException("duplicate FX fee pair: " + pair);
+        throw new IllegalStateException("Duplicate FX fee pair: " + pair);
       }
     }
     if (!actualPairs.equals(expectedPairs)) {

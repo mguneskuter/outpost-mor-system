@@ -13,9 +13,9 @@ import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.ledger.LedgerApiApplication;
 import com.outpost.ledger.LedgerStaticDataFixtures;
+import com.outpost.ledger.accountingrequest.service.AccountingRequestRefusedException;
 import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
 import com.outpost.ledger.accountingrequest.service.LockedAccountingQueueRequest;
-import com.outpost.ledger.accountingrequest.service.TransactionLockedException;
 import jakarta.servlet.Filter;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -117,14 +117,23 @@ class AccountingRequestIntakeIntegrationTest {
   @AfterEach
   void releaseLocksAndEmptyTheQueue() {
     jdbcTemplate.update("DELETE FROM transaction_lock");
-    while (accountingQueue.pollDue().isPresent()) {
+    while (accountingQueue.poll().isPresent()) {
       // The processor drains only every minute here; the queue is shared between tests.
     }
   }
 
   @Test
   void acceptsValidRequestTakesTheTransactionLockAndQueuesIt() throws Exception {
-    submit(CAPTURE_REQUEST, GATEWAY_KEY).andExpect(status().isAccepted());
+    submit(CAPTURE_REQUEST, GATEWAY_KEY)
+        .andExpect(status().isAccepted())
+        .andExpect(
+            content()
+                .json(
+                    """
+                    {"success":true,"result_code":"ACCEPTED","type":"CAPTURE",
+                    "original_reference":"%s","psp_reference":"41"}
+                    """
+                        .formatted(REFERENCE)));
 
     assertThat(lockCount(REFERENCE)).isEqualTo(1);
     assertThat(accountingQueue.size()).isEqualTo(1);
@@ -139,7 +148,14 @@ class AccountingRequestIntakeIntegrationTest {
 
     submit(CAPTURE_REQUEST, GATEWAY_KEY)
         .andExpect(status().isConflict())
-        .andExpect(content().json("{\"code\":\"TRANSACTION_LOCKED\"}"));
+        .andExpect(
+            content()
+                .json(
+                    """
+                    {"success":false,"result_code":"TRANSACTION_LOCKED","type":"CAPTURE",
+                    "original_reference":"%s"}
+                    """
+                        .formatted(REFERENCE)));
 
     assertThat(accountingQueue.size()).isZero();
   }
@@ -193,30 +209,35 @@ class AccountingRequestIntakeIntegrationTest {
     try {
       accountingRequestService.accept(request);
       return true;
-    } catch (TransactionLockedException locked) {
+    } catch (AccountingRequestRefusedException locked) {
       return false;
     }
   }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("incompleteRequests")
-  void rejectsRequestMissingFieldItsTypeRequires(String description, String body) throws Exception {
+  void rejectsRequestMissingFieldItsTypeRequires(
+      String description, String body, String expectedBody) throws Exception {
     submit(body, GATEWAY_KEY)
         .andExpect(status().isBadRequest())
-        .andExpect(content().json("{\"code\":\"INVALID_REQUEST\"}"));
+        .andExpect(content().json(expectedBody));
 
     assertThat(lockCount(REFERENCE)).isZero();
     assertThat(accountingQueue.size()).isZero();
   }
 
   static Stream<Arguments> incompleteRequests() {
+    String refused = "{\"success\":false,\"result_code\":\"INVALID_REQUEST\"}";
+    String unreadable = "{\"code\":\"INVALID_REQUEST\"}";
     return Stream.of(
         Arguments.of(
             "CAPTURE without success",
-            CAPTURE_REQUEST.replace("\"success\":true", "\"success\":null")),
+            CAPTURE_REQUEST.replace("\"success\":true", "\"success\":null"),
+            refused),
         Arguments.of(
             "REFUND without refund_reference",
-            CAPTURE_REQUEST.replace("\"type\":\"CAPTURE\"", "\"type\":\"REFUND\"")),
+            CAPTURE_REQUEST.replace("\"type\":\"CAPTURE\"", "\"type\":\"REFUND\""),
+            refused),
         Arguments.of(
             "ORDER_CREATED without currency",
             orderCreated(
@@ -224,11 +245,13 @@ class AccountingRequestIntakeIntegrationTest {
                 "{\"quantity\":2000}",
                 "{\"quantity\":12000}",
                 "US",
-                "US-CA")),
+                "US-CA"),
+            unreadable),
         Arguments.of(
             "blank original_reference",
             CAPTURE_REQUEST.replace(
-                "\"original_reference\":\"" + REFERENCE + "\"", "\"original_reference\":\" \"")),
+                "\"original_reference\":\"" + REFERENCE + "\"", "\"original_reference\":\" \""),
+            refused),
         Arguments.of(
             "subdivision of another country",
             orderCreated(
@@ -236,7 +259,8 @@ class AccountingRequestIntakeIntegrationTest {
                 "{\"quantity\":2000,\"currency\":\"EUR\"}",
                 "{\"quantity\":12000,\"currency\":\"EUR\"}",
                 "DE",
-                "US-CA")));
+                "US-CA"),
+            refused));
   }
 
   @Test

@@ -26,4 +26,7 @@ public record GatewayAccountingQueueProperties(
         Duration retryDelay,
     @Min(value = 1, message = "must be between 1 and 1000")
         @Max(value = 1000, message = "must be between 1 and 1000")
-        int maxAttempts) {}
+        int maxAttempts,
+    @Min(value = 1, message = "must be between 1 and 1000000")
+        @Max(value = 1_000_000, message = "must be between 1 and 1000000")
+        int capacity) {}

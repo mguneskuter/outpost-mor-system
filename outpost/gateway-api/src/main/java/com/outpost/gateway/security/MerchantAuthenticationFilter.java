@@ -96,7 +96,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     } catch (RuntimeException exception) {
       String correlationId = UUID.randomUUID().toString();
       LOGGER.error(
-          "merchant credential lookup failed",
+          "Merchant credential lookup failed",
           exception,
           new StructuredLogField(LogField.FAILURE, "CREDENTIAL_STORE"),
           new StructuredLogField(LogField.CORRELATION_ID, correlationId));
@@ -119,7 +119,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     } catch (RuntimeException exception) {
       String correlationId = UUID.randomUUID().toString();
       LOGGER.error(
-          "merchant credential decryption failed",
+          "Merchant credential decryption failed",
           exception,
           new StructuredLogField(LogField.FAILURE, "CREDENTIAL_DECRYPTION"),
           new StructuredLogField(LogField.MERCHANT_ACCOUNT_ID, Long.toString(key.accountId())),
@@ -132,7 +132,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       validSignature = HmacSha256.verify(hmacKey, body, HmacSignature.fromBase64(signature));
     } catch (IllegalArgumentException exception) {
       LOGGER.warn(
-          "merchant signature rejected",
+          "Merchant signature rejected",
           exception,
           new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
       unauthenticated(response);
@@ -140,7 +140,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     }
     if (!validSignature) {
       LOGGER.warn(
-          "merchant signature rejected",
+          "Merchant signature rejected",
           new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
       unauthenticated(response);
       return;

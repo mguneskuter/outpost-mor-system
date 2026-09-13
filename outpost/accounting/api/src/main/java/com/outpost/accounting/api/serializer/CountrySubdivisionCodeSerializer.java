@@ -1,4 +1,4 @@
-package com.outpost.accounting.api.json;
+package com.outpost.accounting.api.serializer;
 
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import tools.jackson.core.JsonGenerator;

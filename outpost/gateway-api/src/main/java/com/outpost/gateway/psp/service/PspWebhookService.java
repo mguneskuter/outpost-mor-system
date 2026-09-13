@@ -2,6 +2,7 @@ package com.outpost.gateway.psp.service;
 
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.AccountingQueueRequestTypes;
+import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.integration.psp.simulator.repository.PspConfiguration;
 import com.outpost.payment.order.Order;
@@ -29,7 +30,7 @@ public final class PspWebhookService {
    *
    * @return {@code ACCEPTED} when the event was queued; every other code means nothing was queued
    */
-  public PspWebhookProcessResultCodes process(PspConfiguration psp, PspWebhookEvent event) {
+  public PspWebhookProcessResultCodes process(PspConfiguration psp, PspOrderEvent event) {
     if (!psp.code().equals(event.pspCode())) {
       return PspWebhookProcessResultCodes.INVALID_PAYLOAD;
     }
@@ -38,7 +39,7 @@ public final class PspWebhookService {
       return PspWebhookProcessResultCodes.UNKNOWN_PAYMENT;
     }
     Order order = found.orElseThrow();
-    if (order.getPspAccountId() != psp.accountId()) {
+    if (order.getPspAccount().getAccountId() != psp.accountId()) {
       return PspWebhookProcessResultCodes.FOREIGN_PAYMENT;
     }
     if (!order.getPspReference().map(event.pspReference()::equals).orElse(false)) {
@@ -55,21 +56,25 @@ public final class PspWebhookService {
         && (refundReference == null || refundReference.isBlank())) {
       return PspWebhookProcessResultCodes.INVALID_PAYLOAD;
     }
-    accountingQueue.add(
-        new AccountingQueueRequest(
-            type,
-            order.getOrderReference(),
-            order.getMerchantReference(),
-            psp.code(),
-            event.pspReference(),
-            event.success(),
-            type == AccountingQueueRequestTypes.REFUND ? refundReference : null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null));
+    try {
+      accountingQueue.add(
+          new AccountingQueueRequest(
+              type,
+              order.getOrderReference(),
+              order.getMerchantReference(),
+              psp.code(),
+              event.pspReference(),
+              event.success(),
+              type == AccountingQueueRequestTypes.REFUND ? refundReference : null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null));
+    } catch (QueueFullException full) {
+      return PspWebhookProcessResultCodes.QUEUE_FULL;
+    }
     return PspWebhookProcessResultCodes.ACCEPTED;
   }
 }

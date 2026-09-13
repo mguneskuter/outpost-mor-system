@@ -13,7 +13,6 @@ public record LedgerErrorResponse(
     @JsonProperty("code") String code,
     @JsonProperty("correlation_id") @Nullable String correlationId) {
   public static final String INVALID_REQUEST = "INVALID_REQUEST";
-  public static final String TRANSACTION_LOCKED = "TRANSACTION_LOCKED";
   public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
   public static final String UNAUTHENTICATED = "UNAUTHENTICATED";
   public static final String FORBIDDEN = "FORBIDDEN";

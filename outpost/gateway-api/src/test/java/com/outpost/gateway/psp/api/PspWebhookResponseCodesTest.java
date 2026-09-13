@@ -7,8 +7,6 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.outpost.gateway.psp.service.PspWebhookProcessResultCodes;
-import io.micrometer.core.instrument.Counter;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,9 +15,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 
-class PspWebhookResponsesTest {
-  private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-  private final PspWebhookResponses responses = new PspWebhookResponses(meterRegistry);
+class PspWebhookResponseCodesTest {
   private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
   @BeforeEach
@@ -39,16 +35,9 @@ class PspWebhookResponsesTest {
       value = PspWebhookProcessResultCodes.class,
       mode = EnumSource.Mode.EXCLUDE,
       names = "ACCEPTED")
-  void countsAndLogsEachRejectionOnceUnderItsOwnReason(PspWebhookProcessResultCodes reason) {
-    ResponseEntity<PspWebhookEventResponse> response = responses.respond(reason);
+  void logsEachRejectionOnceUnderItsOwnReason(PspWebhookProcessResultCodes reason) {
+    ResponseEntity<PspWebhookEventResponse> response = PspWebhookResponseCodes.respond(reason);
 
-    assertThat(meterRegistry.find("outpost.webhook.rejected").counters())
-        .singleElement()
-        .satisfies(
-            counter -> {
-              assertThat(counter.getId().getTag("reason")).isEqualTo(reason.name());
-              assertThat(counter.count()).isEqualTo(1.0);
-            });
     assertThat(appender.list)
         .singleElement()
         .extracting(ILoggingEvent::getLevel)
@@ -65,20 +54,26 @@ class PspWebhookResponsesTest {
       names = {"UNKNOWN_PAYMENT", "FOREIGN_PAYMENT", "PSP_REFERENCE_MISMATCH"})
   void acknowledgesAuthenticatedEventThatMatchesNoStoredPayment(
       PspWebhookProcessResultCodes reason) {
-    assertThat(responses.respond(reason).getStatusCode().value()).isEqualTo(200);
+    assertThat(PspWebhookResponseCodes.respond(reason).getStatusCode().value()).isEqualTo(200);
   }
 
   @Test
-  void neitherCountsNorLogsAnAcceptedEvent() {
-    responses.respond(PspWebhookProcessResultCodes.ACCEPTED);
+  void leavesAnEventTheFullQueueRefusedUnacknowledgedSoThePspRedeliversIt() {
+    assertThat(
+            PspWebhookResponseCodes.respond(PspWebhookProcessResultCodes.QUEUE_FULL)
+                .getStatusCode()
+                .value())
+        .isEqualTo(503);
+  }
 
-    assertThat(meterRegistry.find("outpost.webhook.rejected").counters())
-        .extracting(Counter::count)
-        .allMatch(count -> count == 0.0);
+  @Test
+  void doesNotLogAnAcceptedEvent() {
+    PspWebhookResponseCodes.respond(PspWebhookProcessResultCodes.ACCEPTED);
+
     assertThat(appender.list).isEmpty();
   }
 
   private static Logger logger() {
-    return (Logger) LoggerFactory.getLogger(PspWebhookResponses.class);
+    return (Logger) LoggerFactory.getLogger(PspWebhookResponseCodes.class);
   }
 }

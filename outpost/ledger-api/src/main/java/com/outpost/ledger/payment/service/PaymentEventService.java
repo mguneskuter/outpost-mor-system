@@ -10,7 +10,7 @@ import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
-import com.outpost.accounting.payment.PaymentLifecycle;
+import com.outpost.accounting.payment.PaymentProcessorStateMachine;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
@@ -28,16 +28,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentEventService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
-  private final PaymentLifecycle lifecycle;
+  private final PaymentProcessorStateMachine stateMachine;
 
-  /** Creates a service using the persistence seams and payment lifecycle. */
+  /** Creates a service using the persistence seams and payment processor state machine. */
   public PaymentEventService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle) {
+      PaymentProcessorStateMachine stateMachine) {
     this.repository = repository;
     this.journalEntryRepository = journalEntryRepository;
-    this.lifecycle = lifecycle;
+    this.stateMachine = stateMachine;
   }
 
   /**
@@ -63,7 +63,7 @@ public class PaymentEventService {
       return;
     }
     TransactionEventType current = paymentFold(existingEvents);
-    if (!lifecycle.canFollow(
+    if (!stateMachine.isNext(
         current, candidate, repository.findCaptureChild(payment.transactionId()) != null)) {
       throw new PaymentEventException(409, "INVALID_TRANSITION");
     }
@@ -88,7 +88,7 @@ public class PaymentEventService {
       PendingFee pendingFee = repository.findPendingFee(payment.transactionId());
       Account platformAccount = repository.findPlatformAccount();
       if (pendingFee == null || platformAccount == null) {
-        throw new IllegalArgumentException("pending fee or platform account is missing");
+        throw new IllegalArgumentException("Pending fee or platform account is missing");
       }
       Register merchantPending =
           register(
@@ -123,7 +123,7 @@ public class PaymentEventService {
     Account merchant = repository.findAccountById(payment.merchantAccountId());
     ExistingPayment created = repository.findByReference(originalReference);
     if (merchant == null || created == null || created.transactionId() != payment.transactionId()) {
-      throw new IllegalArgumentException("payment transaction is missing");
+      throw new IllegalArgumentException("Payment transaction is missing");
     }
     return Transaction.of(
         payment.transactionId(),
@@ -139,14 +139,15 @@ public class PaymentEventService {
     if (register == null
         || register.getAccount().getAccountId() != accountId
         || register.getRegisterId() != expectedRegisterId) {
-      throw new IllegalArgumentException("register is missing or differs from the posted one");
+      throw new IllegalArgumentException("Register is missing or differs from the posted one");
     }
     return register;
   }
 
   private TransactionEventType paymentFold(List<PaymentEvent> existingEvents) {
     try {
-      return lifecycle.fold(existingEvents.stream().map(PaymentEventService::eventType).toList());
+      return stateMachine.fold(
+          existingEvents.stream().map(PaymentEventService::eventType).toList());
     } catch (IllegalArgumentException exception) {
       throw new PaymentEventException(500, "INTERNAL_ERROR");
     }
@@ -157,7 +158,7 @@ public class PaymentEventService {
         .map(TransactionEventTypes::getValue)
         .filter(type -> type.getTransactionEventTypeId() == event.transactionEventTypeId())
         .findFirst()
-        .orElseThrow(() -> new IllegalArgumentException("unknown transaction event type"));
+        .orElseThrow(() -> new IllegalArgumentException("Unknown transaction event type"));
   }
 
   private static Currency currency(long currencyId) {

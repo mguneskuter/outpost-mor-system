@@ -1,9 +1,11 @@
 package com.outpost.ledger.accountingrequest.service;
 
 import com.outpost.accounting.api.AccountingQueueRequest;
+import com.outpost.accounting.api.AccountingRequestErrorTypes;
 import com.outpost.accounting.transactionlock.TransactionLock;
 import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
+import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
 import java.time.Duration;
 import org.jspecify.annotations.Nullable;
@@ -28,8 +30,9 @@ public final class AccountingRequestService {
    * Validates the request, takes the payment's transaction lock, and queues the request for
    * booking.
    *
-   * @throws InvalidAccountingRequestException when a field the request's type requires is absent
-   * @throws TransactionLockedException when a live transaction lock exists for the payment
+   * @throws AccountingRequestRefusedException when a field the request's type requires is absent, a
+   *     live transaction lock exists for the payment, or the queue holds its capacity, in which
+   *     case the lock this call took is released first
    */
   public void accept(@Nullable AccountingQueueRequest request) {
     if (request == null
@@ -38,7 +41,8 @@ public final class AccountingRequestService {
         || blank(request.merchantReference())
         || blank(request.pspCode())
         || blank(request.pspReference())) {
-      throw new InvalidAccountingRequestException();
+      throw new AccountingRequestRefusedException(
+          AccountingRequestErrorTypes.INVALID_REQUEST, request);
     }
     boolean complete =
         switch (request.type()) {
@@ -53,13 +57,22 @@ public final class AccountingRequestService {
           case REFUND -> request.success() != null && !blank(request.refundReference());
         };
     if (!complete) {
-      throw new InvalidAccountingRequestException();
+      throw new AccountingRequestRefusedException(
+          AccountingRequestErrorTypes.INVALID_REQUEST, request);
     }
     TransactionLock lock =
         transactionLocks
             .insertTransactionLock(request.originalReference(), transactionLockLease)
-            .orElseThrow(TransactionLockedException::new);
-    accountingQueue.add(new LockedAccountingQueueRequest(request, lock));
+            .orElseThrow(
+                () ->
+                    new AccountingRequestRefusedException(
+                        AccountingRequestErrorTypes.TRANSACTION_LOCKED, request));
+    try {
+      accountingQueue.add(new LockedAccountingQueueRequest(request, lock));
+    } catch (QueueFullException full) {
+      transactionLocks.deleteTransactionLock(lock);
+      throw new AccountingRequestRefusedException(AccountingRequestErrorTypes.QUEUE_FULL, request);
+    }
   }
 
   private static boolean belongsToShopperCountry(AccountingQueueRequest request) {

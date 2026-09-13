@@ -23,6 +23,33 @@ import org.junit.jupiter.api.Test;
 
 class OrderServiceTest {
   @Test
+  void answersTheCreatedOrderWhenTheAccountingQueueIsFull() {
+    OrderServiceFakes dependencies = new OrderServiceFakes(OrderServiceFakes.rate("0.19"), 1);
+    dependencies.accountingQueue.add(
+        new AccountingQueueRequest(
+            AccountingQueueRequestTypes.CAPTURE,
+            "order-waiting",
+            "merchant-order-waiting",
+            PSP_CODE,
+            "psp-waiting",
+            true,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null));
+
+    CreateOrderResult result = dependencies.service.create(MERCHANT_ACCOUNT_ID, validCommand());
+
+    assertThat(result.paymentLink()).isEqualTo(PAYMENT_LINK);
+    assertThat(dependencies.queued())
+        .extracting(AccountingQueueRequest::originalReference)
+        .containsExactly("order-waiting");
+  }
+
+  @Test
   void createsTheOrderCallsThePspOnceQueuesOrderCreatedAndReturnsTheStoredResponse() {
     OrderServiceFakes dependencies = new OrderServiceFakes();
 

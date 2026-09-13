@@ -21,6 +21,7 @@ services:
 
   gateway-api:
     image: gateway-api:latest
+    container_name: outpost-gateway-api
     environment:
       OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
       OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
@@ -52,6 +53,7 @@ services:
 
   ledger-api:
     image: ledger-api:latest
+    container_name: outpost-ledger-api
     environment:
       OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
       OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
@@ -77,6 +79,7 @@ services:
 
   psp-simulator:
     image: psp-simulator:latest
+    container_name: outpost-psp-simulator
     environment:
       OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost?currentSchema=psp_simulator
       OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}

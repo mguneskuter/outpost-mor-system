@@ -3,6 +3,7 @@ package com.outpost.payment.repository.mybatis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Currencies;
@@ -70,11 +71,20 @@ class MyBatisRefundRepositoryIntegrationTest {
     JdbcTemplate jdbc = new JdbcTemplate(database);
     jdbcTemplate = jdbc;
     seedReferenceData(jdbc);
-    long merchantAccountId = account(jdbc, AccountTypes.MERCHANT, "REFUND_MERCHANT");
-    long pspAccountId = account(jdbc, AccountTypes.PSP, "REFUND_PSP");
+    Account merchant =
+        KnownAccounts.underRoot(
+            account(jdbc, AccountTypes.MERCHANT, "REFUND_MERCHANT"),
+            AccountTypes.MERCHANT,
+            "REFUND_MERCHANT");
+    Account psp =
+        KnownAccounts.underRoot(
+            account(jdbc, AccountTypes.PSP, "REFUND_PSP"), AccountTypes.PSP, "REFUND_PSP");
     orderId =
-        new MyBatisOrderRepository(sqlSession, new DataSourceTransactionManager(database))
-            .insertOrder(shopper(), anOrder(merchantAccountId, pspAccountId))
+        new MyBatisOrderRepository(
+                sqlSession,
+                new DataSourceTransactionManager(database),
+                new KnownAccounts(merchant, psp))
+            .insertOrder(shopper(), anOrder(merchant, psp))
             .orElseThrow()
             .getOrderId()
             .orElseThrow();
@@ -164,12 +174,12 @@ class MyBatisRefundRepositoryIntegrationTest {
         null, "refund@example.test", "Refund Shopper", Countries.GERMANY.getValue(), null, null);
   }
 
-  private static Order anOrder(long merchantAccountId, long pspAccountId) {
+  private static Order anOrder(Account merchantAccount, Account pspAccount) {
     return new Order(
         null,
         "refund-order",
         "merchant-refund-order",
-        merchantAccountId,
+        merchantAccount,
         null,
         Countries.GERMANY.getValue(),
         null,
@@ -178,7 +188,7 @@ class MyBatisRefundRepositoryIntegrationTest {
         eur(119L),
         "refund-order-key",
         "refund-order-fingerprint",
-        pspAccountId,
+        pspAccount,
         "41",
         "https://pay.example/refund-order",
         null,

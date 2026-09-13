@@ -20,7 +20,7 @@ import org.jspecify.annotations.Nullable;
  * REFUND child outcomes use their own transition rules. {@code REFUSED}, {@code CANCELLED}, and
  * terminal child outcomes cannot be followed.
  */
-public final class PaymentLifecycle {
+public final class PaymentProcessorStateMachine {
   private static final Comparator<TransactionEvent> CHRONOLOGICAL_ORDER =
       Comparator.comparing(TransactionEvent::getOccurredAt)
           .thenComparingLong(TransactionEvent::getTransactionEventId);
@@ -35,12 +35,12 @@ public final class PaymentLifecycle {
   public TransactionEventType construct(List<TransactionEvent> events) {
     Objects.requireNonNull(events, "events");
     if (events.isEmpty()) {
-      throw new IllegalArgumentException("a payment must have at least one event");
+      throw new IllegalArgumentException("A payment must have at least one event");
     }
     Transaction paymentTransaction = events.get(0).getTransaction();
     if (!paymentTransaction.getTransactionType().equals(TransactionTypes.PAYMENT.getValue())) {
       throw new IllegalArgumentException(
-          "events must belong to a PAYMENT transaction: "
+          "Events must belong to a PAYMENT transaction: "
               + paymentTransaction.getTransactionType().getCode());
     }
     List<TransactionEvent> chronological = new ArrayList<>(events);
@@ -49,13 +49,13 @@ public final class PaymentLifecycle {
     Iterator<TransactionEvent> chronologicalEvents = chronological.iterator();
     TransactionEvent first = chronologicalEvents.next();
     if (!first.getTransaction().equals(paymentTransaction)) {
-      throw new IllegalArgumentException("events must all belong to the same transaction");
+      throw new IllegalArgumentException("Events must all belong to the same transaction");
     }
     TransactionEventType state = transition(null, first.getTransactionEventType());
     while (chronologicalEvents.hasNext()) {
       TransactionEvent event = chronologicalEvents.next();
       if (!event.getTransaction().equals(paymentTransaction)) {
-        throw new IllegalArgumentException("events must all belong to the same transaction");
+        throw new IllegalArgumentException("Events must all belong to the same transaction");
       }
       state = transition(state, event.getTransactionEventType());
     }
@@ -71,7 +71,7 @@ public final class PaymentLifecycle {
   public TransactionEventType fold(List<TransactionEventType> eventTypes) {
     Objects.requireNonNull(eventTypes, "eventTypes");
     if (eventTypes.isEmpty()) {
-      throw new IllegalArgumentException("a payment must have at least one event");
+      throw new IllegalArgumentException("A payment must have at least one event");
     }
     TransactionEventType state = null;
     for (TransactionEventType eventType : eventTypes) {
@@ -87,9 +87,9 @@ public final class PaymentLifecycle {
     if (captureOutcome == null) {
       return paymentState;
     }
-    if (!canFollowCapture(paymentState, false, captureOutcome)) {
+    if (!isNextCapture(paymentState, false, captureOutcome)) {
       throw new IllegalArgumentException(
-          "capture outcome cannot follow payment state: " + paymentState.getCode());
+          "Capture outcome cannot follow payment state: " + paymentState.getCode());
     }
     return captureOutcome;
   }
@@ -99,13 +99,13 @@ public final class PaymentLifecycle {
    *
    * @param state the payment's current state, or {@code null} when it has no event yet
    */
-  public boolean canFollow(@Nullable TransactionEventType state, TransactionEventType candidate) {
+  public boolean isNext(@Nullable TransactionEventType state, TransactionEventType candidate) {
     Objects.requireNonNull(candidate, "candidate");
     return allowedNextEvents(state).contains(candidate);
   }
 
   /** Returns whether a root event may follow when a capture child exists. */
-  public boolean canFollow(
+  public boolean isNext(
       @Nullable TransactionEventType state,
       TransactionEventType candidate,
       boolean captureChildExists) {
@@ -113,11 +113,11 @@ public final class PaymentLifecycle {
     if (captureChildExists && candidate.equals(TransactionEventTypes.CANCELLED.getValue())) {
       return false;
     }
-    return canFollow(state, candidate);
+    return isNext(state, candidate);
   }
 
   /** Returns whether a CAPTURE child may record its single outcome. */
-  public boolean canFollowCapture(
+  public boolean isNextCapture(
       @Nullable TransactionEventType paymentState,
       boolean captureChildExists,
       TransactionEventType candidate) {
@@ -134,7 +134,7 @@ public final class PaymentLifecycle {
     List<TransactionEventType> allowed = allowedNextEvents(current);
     if (!allowed.contains(next)) {
       throw new IllegalArgumentException(
-          "event "
+          "Event "
               + next.getCode()
               + " cannot follow "
               + (current == null ? "no event" : current.getCode()));

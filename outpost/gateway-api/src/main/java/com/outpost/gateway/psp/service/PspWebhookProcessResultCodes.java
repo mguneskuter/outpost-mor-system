@@ -10,5 +10,7 @@ public enum PspWebhookProcessResultCodes {
   /** The payment was created with a different PSP account than the one that signed the event. */
   FOREIGN_PAYMENT,
   /** The event's PSP reference is not the one stored for the payment, or none is stored. */
-  PSP_REFERENCE_MISMATCH
+  PSP_REFERENCE_MISMATCH,
+  /** The event matches its order, but the accounting queue holds its capacity. */
+  QUEUE_FULL
 }

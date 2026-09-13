@@ -18,10 +18,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-class PaymentLifecycleTest {
+class PaymentProcessorStateMachineTest {
   private static final Instant T0 = Instant.parse("2026-01-01T00:00:00Z");
 
-  private final PaymentLifecycle lifecycle = new PaymentLifecycle();
+  private final PaymentProcessorStateMachine stateMachine = new PaymentProcessorStateMachine();
 
   @Test
   void singleOrderCreatedEventIsAcceptedAndIsTheCurrentState() {
@@ -29,7 +29,7 @@ class PaymentLifecycleTest {
 
     assertEquals(
         TransactionEventTypes.ORDER_CREATED.getValue(),
-        lifecycle.construct(List.of(orderCreated(payment, 1L, T0))));
+        stateMachine.construct(List.of(orderCreated(payment, 1L, T0))));
   }
 
   @Test
@@ -38,7 +38,7 @@ class PaymentLifecycleTest {
 
     assertEquals(
         TransactionEventTypes.AUTHORISED.getValue(),
-        lifecycle.construct(
+        stateMachine.construct(
             List.of(orderCreated(payment, 1L, T0), authorised(payment, 2L, T0.plusSeconds(1)))));
   }
 
@@ -48,7 +48,7 @@ class PaymentLifecycleTest {
 
     assertEquals(
         TransactionEventTypes.CANCELLED.getValue(),
-        lifecycle.construct(
+        stateMachine.construct(
             List.of(
                 orderCreated(payment, 1L, T0),
                 authorised(payment, 2L, T0.plusSeconds(1)),
@@ -57,7 +57,7 @@ class PaymentLifecycleTest {
 
   @Test
   void anEmptyHistoryIsRejected() {
-    assertThrows(IllegalArgumentException.class, () -> lifecycle.construct(List.of()));
+    assertThrows(IllegalArgumentException.class, () -> stateMachine.construct(List.of()));
   }
 
   @Test
@@ -70,7 +70,7 @@ class PaymentLifecycleTest {
 
     assertEquals(
         TransactionEventTypes.CANCELLED.getValue(),
-        lifecycle.construct(List.of(cancelled, orderCreated, authorised)));
+        stateMachine.construct(List.of(cancelled, orderCreated, authorised)));
   }
 
   @Test
@@ -81,7 +81,7 @@ class PaymentLifecycleTest {
 
     assertEquals(
         TransactionEventTypes.AUTHORISED.getValue(),
-        lifecycle.construct(List.of(authorised, orderCreated)));
+        stateMachine.construct(List.of(authorised, orderCreated)));
   }
 
   @Test
@@ -92,7 +92,7 @@ class PaymentLifecycleTest {
     List<TransactionEvent> events =
         List.of(orderCreated(payment, 1L, T0), authorised(otherPayment, 2L, T0.plusSeconds(1)));
 
-    assertThrows(IllegalArgumentException.class, () -> lifecycle.construct(events));
+    assertThrows(IllegalArgumentException.class, () -> stateMachine.construct(events));
   }
 
   @Test
@@ -100,53 +100,53 @@ class PaymentLifecycleTest {
     Transaction capture = AccountingFixtures.capture(8L);
     List<TransactionEvent> events = List.of(orderCreated(capture, 1L, T0));
 
-    assertThrows(IllegalArgumentException.class, () -> lifecycle.construct(events));
+    assertThrows(IllegalArgumentException.class, () -> stateMachine.construct(events));
   }
 
   @Test
-  void canFollowAcceptsTheStartOfHistory() {
-    assertTrue(lifecycle.canFollow(null, TransactionEventTypes.ORDER_CREATED.getValue()));
+  void isNextAcceptsTheStartOfHistory() {
+    assertTrue(stateMachine.isNext(null, TransactionEventTypes.ORDER_CREATED.getValue()));
   }
 
   @Test
-  void canFollowRejectsAnEventOtherThanOrderCreatedAsTheStart() {
-    assertFalse(lifecycle.canFollow(null, TransactionEventTypes.AUTHORISED.getValue()));
+  void isNextRejectsAnEventOtherThanOrderCreatedAsTheStart() {
+    assertFalse(stateMachine.isNext(null, TransactionEventTypes.AUTHORISED.getValue()));
   }
 
   @Test
-  void canFollowAcceptsAuthorisedAfterOrderCreated() {
+  void isNextAcceptsAuthorisedAfterOrderCreated() {
     assertTrue(
-        lifecycle.canFollow(
+        stateMachine.isNext(
             TransactionEventTypes.ORDER_CREATED.getValue(),
             TransactionEventTypes.AUTHORISED.getValue()));
   }
 
   @Test
-  void canFollowRejectsAnyEventAfterTerminalState() {
+  void isNextRejectsAnyEventAfterTerminalState() {
     assertFalse(
-        lifecycle.canFollow(
+        stateMachine.isNext(
             TransactionEventTypes.REFUSED.getValue(), TransactionEventTypes.AUTHORISED.getValue()));
   }
 
   @Test
   void captureOutcomeMayFollowAnAuthorisedPaymentOnlyWhenThereIsNoCaptureChild() {
     assertTrue(
-        lifecycle.canFollowCapture(
+        stateMachine.isNextCapture(
             TransactionEventTypes.AUTHORISED.getValue(),
             false,
             TransactionEventTypes.CAPTURED.getValue()));
     assertTrue(
-        lifecycle.canFollowCapture(
+        stateMachine.isNextCapture(
             TransactionEventTypes.AUTHORISED.getValue(),
             false,
             TransactionEventTypes.CAPTURE_FAILED.getValue()));
     assertFalse(
-        lifecycle.canFollowCapture(
+        stateMachine.isNextCapture(
             TransactionEventTypes.ORDER_CREATED.getValue(),
             false,
             TransactionEventTypes.CAPTURED.getValue()));
     assertFalse(
-        lifecycle.canFollowCapture(
+        stateMachine.isNextCapture(
             TransactionEventTypes.AUTHORISED.getValue(),
             true,
             TransactionEventTypes.CAPTURED.getValue()));
@@ -155,12 +155,12 @@ class PaymentLifecycleTest {
   @Test
   void cancellationIsRejectedAfterCaptureChildExists() {
     assertFalse(
-        lifecycle.canFollow(
+        stateMachine.isNext(
             TransactionEventTypes.AUTHORISED.getValue(),
             TransactionEventTypes.CANCELLED.getValue(),
             true));
     assertTrue(
-        lifecycle.canFollow(
+        stateMachine.isNext(
             TransactionEventTypes.AUTHORISED.getValue(),
             TransactionEventTypes.CANCELLED.getValue(),
             false));
@@ -170,7 +170,7 @@ class PaymentLifecycleTest {
   void foldAcceptsCaptureOutcomeOnlyAfterAuthorisation() {
     assertEquals(
         TransactionEventTypes.CAPTURED.getValue(),
-        lifecycle.fold(
+        stateMachine.fold(
             List.of(
                 TransactionEventTypes.ORDER_CREATED.getValue(),
                 TransactionEventTypes.AUTHORISED.getValue()),
@@ -178,7 +178,7 @@ class PaymentLifecycleTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            lifecycle.fold(
+            stateMachine.fold(
                 List.of(TransactionEventTypes.ORDER_CREATED.getValue()),
                 TransactionEventTypes.CAPTURE_FAILED.getValue()));
   }
@@ -187,7 +187,7 @@ class PaymentLifecycleTest {
   void foldsPersistedEventTypesInStoredOrder() {
     assertEquals(
         TransactionEventTypes.CANCELLED.getValue(),
-        lifecycle.fold(
+        stateMachine.fold(
             List.of(
                 TransactionEventTypes.ORDER_CREATED.getValue(),
                 TransactionEventTypes.AUTHORISED.getValue(),
@@ -199,7 +199,7 @@ class PaymentLifecycleTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            lifecycle.fold(
+            stateMachine.fold(
                 List.of(
                     TransactionEventTypes.ORDER_CREATED.getValue(),
                     TransactionEventTypes.CANCELLED.getValue())));
@@ -211,7 +211,7 @@ class PaymentLifecycleTest {
     Transaction payment = AccountingFixtures.payment(9L);
     List<TransactionEvent> events = toChronologicalEvents(payment, eventTypes);
 
-    assertThrows(IllegalArgumentException.class, () -> lifecycle.construct(events));
+    assertThrows(IllegalArgumentException.class, () -> stateMachine.construct(events));
   }
 
   private static Stream<Arguments> rejectedHistories() {

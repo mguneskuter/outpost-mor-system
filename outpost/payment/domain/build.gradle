@@ -10,6 +10,7 @@ base {
 
 dependencies {
     implementation project(':platform-sanity:static-data-model')
+    implementation project(':account:domain')
     implementation project(':common-iso:domain')
     implementation project(':common-payment:domain')
     implementation project(':tax')

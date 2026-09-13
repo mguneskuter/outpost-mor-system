@@ -10,7 +10,7 @@ import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
-import com.outpost.accounting.payment.PaymentLifecycle;
+import com.outpost.accounting.payment.PaymentProcessorStateMachine;
 import com.outpost.accounting.templates.CaptureJournalTemplates;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Currencies;
@@ -32,16 +32,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class CaptureService {
   private final PaymentRepository repository;
   private final JournalEntryRepository journalEntryRepository;
-  private final PaymentLifecycle lifecycle;
+  private final PaymentProcessorStateMachine stateMachine;
 
-  /** Creates a service using the persistence seams and payment lifecycle. */
+  /** Creates a service using the persistence seams and payment processor state machine. */
   public CaptureService(
       PaymentRepository repository,
       JournalEntryRepository journalEntryRepository,
-      PaymentLifecycle lifecycle) {
+      PaymentProcessorStateMachine stateMachine) {
     this.repository = repository;
     this.journalEntryRepository = journalEntryRepository;
-    this.lifecycle = lifecycle;
+    this.stateMachine = stateMachine;
   }
 
   /**
@@ -72,7 +72,7 @@ public class CaptureService {
     }
     List<PaymentEvent> events = repository.findPaymentEvents(payment.transactionId());
     TransactionEventType paymentState = fold(events);
-    if (!lifecycle.canFollowCapture(paymentState, false, candidate)) {
+    if (!stateMachine.isNextCapture(paymentState, false, candidate)) {
       throw new CaptureException(422, "INVALID_CAPTURE");
     }
     PendingFee pendingFee = repository.findPendingFee(payment.transactionId());
@@ -187,7 +187,7 @@ public class CaptureService {
 
   private TransactionEventType fold(List<PaymentEvent> events) {
     try {
-      return lifecycle.fold(events.stream().map(CaptureService::eventType).toList());
+      return stateMachine.fold(events.stream().map(CaptureService::eventType).toList());
     } catch (IllegalArgumentException exception) {
       throw internal();
     }

@@ -53,8 +53,7 @@ final class OrderServiceFakes {
   final FakeMerchantPspRepository merchantPsps = new FakeMerchantPspRepository();
   final FakeMerchantFeeConfigurationRepository feeConfigurations =
       new FakeMerchantFeeConfigurationRepository();
-  final TimeOrderedQueue<AccountingQueueRequest> accountingQueue =
-      new TimeOrderedQueue<>(FIXED_CLOCK);
+  final TimeOrderedQueue<AccountingQueueRequest> accountingQueue;
   final List<CreateOrderRequest> pspRequests = new ArrayList<>();
   final List<CreateOrderResult> pspResults = new ArrayList<>();
   final FakePspClient psp = new FakePspClient(pspRequests, pspResults);
@@ -65,6 +64,11 @@ final class OrderServiceFakes {
   }
 
   OrderServiceFakes(TaxRateProvider taxRates) {
+    this(taxRates, 100);
+  }
+
+  OrderServiceFakes(TaxRateProvider taxRates, int accountingQueueCapacity) {
+    accountingQueue = new TimeOrderedQueue<>(FIXED_CLOCK, accountingQueueCapacity);
     service =
         new OrderService(
             repository,
@@ -80,10 +84,10 @@ final class OrderServiceFakes {
   /** Removes and returns every queued request, in queue order. */
   List<AccountingQueueRequest> queued() {
     List<AccountingQueueRequest> requests = new ArrayList<>();
-    Optional<QueuedItem<AccountingQueueRequest>> item = accountingQueue.pollDue();
+    Optional<QueuedItem<AccountingQueueRequest>> item = accountingQueue.poll();
     while (item.isPresent()) {
       requests.add(item.orElseThrow().payload());
-      item = accountingQueue.pollDue();
+      item = accountingQueue.poll();
     }
     return requests;
   }
@@ -201,7 +205,7 @@ final class OrderServiceFakes {
     public Optional<Order> findOrderByIdempotencyKey(long accountId, String idempotencyKey) {
       failIfAsked();
       return Optional.ofNullable(orders.get(idempotencyKey))
-          .filter(stored -> stored.getAccountId() == accountId);
+          .filter(stored -> stored.getMerchantAccount().getAccountId() == accountId);
     }
 
     @Override
@@ -236,7 +240,7 @@ final class OrderServiceFakes {
               nextId++,
               order.getOrderReference(),
               order.getMerchantReference(),
-              order.getAccountId(),
+              order.getMerchantAccount(),
               nextId++,
               order.getShopperCountry(),
               order.getShopperCountrySubdivision().orElse(null),
@@ -245,7 +249,7 @@ final class OrderServiceFakes {
               order.getGrossAmount(),
               order.getIdempotencyKey(),
               order.getRequestFingerprint(),
-              order.getPspAccountId(),
+              order.getPspAccount(),
               null,
               null,
               STORED_AT,
@@ -275,7 +279,7 @@ final class OrderServiceFakes {
           order.getOrderId().getAsLong(),
           order.getOrderReference(),
           order.getMerchantReference(),
-          order.getAccountId(),
+          order.getMerchantAccount(),
           order.getShopperId().getAsLong(),
           order.getShopperCountry(),
           order.getShopperCountrySubdivision().orElse(null),
@@ -284,7 +288,7 @@ final class OrderServiceFakes {
           order.getGrossAmount(),
           order.getIdempotencyKey(),
           order.getRequestFingerprint(),
-          order.getPspAccountId(),
+          order.getPspAccount(),
           pspReference,
           paymentLink,
           order.getCreatedAt().orElse(null),

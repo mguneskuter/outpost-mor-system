@@ -1,5 +1,7 @@
 package com.outpost.payment.order;
 
+import com.outpost.account.Account;
+import com.outpost.account.AccountTypes;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
@@ -13,6 +15,13 @@ import org.jspecify.annotations.Nullable;
 
 final class OrderFixtures {
   static final Instant CREATED = Instant.parse("2026-02-01T00:00:00Z");
+  private static final Account ROOT =
+      Account.of(1L, AccountTypes.ROOT.getValue(), "ROOT", "Root", true, CREATED, null);
+  static final Account MERCHANT =
+      Account.of(
+          100L, AccountTypes.MERCHANT.getValue(), "MERCHANT", "Merchant", true, CREATED, ROOT);
+  static final Account PSP =
+      Account.of(300L, AccountTypes.PSP.getValue(), "PSP", "PSP", true, CREATED, ROOT);
 
   private OrderFixtures() {}
 
@@ -56,7 +65,7 @@ final class OrderFixtures {
         1L,
         "order-ref",
         "merchant-ref",
-        100L,
+        MERCHANT,
         200L,
         shopperCountry,
         shopperCountrySubdivision,
@@ -65,7 +74,7 @@ final class OrderFixtures {
         netAmount.plus(taxAmount),
         "idempotency-key",
         requestFingerprint,
-        300L,
+        PSP,
         null,
         null,
         CREATED,
@@ -77,7 +86,7 @@ final class OrderFixtures {
         null,
         "order-ref",
         "merchant-ref",
-        100L,
+        MERCHANT,
         null,
         Countries.NETHERLANDS.getValue(),
         null,
@@ -86,7 +95,7 @@ final class OrderFixtures {
         netAmount.plus(taxAmount),
         "idempotency-key",
         "request-fingerprint",
-        300L,
+        PSP,
         null,
         null,
         CREATED,

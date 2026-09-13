@@ -224,7 +224,7 @@ class OrderModificationServiceIntegrationTest {
   }
 
   private OrderModificationService service(PspClient psp) {
-    return new OrderModificationService(orderRepository, accountRepository, psp, refundRepository);
+    return new OrderModificationService(orderRepository, psp, refundRepository);
   }
 
   private static ModifyOrderCommand command(String orderReference, String idempotencyKey) {
@@ -258,7 +258,7 @@ class OrderModificationServiceIntegrationTest {
             null,
             orderReference,
             "merchant-ref-for-" + orderReference,
-            merchantAccountId,
+            accountRepository.findAccountById(merchantAccountId).orElseThrow(),
             null,
             Countries.GERMANY.getValue(),
             null,
@@ -267,7 +267,7 @@ class OrderModificationServiceIntegrationTest {
             eur(119L),
             idempotencyKey,
             "fingerprint-" + orderReference,
-            PSP_ACCOUNT_ID,
+            accountRepository.findAccountById(PSP_ACCOUNT_ID).orElseThrow(),
             null,
             null,
             null,

@@ -67,7 +67,6 @@ class GatewayErrorContractTest {
               new OrderModificationController(
                   new OrderModificationService(
                       orderFakes.repository,
-                      orderFakes.accounts,
                       orderFakes.psp,
                       refund -> {
                         throw new UnsupportedOperationException();
