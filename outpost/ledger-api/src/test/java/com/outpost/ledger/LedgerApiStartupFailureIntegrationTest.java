@@ -123,8 +123,7 @@ class LedgerApiStartupFailureIntegrationTest {
     assertThatThrownBy(() -> startAgainstDatabase("", /* workerHmacSecret= */ null))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Gateway HMAC key");
+        .hasMessageContaining("gatewayHmacSecret");
   }
 
   @Test
@@ -141,8 +140,7 @@ class LedgerApiStartupFailureIntegrationTest {
                     /* workerHmacSecret= */ null))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Gateway HMAC key");
+        .hasMessageContaining("gatewayHmacSecret");
   }
 
   @Test
@@ -155,8 +153,7 @@ class LedgerApiStartupFailureIntegrationTest {
     assertThatThrownBy(() -> startAgainstDatabase(/* gatewayHmacSecret= */ null, ""))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Worker HMAC key");
+        .hasMessageContaining("workerHmacSecret");
   }
 
   @Test
@@ -173,8 +170,7 @@ class LedgerApiStartupFailureIntegrationTest {
                     unresolvedPlaceholder(WORKER_SECRET_ENVIRONMENT_VARIABLE)))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Worker HMAC key");
+        .hasMessageContaining("workerHmacSecret");
   }
 
   @Test

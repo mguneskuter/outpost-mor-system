@@ -1,4 +1,10 @@
--- Local test data; rates are fractions (0.2100 means 21 percent).
+-- Sources: https://www.vatcomply.com/ (European Commission TEDB-derived EU
+-- and UK VAT) and https://www.salestaxzip.com/ (US state general
+-- sales-tax rates), extracted 2026-09-11.
+-- Rates are general jurisdiction rates only. Product taxability, local US
+-- taxes, and historical effective dates are not represented. Re-running
+-- this file fails with a unique-key violation rather than replacing an
+-- existing rate, so a changed rate is never silently overwritten.
 INSERT INTO tax_rate (
     tax_rate_id, country_id, country_subdivision_id, rate
 )

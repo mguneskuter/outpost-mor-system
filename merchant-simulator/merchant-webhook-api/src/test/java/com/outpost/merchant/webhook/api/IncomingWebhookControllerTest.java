@@ -27,7 +27,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
     },
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ExtendWith(OutputCaptureExtension.class)
-class CallbackControllerTest {
+class IncomingWebhookControllerTest {
 
   private static final String SECRET = "correct-horse-battery-staple";
   private static final String CALLBACK =

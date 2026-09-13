@@ -51,14 +51,16 @@ class StructuredLoggingContractTest {
   }
 
   @Test
-  void loggingApiHasNoThrowableOrArbitraryMapConstructionPath() {
+  void loggingApiAcceptsThrowablesButNoArbitraryMapConstructionPath() {
     assertThat(
-            Arrays.stream(StructuredLogEvent.class.getDeclaredMethods())
+            Arrays.stream(StructuredLogger.class.getDeclaredMethods())
                 .flatMap(method -> Arrays.stream(method.getParameterTypes()))
-                .noneMatch(
-                    parameterType ->
-                        Throwable.class.isAssignableFrom(parameterType)
-                            || java.util.Map.class.isAssignableFrom(parameterType)))
+                .anyMatch(Throwable.class::isAssignableFrom))
+        .isTrue();
+    assertThat(
+            Arrays.stream(StructuredLogger.class.getDeclaredMethods())
+                .flatMap(method -> Arrays.stream(method.getParameterTypes()))
+                .noneMatch(java.util.Map.class::isAssignableFrom))
         .isTrue();
   }
 

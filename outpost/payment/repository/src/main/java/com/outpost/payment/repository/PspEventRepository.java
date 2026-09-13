@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 /** Stores verified PSP events and resolves the payment account they concern. */
-public interface PspEventQueue {
+public interface PspEventRepository {
   /** Finds the merchant and PSP accounts for a payment reference. */
   Optional<PaymentAccounts> findPaymentAccounts(String paymentReference);
 

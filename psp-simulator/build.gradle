@@ -27,6 +27,13 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
 
+    constraints {
+        // Tomcat 11.0.25 fixes CVE-2026-65182; remove once the Spring Boot BOM manages 11.0.25 or later.
+        ['tomcat-embed-core', 'tomcat-embed-el', 'tomcat-embed-websocket'].each { tomcatModule ->
+            implementation "org.apache.tomcat.embed:${tomcatModule}:11.0.25"
+        }
+    }
+
     compileOnly 'org.jspecify:jspecify:1.0.1'
     testCompileOnly 'org.jspecify:jspecify:1.0.1'
 
@@ -72,6 +79,7 @@ springBoot {
 }
 
 tasks.named('bootBuildImage') {
+    imageName = 'psp-simulator:latest'
     builder = 'paketobuildpacks/builder-noble-java-tiny:0.0.187'
     environment = ['BP_JVM_VERSION': '21.0.12']
 }

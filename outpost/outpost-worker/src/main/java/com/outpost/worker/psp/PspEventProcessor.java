@@ -5,10 +5,13 @@ import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.accounting.queue.AccountingRequestTypes;
 import com.outpost.accounting.queue.SubmitAccountingRequestCommand;
 import com.outpost.common.iso.Currencies;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
-import com.outpost.payment.repository.PspEventQueue;
-import com.outpost.payment.repository.PspEventQueue.PspEvent;
+import com.outpost.payment.repository.PspEventRepository;
+import com.outpost.payment.repository.PspEventRepository.PspEvent;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -16,13 +19,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /** Turns claimed PSP events into accounting requests. */
 public final class PspEventProcessor {
-  private final PspEventQueue events;
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(PspEventProcessor.class));
+  private final PspEventRepository events;
   private final AccountingRequestQueue requests;
   private final ObjectMapper objectMapper;
   private final TransactionTemplate transactions;
@@ -30,7 +36,7 @@ public final class PspEventProcessor {
 
   /** Creates a processor that commits an event outcome with its accounting request. */
   public PspEventProcessor(
-      PspEventQueue events,
+      PspEventRepository events,
       AccountingRequestQueue requests,
       ObjectMapper objectMapper,
       TransactionTemplate transactions,
@@ -44,7 +50,7 @@ public final class PspEventProcessor {
 
   /** Processes one eligible event when one is available. */
   public boolean processNext() {
-    return processNext(PspEventQueue::claimNext);
+    return processNext(PspEventRepository::claimNext);
   }
 
   boolean processNext(PspEventClaimer claimer) {
@@ -59,6 +65,11 @@ public final class PspEventProcessor {
                 requests.submit(toCommand(event));
                 events.complete(event.queueId(), PspEventResults.SUCCESS, now());
               } catch (PspEventMappingException | IllegalArgumentException exception) {
+                LOGGER.warn(
+                    "PSP event could not be mapped",
+                    exception,
+                    new StructuredLogField(LogField.QUEUE_ID, Long.toString(event.queueId())),
+                    new StructuredLogField(LogField.PAYMENT_REFERENCE, event.originalReference()));
                 events.complete(event.queueId(), PspEventResults.FAILED, now());
               }
               return true;
@@ -68,7 +79,7 @@ public final class PspEventProcessor {
 
   @FunctionalInterface
   interface PspEventClaimer {
-    Optional<PspEvent> claimNext(PspEventQueue events);
+    Optional<PspEvent> claimNext(PspEventRepository events);
   }
 
   private SubmitAccountingRequestCommand toCommand(PspEvent event) {
@@ -140,6 +151,9 @@ public final class PspEventProcessor {
       long amount,
       String currency,
       @JsonProperty("refund_reference") String refundReference) {
+    // Invoked by Jackson through reflection to deserialize the PSP event payload; no call
+    // site in this class reaches it directly.
+    @SuppressWarnings("UnusedMethod")
     PspEventPayload {
       Objects.requireNonNull(pspReference, "pspReference");
       Objects.requireNonNull(currency, "currency");
@@ -156,6 +170,22 @@ public final class PspEventProcessor {
 
     PspEventMappingException(String message) {
       super(message);
+    }
+  }
+
+  private enum LogField implements LogFields {
+    PAYMENT_REFERENCE("payment_reference"),
+    QUEUE_ID("queue_id");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
     }
   }
 }

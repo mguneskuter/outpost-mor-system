@@ -1,0 +1,4 @@
+plugins {
+    id 'outpost.java-conventions'
+    id 'java-library'
+}

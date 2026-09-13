@@ -21,6 +21,7 @@ include(
     ':framework:persistence',
     ':framework:logging',
     ':framework:security',
+    ':framework:healthprobe',
     ':accounting:domain',
     ':accounting:persistence',
     ':accounting:queue-api',

@@ -4,9 +4,12 @@ plugins {
 }
 
 dependencies {
+    implementation project(':framework:logging')
     implementation project(':framework:persistence')
     implementation project(':framework:security')
+    implementation project(':framework:healthprobe')
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation project(':platform-sanity:static-data-check')
     implementation project(':accounting:persistence')
@@ -33,6 +36,7 @@ springBoot {
 }
 
 tasks.named('bootBuildImage') {
+    imageName = 'ledger-api:latest'
     builder = 'paketobuildpacks/builder-noble-java-tiny:0.0.187'
     environment = ['BP_JVM_VERSION': '21.0.12']
 }

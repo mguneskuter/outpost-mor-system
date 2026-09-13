@@ -83,21 +83,19 @@ class LedgerApiIntegrationTest {
   }
 
   @Test
-  void exposesOperationalEndpointsAndNotApplicationInternals() {
-    assertThat(get("/actuator/health").statusCode()).isEqualTo(200);
-    assertThat(get("/actuator/health/liveness").statusCode()).isEqualTo(200);
-    assertThat(get("/actuator/health/readiness").statusCode()).isEqualTo(200);
-    assertThat(get("/actuator/metrics").statusCode()).isEqualTo(200);
-    assertThat(get("/actuator/env").statusCode()).isEqualTo(404);
+  void exposesOnlyHealthProbesOnTheServicePort() {
+    assertThat(get("/livez").statusCode()).isEqualTo(200);
+    assertThat(get("/readyz").statusCode()).isEqualTo(200);
+    assertThat(get("/actuator/metrics").statusCode()).isEqualTo(404);
     assertThat(get("/ledger").statusCode()).isEqualTo(404);
   }
 
   @Test
   void healthRemainsAvailableWithoutRepeatingStartupValidation() {
-    HttpResponse<String> initial = get("/actuator/health");
+    HttpResponse<String> initial = get("/readyz");
     jdbcTemplate.update("DELETE FROM fx_rate");
 
-    HttpResponse<String> repeated = get("/actuator/health");
+    HttpResponse<String> repeated = get("/readyz");
 
     assertThat(initial.statusCode()).isEqualTo(200);
     assertThat(repeated.statusCode()).isEqualTo(200);

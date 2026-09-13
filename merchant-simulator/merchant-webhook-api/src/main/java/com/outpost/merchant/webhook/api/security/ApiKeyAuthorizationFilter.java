@@ -8,9 +8,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+/** Authorizes webhook requests with the configured API key. */
 public final class ApiKeyAuthorizationFilter extends OncePerRequestFilter {
   private final String apiKey;
 
+  /** Creates an authorization filter. */
   public ApiKeyAuthorizationFilter(String apiKey) {
     this.apiKey = apiKey;
   }

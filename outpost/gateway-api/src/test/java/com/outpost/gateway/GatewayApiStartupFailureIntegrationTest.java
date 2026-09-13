@@ -3,10 +3,15 @@ package com.outpost.gateway;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
+import java.util.stream.Stream;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.jdbc.DataSourceBuilder;
@@ -78,7 +83,7 @@ class GatewayApiStartupFailureIntegrationTest {
     assertThatThrownBy(() -> startAgainstDatabase(/* ledgerHmacSecret= */ null))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .hasMessageContaining("OUTPOST_LEDGER_GATEWAY_HMAC_SECRET");
+        .hasMessageContaining("hmacSecret");
   }
 
   @Test
@@ -88,8 +93,26 @@ class GatewayApiStartupFailureIntegrationTest {
     assertThatThrownBy(() -> startAgainstDatabase(""))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Ledger HMAC secret");
+        .hasMessageContaining("hmacSecret");
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidOperationalSettings")
+  void failsClosedForInvalidOperationalSetting(String property, String value, String fieldName) {
+    GatewayStaticDataFixtures.materializeAll(jdbcTemplate());
+
+    assertThatThrownBy(() -> startAgainstDatabase("integration-ledger-key", property, value))
+        .isInstanceOf(Exception.class)
+        .rootCause()
+        .hasMessageContaining(fieldName);
+  }
+
+  private static Stream<Arguments> invalidOperationalSettings() {
+    return Stream.of(
+        Arguments.of("outpost.gateway.ledger.connect-timeout", "PT0S", "connectTimeout"),
+        Arguments.of("outpost.gateway.ledger.connect-timeout", "-PT1S", "connectTimeout"),
+        Arguments.of("outpost.gateway.ledger.read-timeout", "PT6M", "readTimeout"),
+        Arguments.of("outpost.gateway.ledger.base-url", "not-a-url", "baseUrl"));
   }
 
   private void startAgainstDatabase() {
@@ -97,6 +120,11 @@ class GatewayApiStartupFailureIntegrationTest {
   }
 
   private void startAgainstDatabase(@Nullable String ledgerHmacSecret) {
+    startAgainstDatabase(ledgerHmacSecret, null, null);
+  }
+
+  private void startAgainstDatabase(
+      @Nullable String ledgerHmacSecret, @Nullable String property, @Nullable String value) {
     MockEnvironment env = new MockEnvironment();
     env.setProperty("spring.datasource.url", DATABASE.getJdbcUrl());
     env.setProperty("spring.datasource.username", DATABASE.getUsername());
@@ -105,19 +133,27 @@ class GatewayApiStartupFailureIntegrationTest {
     if (ledgerHmacSecret != null) {
       env.setProperty("OUTPOST_LEDGER_GATEWAY_HMAC_SECRET", ledgerHmacSecret);
     }
+    if (property != null && value != null) {
+      env.setProperty(property, value);
+    }
     new SpringApplicationBuilder(GatewayApiApplication.class)
         .web(WebApplicationType.NONE)
         .environment(env)
         .run();
   }
 
+  // Built once and reused: DataSourceBuilder produces a pooled datasource, and this class starts
+  // one Spring context per test, so a fresh instance per call would leak a connection pool per
+  // call rather than per test.
+  private static final DataSource TEST_ASSERTION_DATA_SOURCE =
+      DataSourceBuilder.create()
+          .url(DATABASE.getJdbcUrl())
+          .username(DATABASE.getUsername())
+          .password(DATABASE.getPassword())
+          .build();
+
   private static JdbcTemplate jdbcTemplate() {
-    return new JdbcTemplate(
-        DataSourceBuilder.create()
-            .url(DATABASE.getJdbcUrl())
-            .username(DATABASE.getUsername())
-            .password(DATABASE.getPassword())
-            .build());
+    return new JdbcTemplate(TEST_ASSERTION_DATA_SOURCE);
   }
 
   private static String migrationLocation() {

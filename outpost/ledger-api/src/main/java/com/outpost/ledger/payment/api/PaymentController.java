@@ -1,5 +1,6 @@
 package com.outpost.ledger.payment.api;
 
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.ledger.payment.service.CaptureException;
 import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationException;
@@ -11,7 +12,7 @@ import com.outpost.ledger.payment.service.RefundReservationService;
 import com.outpost.ledger.payment.service.ReserveRefundCommand;
 import com.outpost.ledger.payment.service.ReserveRefundException;
 import com.outpost.ledger.payment.service.ReserveRefundResult;
-import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -25,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/payment")
 public final class PaymentController {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(PaymentController.class));
   private final PaymentCreationService service;
   private final PaymentEventService eventService;
   private final CaptureService captureService;
@@ -44,8 +47,7 @@ public final class PaymentController {
 
   /** Creates a payment. */
   @PostMapping
-  public ResponseEntity<PaymentResponse> create(
-      @RequestBody CreatePaymentRequest request, HttpServletRequest ignored) {
+  public ResponseEntity<PaymentResponse> create(@RequestBody CreatePaymentRequest request) {
     return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
   }
 
@@ -104,13 +106,15 @@ public final class PaymentController {
   }
 
   @ExceptionHandler({RuntimeException.class})
-  ResponseEntity<PaymentError> unexpected(RuntimeException ignored) {
+  ResponseEntity<PaymentError> unexpected(RuntimeException exception) {
+    LOGGER.warn("payment request failed", exception);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(new PaymentError("INTERNAL_ERROR"));
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
-  ResponseEntity<PaymentError> malformed(HttpMessageNotReadableException ignored) {
+  ResponseEntity<PaymentError> malformed(HttpMessageNotReadableException exception) {
+    LOGGER.warn("payment request could not be read", exception);
     return ResponseEntity.badRequest().body(new PaymentError("INVALID_REQUEST"));
   }
 }

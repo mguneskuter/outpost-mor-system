@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images
+.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -39,16 +39,26 @@ images:
 	./outpost/gradlew -p psp-simulator bootBuildImage
 
 precommit:
-	SKIP=$(PRECOMMIT_SKIP) pre-commit run --all-files
+	SKIP=$(PRECOMMIT_SKIP) pre-commit run --all-files --hook-stage manual
+
+# The one command that builds and tests every Gradle root; CI runs this as its sole gate so
+# nothing is skipped by a path filter and no suite runs twice in the same CI run.
+verify:
+	./outpost/gradlew -p outpost spotlessCheck checkstyleMain checkstyleTest build
+	./outpost/gradlew -p psp-simulator spotlessCheck checkstyleMain checkstyleTest build
+	./outpost/gradlew -p merchant-simulator spotlessCheck checkstyleMain checkstyleTest build
+	$(MAKE) seed-test
 
 setup:
 	./local/setup.sh
 
-up:
-	docker compose --env-file .env -f local/docker-compose.yml up -d
+up: images
+	docker compose --env-file .env -f local/docker-compose.yml up -d --wait postgres
+	$(MAKE) lifecycle
+	docker compose --env-file .env -f local/docker-compose.yml up -d --wait
 
 down:
-	docker compose --env-file .env -f local/docker-compose.yml down
+	docker compose --env-file .env -f local/docker-compose.yml down --volumes
 
 status:
 	docker compose --env-file .env -f local/docker-compose.yml ps

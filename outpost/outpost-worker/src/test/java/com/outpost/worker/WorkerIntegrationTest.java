@@ -9,8 +9,8 @@ import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
 import com.outpost.payment.PspEventStatuses;
-import com.outpost.payment.repository.PspEventQueue;
-import com.outpost.payment.repository.PspEventQueue.PspEvent;
+import com.outpost.payment.repository.PspEventRepository;
+import com.outpost.payment.repository.PspEventRepository.PspEvent;
 import com.outpost.worker.psp.PspEventProcessor;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -47,7 +47,7 @@ class WorkerIntegrationTest {
 
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private PspEventProcessor processor;
-  @Autowired private PspEventQueue events;
+  @Autowired private PspEventRepository events;
   @Autowired private PlatformTransactionManager transactionManager;
 
   @BeforeAll
