@@ -1,4 +1,4 @@
-package com.outpost.ledger.payment.api;
+package com.outpost.accounting.api;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;

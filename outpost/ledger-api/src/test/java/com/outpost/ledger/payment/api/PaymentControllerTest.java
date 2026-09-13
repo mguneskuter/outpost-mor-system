@@ -5,6 +5,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.outpost.accounting.api.RefundRequest;
+import com.outpost.accounting.api.RefundResponse;
 import com.outpost.ledger.payment.service.CaptureService;
 import com.outpost.ledger.payment.service.PaymentCreationService;
 import com.outpost.ledger.payment.service.PaymentEventService;

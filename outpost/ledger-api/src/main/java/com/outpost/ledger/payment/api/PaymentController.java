@@ -1,5 +1,14 @@
 package com.outpost.ledger.payment.api;
 
+import com.outpost.accounting.api.CaptureRequest;
+import com.outpost.accounting.api.CaptureResponse;
+import com.outpost.accounting.api.CreatePaymentRequest;
+import com.outpost.accounting.api.PaymentApi;
+import com.outpost.accounting.api.PaymentError;
+import com.outpost.accounting.api.PaymentEventRequest;
+import com.outpost.accounting.api.PaymentResponse;
+import com.outpost.accounting.api.RefundRequest;
+import com.outpost.accounting.api.RefundResponse;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.ledger.payment.service.AppendPaymentEventCommand;
 import com.outpost.ledger.payment.service.CaptureException;
@@ -17,15 +26,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** HTTP endpoints for payment lifecycle commands. */
 @RestController
-@RequestMapping("/v1/payment")
-public final class PaymentController {
+public final class PaymentController implements PaymentApi {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(PaymentController.class));
   private final PaymentCreationService service;
@@ -45,15 +50,13 @@ public final class PaymentController {
     this.refundReservationService = refundReservationService;
   }
 
-  /** Creates a payment. */
-  @PostMapping
-  public ResponseEntity<PaymentResponse> create(@RequestBody CreatePaymentRequest request) {
+  @Override
+  public ResponseEntity<PaymentResponse> create(CreatePaymentRequest request) {
     return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
   }
 
-  /** Appends a Worker-observed payment lifecycle event. */
-  @PostMapping("/event")
-  public ResponseEntity<Void> appendPaymentEvent(@RequestBody PaymentEventRequest request) {
+  @Override
+  public ResponseEntity<Void> appendPaymentEvent(PaymentEventRequest request) {
     eventService.appendPaymentEvent(
         request == null
             ? null
@@ -62,15 +65,13 @@ public final class PaymentController {
     return ResponseEntity.noContent().build();
   }
 
-  /** Stores a capture the Worker observed as succeeded or failed. */
-  @PostMapping("/capture")
-  public ResponseEntity<CaptureResponse> capture(@RequestBody CaptureRequest request) {
+  @Override
+  public ResponseEntity<CaptureResponse> capture(CaptureRequest request) {
     return ResponseEntity.status(HttpStatus.CREATED).body(captureService.capture(request));
   }
 
-  /** Reserves a refund amount observed by the Worker. */
-  @PostMapping("/refund")
-  public ResponseEntity<RefundResponse> refund(@RequestBody RefundRequest request) {
+  @Override
+  public ResponseEntity<RefundResponse> refund(RefundRequest request) {
     ReserveRefundCommand command =
         request == null
             ? null

@@ -8,7 +8,12 @@ import com.outpost.account.configuration.repository.mybatis.MyBatisMerchantFeeCo
 import com.outpost.account.configuration.repository.mybatis.MyBatisMerchantPspRepository;
 import com.outpost.account.repository.AccountRepository;
 import com.outpost.account.repository.mybatis.MyBatisAccountRepository;
+import com.outpost.accounting.api.BalanceReportApi;
+import com.outpost.accounting.api.PaymentApi;
+import com.outpost.accounting.api.client.LedgerClientConfiguration;
+import com.outpost.accounting.api.client.LedgerHttpServiceGroupConfigurer;
 import com.outpost.accounting.queue.AccountingRequestQueue;
+import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.gateway.order.client.LedgerClient;
 import com.outpost.gateway.order.client.ledger.LedgerHttpClient;
 import com.outpost.gateway.order.service.OrderModificationService;
@@ -59,7 +64,7 @@ import tools.jackson.databind.ObjectMapper;
 /** Application bean definitions. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({GatewayLedgerProperties.class, GatewayPspClientProperties.class})
-@Import(OrderService.class)
+@Import({OrderService.class, LedgerClientConfiguration.class})
 public class ApplicationBeanConfiguration {
 
   @Bean
@@ -161,13 +166,18 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  LedgerClient ledgerClient(ObjectMapper objectMapper, GatewayLedgerProperties properties) {
-    return new LedgerHttpClient(
+  LedgerHttpServiceGroupConfigurer ledgerHttpServiceGroupConfigurer(
+      GatewayLedgerProperties properties) {
+    return new LedgerHttpServiceGroupConfigurer(
         properties.baseUrl(),
-        properties.hmacSecret(),
+        HmacKey.fromUtf8(properties.hmacSecret()),
         properties.connectTimeout(),
-        properties.readTimeout(),
-        objectMapper);
+        properties.readTimeout());
+  }
+
+  @Bean
+  LedgerClient ledgerClient(PaymentApi paymentApi) {
+    return new LedgerHttpClient(paymentApi);
   }
 
   @Bean
@@ -177,14 +187,8 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  LedgerReportClient ledgerReportClient(
-      ObjectMapper objectMapper, GatewayLedgerProperties properties) {
-    return new LedgerReportHttpClient(
-        properties.baseUrl(),
-        properties.hmacSecret(),
-        properties.connectTimeout(),
-        properties.readTimeout(),
-        objectMapper);
+  LedgerReportClient ledgerReportClient(BalanceReportApi balanceReportApi) {
+    return new LedgerReportHttpClient(balanceReportApi);
   }
 
   @Bean

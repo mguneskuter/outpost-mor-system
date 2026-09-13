@@ -1,0 +1,14 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+group = 'com.outpost.accounting'
+
+base {
+    archivesName = 'accounting-api'
+}
+
+dependencies {
+    implementation 'org.springframework:spring-web'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations'
+}

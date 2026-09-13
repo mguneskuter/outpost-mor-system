@@ -4,99 +4,55 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.accounting.TransactionEventTypes;
-import com.outpost.framework.security.hmac.HmacKey;
-import com.outpost.framework.security.hmac.HmacSha256;
-import com.outpost.framework.security.hmac.HmacSignature;
+import com.outpost.accounting.api.CaptureRequest;
+import com.outpost.accounting.api.CaptureResponse;
+import com.outpost.accounting.api.CreatePaymentRequest;
+import com.outpost.accounting.api.PaymentApi;
+import com.outpost.accounting.api.PaymentEventRequest;
+import com.outpost.accounting.api.PaymentResponse;
+import com.outpost.accounting.api.RefundRequest;
+import com.outpost.accounting.api.RefundResponse;
 import com.outpost.worker.accounting.client.LedgerPaymentClientException;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executors;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpClientErrorException;
 
 class LedgerPaymentHttpClientTest {
-  private static final String SECRET = "worker-secret";
-
-  private HttpServer server;
-  private final List<String> paths = new ArrayList<>();
-  private final List<String> bodies = new ArrayList<>();
-  private LedgerPaymentHttpClient client;
-  private int responseStatus = 204;
-
-  @BeforeEach
-  void startServer() throws IOException {
-    server = HttpServer.create(new InetSocketAddress(0), 0);
-    server.createContext("/", this::handle);
-    server.setExecutor(Executors.newSingleThreadExecutor());
-    server.start();
-    client =
-        new LedgerPaymentHttpClient(
-            "http://localhost:" + server.getAddress().getPort(),
-            SECRET,
-            Duration.ofSeconds(1),
-            Duration.ofSeconds(5),
-            new ObjectMapper());
-  }
-
-  @AfterEach
-  void stopServer() {
-    server.stop(0);
-  }
+  private final FakePaymentApi ledger = new FakePaymentApi();
+  private final LedgerPaymentHttpClient client = new LedgerPaymentHttpClient(ledger);
 
   @Test
-  void signsAndSendsPaymentEventWithItsWireCode() {
-    client.appendPaymentEvent("payment-1", null, TransactionEventTypes.AUTHORISED.getValue());
-
-    assertThat(paths).containsExactly("/v1/payment/event");
-    assertSignedBody(
-        "{\"payment_reference\":\"payment-1\",\"refund_reference\":null,\"event\":\""
-            + TransactionEventTypes.AUTHORISED.getValue().getCode()
-            + "\"}");
-  }
-
-  @Test
-  void signsAndSendsRefundEventWithItsReference() {
+  void sendsRefundEventWithItsWireCode() {
     client.appendPaymentEvent(
         "payment-1", "refund-1", TransactionEventTypes.REFUND_ACCEPTED.getValue());
 
-    assertSignedBody(
-        "{\"payment_reference\":\"payment-1\",\"refund_reference\":\"refund-1\","
-            + "\"event\":\""
-            + TransactionEventTypes.REFUND_ACCEPTED.getValue().getCode()
-            + "\"}");
+    assertThat(ledger.requests)
+        .containsExactly(new PaymentEventRequest("payment-1", "refund-1", "REFUND_ACCEPTED"));
   }
 
   @Test
-  void signsAndSendsCapture() {
+  void sendsCapture() {
     client.recordCapture("payment-1", "capture-1", true, 1250, "EUR");
 
-    assertThat(paths).containsExactly("/v1/payment/capture");
-    assertSignedBody(
-        "{\"payment_reference\":\"payment-1\",\"capture_reference\":\"capture-1\",\"success\":true,"
-            + "\"amount\":1250,\"currency\":\"EUR\"}");
+    assertThat(ledger.requests)
+        .containsExactly(new CaptureRequest("payment-1", "capture-1", true, 1250L, "EUR"));
   }
 
   @Test
-  void signsAndSendsRefundReservation() {
+  void sendsRefundReservation() {
     client.reserveRefund("payment-1", "refund-1", 800, 152, "EUR");
 
-    assertThat(paths).containsExactly("/v1/payment/refund");
-    assertSignedBody(
-        "{\"payment_reference\":\"payment-1\",\"refund_reference\":\"refund-1\",\"net_amount\":800,"
-            + "\"tax_amount\":152,\"currency\":\"EUR\"}");
+    assertThat(ledger.requests)
+        .containsExactly(new RefundRequest("payment-1", "refund-1", 800L, 152L, "EUR"));
   }
 
   @Test
-  void throwsClassifiedExceptionOnFailureResponse() {
-    responseStatus = 409;
+  void wrapsLedgerRejection() {
+    ledger.failure = new HttpClientErrorException(HttpStatus.CONFLICT);
 
     assertThatThrownBy(
             () ->
@@ -105,24 +61,38 @@ class LedgerPaymentHttpClientTest {
         .isInstanceOf(LedgerPaymentClientException.class);
   }
 
-  private void assertSignedBody(String expectedJson) {
-    assertThat(bodies).hasSize(1);
-    String[] parts = bodies.get(0).split("\\|", 2);
-    assertThat(parts[0]).isEqualToIgnoringWhitespace(expectedJson);
-    HmacKey key = HmacKey.fromUtf8(SECRET);
-    HmacSignature signature = HmacSignature.fromBase64(parts[1]);
-    assertThat(HmacSha256.verify(key, parts[0].getBytes(StandardCharsets.UTF_8), signature))
-        .isTrue();
-  }
+  private static final class FakePaymentApi implements PaymentApi {
+    private final List<Object> requests = new ArrayList<>();
+    private @Nullable RuntimeException failure;
 
-  private void handle(HttpExchange exchange) throws IOException {
-    byte[] body = exchange.getRequestBody().readAllBytes();
-    paths.add(exchange.getRequestURI().getPath());
-    bodies.add(
-        new String(body, StandardCharsets.UTF_8)
-            + "|"
-            + exchange.getRequestHeaders().getFirst("X-Outpost-Signature"));
-    exchange.sendResponseHeaders(responseStatus, -1);
-    exchange.close();
+    @Override
+    public ResponseEntity<PaymentResponse> create(CreatePaymentRequest request) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public ResponseEntity<Void> appendPaymentEvent(PaymentEventRequest request) {
+      accept(request);
+      return ResponseEntity.noContent().build();
+    }
+
+    @Override
+    public ResponseEntity<CaptureResponse> capture(CaptureRequest request) {
+      accept(request);
+      return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @Override
+    public ResponseEntity<RefundResponse> refund(RefundRequest request) {
+      accept(request);
+      return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    private void accept(Object request) {
+      if (failure != null) {
+        throw failure;
+      }
+      requests.add(request);
+    }
   }
 }

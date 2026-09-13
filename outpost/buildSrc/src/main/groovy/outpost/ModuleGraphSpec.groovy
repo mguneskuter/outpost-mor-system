@@ -21,6 +21,8 @@ class ModuleGraphSpec {
         ':accounting:domain',
         ':accounting:persistence',
         ':accounting:queue-api',
+        ':accounting:api',
+        ':accounting:api-client',
         ':tax',
         ':fx',
         ':payment:domain',
@@ -131,6 +133,11 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
+        ':accounting:api': [],
+        ':accounting:api-client': [
+            ':accounting:api',
+            ':framework:security'
+        ],
         ':tax': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
@@ -186,7 +193,9 @@ class ModuleGraphSpec {
             ':payment:repository',
             ':psp-integration:domain',
             ':psp-integration:client',
-            ':accounting:queue-api'
+            ':accounting:queue-api',
+            ':accounting:api',
+            ':accounting:api-client'
         ],
         ':ledger-api': [
             ':platform-sanity:static-data-check',
@@ -201,7 +210,9 @@ class ModuleGraphSpec {
             ':merchant-configuration:domain',
             ':accounting:domain',
             ':tax',
-            ':fx'
+            ':fx',
+            ':accounting:api',
+            ':accounting:api-client'
         ],
         ':outpost-worker': [
             ':platform-sanity:static-data-check',
@@ -217,6 +228,8 @@ class ModuleGraphSpec {
             ':payment:repository',
             ':accounting:domain',
             ':accounting:queue-api',
+            ':accounting:api',
+            ':accounting:api-client',
             ':psp-integration:domain',
             ':psp-integration:client'
         ],

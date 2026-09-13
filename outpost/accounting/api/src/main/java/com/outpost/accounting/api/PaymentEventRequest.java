@@ -1,13 +1,11 @@
-package com.outpost.ledger.payment.api;
+package com.outpost.accounting.api;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/** JSON request for reserving a refund. */
+/** JSON request for recording a payment or refund lifecycle event. */
 @JsonIgnoreProperties(ignoreUnknown = false)
-public record RefundRequest(
+public record PaymentEventRequest(
     @JsonProperty("payment_reference") String paymentReference,
     @JsonProperty("refund_reference") String refundReference,
-    @JsonProperty("net_amount") Long netAmount,
-    @JsonProperty("tax_amount") Long taxAmount,
-    @JsonProperty("currency") String currency) {}
+    @JsonProperty("event") String event) {}

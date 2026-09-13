@@ -1,6 +1,10 @@
 package com.outpost.worker.configuration;
 
+import com.outpost.accounting.api.PaymentApi;
+import com.outpost.accounting.api.client.LedgerClientConfiguration;
+import com.outpost.accounting.api.client.LedgerHttpServiceGroupConfigurer;
 import com.outpost.accounting.queue.AccountingRequestQueue;
+import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.simulator.SimulatorPspClient;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
@@ -30,6 +34,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
@@ -42,6 +47,7 @@ import tools.jackson.databind.ObjectMapper;
   LedgerWorkerProperties.class,
   PspClientProperties.class
 })
+@Import(LedgerClientConfiguration.class)
 public class WorkerConfiguration {
   @Bean
   Clock workerClock() {
@@ -104,14 +110,18 @@ public class WorkerConfiguration {
   }
 
   @Bean
-  LedgerPaymentClient ledgerPaymentClient(
-      ObjectMapper objectMapper, LedgerWorkerProperties properties) {
-    return new LedgerPaymentHttpClient(
+  LedgerHttpServiceGroupConfigurer ledgerHttpServiceGroupConfigurer(
+      LedgerWorkerProperties properties) {
+    return new LedgerHttpServiceGroupConfigurer(
         properties.baseUrl(),
-        properties.hmacSecret(),
+        HmacKey.fromUtf8(properties.hmacSecret()),
         properties.connectTimeout(),
-        properties.readTimeout(),
-        objectMapper);
+        properties.readTimeout());
+  }
+
+  @Bean
+  LedgerPaymentClient ledgerPaymentClient(PaymentApi paymentApi) {
+    return new LedgerPaymentHttpClient(paymentApi);
   }
 
   @Bean

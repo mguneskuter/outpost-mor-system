@@ -21,8 +21,10 @@ dependencies {
     implementation project(':merchant-configuration:domain')
     implementation project(':tax')
     implementation project(':fx')
+    implementation project(':accounting:api')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation project(':accounting:api-client')
     testImplementation 'com.fasterxml.jackson.core:jackson-databind'
     testImplementation 'com.tngtech.archunit:archunit:1.4.1'
     testImplementation 'org.flywaydb:flyway-core'
