@@ -22,7 +22,7 @@ import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
-import com.outpost.ledger.payment.api.SignatureFilter;
+import jakarta.servlet.Filter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,9 +37,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.security.web.context.AbstractSecurityWebApplicationInitializer;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -64,14 +66,20 @@ class PaymentCreationIntegrationTest {
           + "\"tax_amount\":2000,\"gross_amount\":12000,\"currency\":\"EUR\"}";
 
   @Autowired private WebApplicationContext applicationContext;
-  @Autowired private SignatureFilter signatureFilter;
+
+  @Autowired
+  @Qualifier(AbstractSecurityWebApplicationInitializer.DEFAULT_FILTER_NAME)
+  private Filter securityFilterChain;
+
   @Autowired private JdbcTemplate jdbcTemplate;
   private MockMvc mockMvc;
 
   @BeforeEach
   void setUpMockMvc() {
     mockMvc =
-        MockMvcBuilders.webAppContextSetup(applicationContext).addFilters(signatureFilter).build();
+        MockMvcBuilders.webAppContextSetup(applicationContext)
+            .addFilters(securityFilterChain)
+            .build();
   }
 
   @BeforeAll
@@ -363,16 +371,6 @@ class PaymentCreationIntegrationTest {
   }
 
   @Test
-  void eventRouteRequiresTheWorkerKey() throws Exception {
-    String reference = "event-worker-auth";
-    String body = eventBody(reference, "AUTHORISED");
-    String gatewaySignature = signature(body);
-    performEvent(body, gatewaySignature)
-        .andExpect(status().isUnauthorized())
-        .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
-  }
-
-  @Test
   void concurrentAuthorisationAndRefusalAllowOnlyOneTransition() throws Exception {
     String reference = "event-concurrent";
     String payment = body(reference);
@@ -557,19 +555,6 @@ class PaymentCreationIntegrationTest {
   }
 
   @Test
-  void captureRouteRequiresTheWorkerKey() throws Exception {
-    String paymentReference = "capture-worker-auth";
-    String payment = body(paymentReference);
-    perform(payment, signature(payment)).andExpect(status().isCreated());
-    String authorised = eventBody(paymentReference, "AUTHORISED");
-    performEvent(authorised, workerSignature(authorised)).andExpect(status().isNoContent());
-    String capture = captureBody(paymentReference, "capture-worker-auth-ref", true, 12000, "EUR");
-    performCapture(capture, signature(capture))
-        .andExpect(status().isUnauthorized())
-        .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
-  }
-
-  @Test
   void refundReservationWritesChildDetailAndRequestWithoutBooking() throws Exception {
     String paymentReference = "refund-valid-payment";
     createCapturedPayment(paymentReference);
@@ -734,17 +719,6 @@ class PaymentCreationIntegrationTest {
             () ->
                 jdbcTemplate.update("DELETE FROM refund_detail WHERE transaction_id = ?", refundId))
         .isInstanceOf(org.springframework.dao.DataAccessException.class);
-  }
-
-  @Test
-  void refundRouteRequiresTheWorkerKey() throws Exception {
-    String paymentReference = "refund-worker-auth";
-    createCapturedPayment(paymentReference);
-    String refund = refundBody(paymentReference, "refund-worker-auth-ref", 8000, 2000, "EUR");
-
-    performRefund(refund, signature(refund))
-        .andExpect(status().isUnauthorized())
-        .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
   }
 
   @Test

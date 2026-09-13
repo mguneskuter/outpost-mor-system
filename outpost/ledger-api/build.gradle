@@ -9,6 +9,7 @@ dependencies {
     implementation project(':framework:security')
     implementation project(':framework:healthprobe')
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation project(':platform-sanity:static-data-check')
