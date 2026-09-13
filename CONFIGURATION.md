@@ -35,6 +35,21 @@ Both deployables read `spring.datasource.url`, `spring.datasource.username`, and
 `spring.datasource.password` from `OUTPOST_DB_URL`, `OUTPOST_DB_USER`, and
 `OUTPOST_DB_PASSWORD`.
 
+## Merchant shell (`merchant-cli/src/main/resources/application.properties`)
+
+The shell is a developer tool outside the platform; it reads the same `.env` values through the
+placeholders below and holds its own product catalogue and the second demo merchant's seeded
+credentials as plain configuration.
+
+| Key                                                         | Required | Default                                               | Sensitive | Validation                 |
+| ----------------------------------------------------------- | -------- | ----------------------------------------------------- | --------- | -------------------------- |
+| `merchant.cli.gateway-base-url`                             | yes      | `${OUTPOST_GATEWAY_BASE_URL:http://localhost:8080}`   | no        | a URI                      |
+| `merchant.cli.operator-api-key`                             | yes      | `${OUTPOST_OPERATOR_API_KEY}`                         | yes       | not blank                  |
+| `merchant.cli.psp-api-key`                                  | yes      | `${OUTPOST_PSP_SIMULATOR_API_KEY}`                    | yes       | not blank                  |
+| `merchant.cli.merchants.<CODE>.api-key`                     | yes      | `${OUTPOST_MERCHANT_API_KEY}` for `DEMO_MERCHANT`     | yes       | not blank                  |
+| `merchant.cli.merchants.<CODE>.hmac-secret`                 | yes      | `${OUTPOST_MERCHANT_HMAC_SECRET}` for `DEMO_MERCHANT` | yes       | not blank                  |
+| `merchant.cli.catalogue[n].{sku,name,amount,currency,type}` | yes      | three demo items                                      | no        | not blank; amount positive |
+
 ## Environment (`.env`, copied from `.env.example`)
 
 `make up` passes these to the containers; `make seed` and `make smoke` read them on the host.

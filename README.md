@@ -11,9 +11,8 @@ authority, and refunds on request. It is one PostgreSQL database and two deploya
   and answers the balance reports. Only the Gateway calls it.
 
 The local platform adds a PSP simulator (`psp-simulator`, port 8083) that hosts the payment page
-and sends the webhooks a real PSP would. A merchant webhook receiver
-(`merchant-simulator/merchant-webhook-api`) exists as an optional stand-alone service and is not
-part of the local platform.
+and sends the webhooks a real PSP would. `merchant-cli` is a merchant's shell for driving the
+platform by hand; it is not part of the Compose platform.
 
 ## Prerequisites
 
@@ -33,6 +32,14 @@ make smoke                 # build images, start the platform, migrate, seed, ru
 make tail ledger           # follow logs: gateway, ledger, psp-simulator, postgres; none for all
 make down                  # stop the platform and remove its volume
 ```
+
+`make merchant-cli` opens a merchant's shell against the running platform. It asks step by
+step: which merchant, what to do (create an order, pay it, refund it, read what Outpost owes the
+merchant or each tax authority), and for an order which PSP, which shopper country, and which
+catalogue items; it prints the result and asks again. The same actions run scripted:
+`java -jar merchant-cli/build/libs/merchant-cli.jar order --psp DEMO_PSP --items EBOOK,TSHIRT`,
+`pay <order-reference>`, `refund <order-reference>`, `merchants`, `psps`, `catalogue`,
+`balance-merchant`, `balance-tax`, and `help`.
 
 `make smoke` builds the images with Buildpacks, starts PostgreSQL, applies the Flyway
 migrations, materialises the enum tables, seeds a demo merchant and PSP, starts the services,
@@ -217,13 +224,13 @@ other's output.
 
 ## Layout
 
-| Path                  | Purpose                                                                 |
-| --------------------- | ----------------------------------------------------------------------- |
-| `.github/workflows/`  | The manually started CI workflow.                                       |
-| `bin/`                | Gitignored repository-local scanner binaries from `make setup`.         |
-| `local/`              | Docker Compose platform, migrations and seed scripts, the smoke flow.   |
-| `merchant-simulator/` | Gradle root of the optional merchant webhook receiver.                  |
-| `openapi/`            | The Gateway and Ledger API contracts.                                   |
-| `outpost/`            | Gradle root of the Outpost modules, deployables, and Flyway migrations. |
-| `psp-simulator/`      | Gradle root of the PSP simulator.                                       |
-| `CONFIGURATION.md`    | Every setting and environment variable.                                 |
+| Path                 | Purpose                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| `.github/workflows/` | The manually started CI workflow.                                       |
+| `bin/`               | Gitignored repository-local scanner binaries from `make setup`.         |
+| `local/`             | Docker Compose platform, migrations and seed scripts, the smoke flow.   |
+| `merchant-cli/`      | Gradle root of the merchant shell.                                      |
+| `openapi/`           | The Gateway and Ledger API contracts.                                   |
+| `outpost/`           | Gradle root of the Outpost modules, deployables, and Flyway migrations. |
+| `psp-simulator/`     | Gradle root of the PSP simulator.                                       |
+| `CONFIGURATION.md`   | Every setting and environment variable.                                 |
