@@ -107,8 +107,7 @@ public class LedgerSecurityConfiguration {
                     .hasAuthority(GATEWAY)
                     .requestMatchers(
                         HttpMethod.GET,
-                        "/v1/report/balance/tax",
-                        "/v1/report/balance/merchant",
+                        "/v1/report/balance",
                         "/v1/report/balance/merchant/{merchantCode}")
                     .hasAuthority(GATEWAY)
                     .anyRequest()

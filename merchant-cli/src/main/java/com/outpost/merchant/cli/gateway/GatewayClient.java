@@ -11,6 +11,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.LocalDate;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -56,27 +57,58 @@ public final class GatewayClient {
     return refundReference;
   }
 
-  /** What Outpost owes the merchant. */
-  public BalanceReport merchantBalances(MerchantCredentials merchant) {
-    return send(
-        merchantRequest(merchant, "GET", "/v1/report/balance/merchant", NO_BODY),
-        BalanceReport.class);
+  /** Builds the merchant's balance report over the period and answers the URL it is read at. */
+  public String requestMerchantReport(MerchantCredentials merchant, LocalDate from, LocalDate to) {
+    return reportUrl(
+        send(merchantRequest(merchant, "GET", reportPath(from, to), NO_BODY), ReportLink.class));
   }
 
-  /** What Outpost owes each tax authority; the operator's view. */
-  public BalanceReport taxBalances(String operatorApiKey) {
-    HttpRequest request =
-        HttpRequest.newBuilder(baseUrl.resolve("/v1/report/balance/tax"))
-            .timeout(TIMEOUT)
-            .header("X-Outpost-Api-Key", operatorApiKey)
-            .GET()
-            .build();
-    return send(request, BalanceReport.class);
+  /** Builds the platform's balance report over the period and answers the URL it is read at. */
+  public String requestPlatformReport(String operatorApiKey, LocalDate from, LocalDate to) {
+    return reportUrl(
+        send(
+            operatorRequest(operatorApiKey, baseUrl.resolve(reportPath(from, to))),
+            ReportLink.class));
+  }
+
+  /** Reads a built report at its URL as the merchant. */
+  public BalanceReport readMerchantReport(MerchantCredentials merchant, String reportUrl) {
+    return send(
+        merchantRequest(merchant, "GET", URI.create(reportUrl), NO_BODY), BalanceReport.class);
+  }
+
+  /** Reads a built report at its URL as the operator. */
+  public BalanceReport readPlatformReport(String operatorApiKey, String reportUrl) {
+    return send(operatorRequest(operatorApiKey, URI.create(reportUrl)), BalanceReport.class);
+  }
+
+  private static String reportPath(LocalDate from, LocalDate to) {
+    return "/v1/report?from=" + from + "&to=" + to;
+  }
+
+  private static String reportUrl(ReportLink link) {
+    if (link.reportUrl() == null) {
+      throw new GatewayException(200, "REPORT_URL_MISSING");
+    }
+    return link.reportUrl();
+  }
+
+  private HttpRequest operatorRequest(String operatorApiKey, URI uri) {
+    return HttpRequest.newBuilder(uri)
+        .timeout(TIMEOUT)
+        .header("X-Outpost-Api-Key", operatorApiKey)
+        .GET()
+        .build();
   }
 
   private HttpRequest merchantRequest(
       MerchantCredentials merchant, String method, String path, byte[] body) {
-    return HttpRequest.newBuilder(baseUrl.resolve(path))
+    return merchantRequest(merchant, method, baseUrl.resolve(path), body);
+  }
+
+  private HttpRequest merchantRequest(
+      MerchantCredentials merchant, String method, URI uri, byte[] body) {
+    return HttpRequest.newBuilder(uri)
         .timeout(TIMEOUT)
         .header("Content-Type", "application/json")
         .header("X-Outpost-Api-Key", merchant.apiKey())
@@ -122,4 +154,6 @@ public final class GatewayClient {
   }
 
   private record Refund(@JsonProperty("refund_reference") @Nullable String refundReference) {}
+
+  private record ReportLink(@JsonProperty("report_url") @Nullable String reportUrl) {}
 }

@@ -1,12 +1,13 @@
 package com.outpost.ledger.report.api;
 
 import com.outpost.accounting.api.BalanceReportApi;
-import com.outpost.accounting.api.BalanceReportResponse;
-import com.outpost.ledger.report.service.BalanceReport;
+import com.outpost.accounting.report.BalanceReport;
+import com.outpost.accounting.report.ReportPeriod;
 import com.outpost.ledger.report.service.BalanceReportService;
+import java.time.LocalDate;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Exposes Ledger's tax-authority and merchant balance reports. */
+/** Serves the Ledger's balance reports. */
 @RestController
 public final class BalanceReportController implements BalanceReportApi {
   private final BalanceReportService service;
@@ -17,34 +18,12 @@ public final class BalanceReportController implements BalanceReportApi {
   }
 
   @Override
-  public BalanceReportResponse tax() {
-    return toResponse(service.tax());
+  public BalanceReport platform(LocalDate from, LocalDate to) {
+    return service.platform(new ReportPeriod(from, to));
   }
 
   @Override
-  public BalanceReportResponse merchant() {
-    return toResponse(service.merchant());
-  }
-
-  @Override
-  public BalanceReportResponse merchant(String merchantCode) {
-    return toResponse(service.merchant(merchantCode));
-  }
-
-  private static BalanceReportResponse toResponse(BalanceReport report) {
-    return new BalanceReportResponse(
-        report.accounts().stream()
-            .map(
-                account ->
-                    new BalanceReportResponse.Account(
-                        account.accountCode(),
-                        account.name(),
-                        account.balances().stream()
-                            .map(
-                                balance ->
-                                    new BalanceReportResponse.Balance(
-                                        balance.currency(), balance.amount()))
-                            .toList()))
-            .toList());
+  public BalanceReport merchant(String merchantCode, LocalDate from, LocalDate to) {
+    return service.merchant(merchantCode, new ReportPeriod(from, to));
   }
 }

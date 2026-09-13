@@ -4,8 +4,9 @@ info:
   version: "1"
   description: |
     Outpost's merchant-facing API. A merchant creates orders, refunds them, lists the PSPs it may
-    pay through, and reads what Outpost owes it. The operator reads what Outpost owes each tax
-    authority and every merchant. PSPs deliver payment events to the webhook route.
+    pay through, and reads the balances posted to its account over a period. The operator reads
+    the same report for every merchant, tax authority, and platform account. PSPs deliver payment
+    events to the webhook route.
 
     Every refused or failed request answers `ErrorResponse`, except the PSP webhook, whose
     acknowledgement carries its result code so the PSP does not redeliver a rejected event.
@@ -180,24 +181,48 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
-  /v1/report/balance/tax:
+  /v1/report:
     get:
       tags: [Reports]
-      summary: What Outpost owes each tax authority
-      operationId: taxBalances
+      summary: Build a balance report over a period
+      description: |
+        Builds the caller's report and answers the URL it can be read at. A merchant's report
+        covers the account its key authenticated, whatever the request says; the operator's covers
+        every merchant, tax authority, and platform account. Both dates are inclusive calendar days
+        in UTC, and the period spans at most thirty days.
+      operationId: createReport
       security:
         - OperatorApiKey: []
+        - MerchantApiKey: []
+          MerchantSignature: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
       responses:
         "200":
-          description: One account per tax authority with a balance per currency
+          description: The URL of the built report
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BalanceReportResponse"
+                $ref: "#/components/schemas/ReportLinkResponse"
+        "400":
+          description: "`INVALID_REPORT_PERIOD`: `to` is before `from` or more than 29 days after it; `INVALID_REQUEST`: a date is absent or unreadable"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          description: "`OPERATOR_REQUIRED`: a merchant key cannot read tax balances"
+          description: "`UNAUTHENTICATED`, or `MERCHANT_NOT_FOUND` when the key's merchant account is not active"
           content:
             application/json:
               schema:
@@ -206,27 +231,42 @@ paths:
           $ref: "#/components/responses/BodyTooLarge"
         "500":
           $ref: "#/components/responses/InternalError"
-  /v1/report/balance/merchant:
+  /v1/report/{reportId}:
     get:
       tags: [Reports]
-      summary: What Outpost owes merchants
+      summary: Read a built report
       description: |
-        The operator receives every merchant. A merchant receives only itself: the Ledger reads
-        the rows of the account the key authenticated, whatever the request says.
-      operationId: merchantBalances
+        Any authenticated key reads any built report. The Gateway keeps the most recent reports in
+        memory; an evicted or never built report answers `404`.
+      operationId: readReport
       security:
         - OperatorApiKey: []
         - MerchantApiKey: []
           MerchantSignature: []
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
-          description: One account per merchant with a balance per currency
+          description: The report
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BalanceReportResponse"
+                $ref: "#/components/schemas/BalanceReport"
+        "400":
+          description: "`INVALID_REQUEST`: the identifier is not a UUID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: "`UNAUTHENTICATED`, or `MERCHANT_NOT_FOUND` when the key's merchant account is not active"
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          description: "`REPORT_NOT_FOUND`: no report is stored under the identifier"
           content:
             application/json:
               schema:
@@ -518,32 +558,55 @@ components:
                 type: string
               name:
                 type: string
-    BalanceReportResponse:
+    ReportLinkResponse:
       type: object
-      required: [accounts]
+      required: [report_url]
       properties:
+        report_url:
+          type: string
+          format: uri
+          description: Where the built report is read
+    BalanceReport:
+      type: object
+      required: [from, to, accounts]
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
         accounts:
           type: array
+          description: Ordered by account code
           items:
             type: object
-            required: [account_code, name, balances]
+            required: [account_code, balance_accounts]
             properties:
               account_code:
                 type: string
-              name:
-                type: string
-              balances:
+              balance_accounts:
                 type: array
+                description: Every balance account of the account, ordered by code, even without balances
                 items:
                   type: object
-                  required: [currency, amount]
+                  required: [balance_account_code, balances]
                   properties:
-                    currency:
+                    balance_account_code:
                       type: string
-                    amount:
-                      type: integer
-                      format: int64
-                      description: What Outpost owes the account, in minor units; negative when the account owes Outpost
+                    balances:
+                      type: array
+                      description: One per currency posted in the period, ordered by currency code
+                      items:
+                        type: object
+                        required: [currency, balance]
+                        properties:
+                          currency:
+                            type: string
+                          balance:
+                            type: string
+                            description: The sum posted in the period, in major units as a decimal string, positive on the balance account's normal side
+                            examples: ["76.00"]
     PspWebhookEventRequest:
       type: object
       required:

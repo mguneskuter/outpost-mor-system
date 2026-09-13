@@ -21,6 +21,7 @@ class ModuleGraphSpec {
         ':merchant-configuration:domain',
         ':accounting:domain',
         ':accounting:persistence',
+        ':accounting:report',
         ':accounting:api',
         ':accounting:api-client',
         ':tax',
@@ -128,7 +129,9 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
+        ':accounting:report': [],
         ':accounting:api': [
+            ':accounting:report',
             ':common-iso:domain',
             ':common-payment:domain',
             ':framework:logging'
@@ -194,6 +197,7 @@ class ModuleGraphSpec {
             ':payment:repository',
             ':psp-integration:domain',
             ':psp-integration:client',
+            ':accounting:report',
             ':accounting:api',
             ':accounting:api-client'
         ],
@@ -212,6 +216,7 @@ class ModuleGraphSpec {
             ':accounting:domain',
             ':tax',
             ':fx',
+            ':accounting:report',
             ':accounting:api',
             ':accounting:api-client'
         ],

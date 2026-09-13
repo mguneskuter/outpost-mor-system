@@ -2,7 +2,6 @@ package com.outpost.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
-import static org.assertj.core.api.Assertions.tuple;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -34,16 +33,18 @@ import com.outpost.ledger.payment.service.PaymentEventException;
 import com.outpost.ledger.payment.service.PaymentEventService;
 import com.outpost.ledger.payment.service.RefundException;
 import com.outpost.ledger.payment.service.RefundService;
-import com.outpost.ledger.report.repository.BalanceLine;
-import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.payment.common.Amount;
 import jakarta.servlet.Filter;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
@@ -84,7 +85,6 @@ class PaymentBookingIntegrationTest {
   @Autowired private PaymentEventService paymentEvents;
   @Autowired private CaptureService captures;
   @Autowired private RefundService refunds;
-  @Autowired private BalanceReportRepository balanceReports;
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -431,66 +431,70 @@ class PaymentBookingIntegrationTest {
   }
 
   @Test
-  void balanceReportsGroupCurrenciesAndReflectRefunds() throws Exception {
-    String eurReference = "balance-report-eur";
+  void platformReportShowsEachVisibleRegisterAtItsNormalBalanceInMajorUnits() throws Exception {
+    LocalDate today = LocalDate.now(ZoneOffset.UTC);
+    final BigDecimal feeRevenueBefore =
+        balanceOrZero(report("/v1/report/balance", today, today), "OUTPOST", "FEE_REVENUE");
+    String reference = "platform-report";
     createCapturedPayment(
-        eurReference,
-        orderCreated(eurReference, "DEMO_MERCHANT_2", Countries.GERMANY.getValue(), NET));
-    refunds.refund(eurReference, "balance-report-refund");
-    String usdReference = "balance-report-usd";
-    createCapturedPayment(
-        usdReference,
-        orderCreated(
-            usdReference,
-            "DEMO_MERCHANT_2",
-            Countries.GERMANY.getValue(),
-            Currencies.USD.getValue(),
-            20_000L,
-            0L));
+        reference, orderCreated(reference, "DEMO_MERCHANT_2", Countries.GERMANY.getValue(), NET));
 
-    String tax = report("/v1/report/balance/tax");
-    JsonNode taxAuthority = account(tax, "TAX_AUTHORITY_DE");
-    assertThat(taxAuthority.path("name").asText()).isEqualTo("Germany Tax Authority");
-    assertThat(balanceAmount(taxAuthority, "EUR")).isZero();
-    assertThat(balanceAmount(taxAuthority, "USD")).isZero();
-    String merchant = report("/v1/report/balance/merchant");
-    JsonNode merchantAccount = account(merchant, "DEMO_MERCHANT_2");
-    assertThat(merchantAccount.path("name").asText()).isEqualTo("Demo Merchant 2");
-    // The 5% fee on net 10000 stays with the platform after the full refund.
-    assertThat(balanceAmount(merchantAccount, "EUR")).isEqualTo(-500L);
-    // Net 20000 less the 5% fee.
-    assertThat(balanceAmount(merchantAccount, "USD")).isEqualTo(19_000L);
+    String report = report("/v1/report/balance", today, today);
+
+    assertThat(accountCodes(report))
+        .contains("DEMO_MERCHANT_2", "TAX_AUTHORITY_DE", "OUTPOST")
+        .doesNotContain("DEMO_PSP", "ROOT");
+    assertThat(balanceAccountCodes(account(report, "DEMO_MERCHANT_2")))
+        .containsExactly("MERCHANT_PAYABLE", "PENDING_FEE");
+    // Net 100.00 less the 5% fee is owed to the merchant; the pending fee was cleared on capture.
+    assertThat(balance(report, "DEMO_MERCHANT_2", "MERCHANT_PAYABLE")).isEqualTo("95.00");
+    assertThat(balance(report, "DEMO_MERCHANT_2", "PENDING_FEE")).isEqualTo("0.00");
+    assertThat(balance(report, "TAX_AUTHORITY_DE", "TAX_PAYABLE")).isEqualTo("20.00");
+    assertThat(balanceOrZero(report, "OUTPOST", "FEE_REVENUE").subtract(feeRevenueBefore))
+        .isEqualByComparingTo("5.00");
   }
 
   @Test
-  void perMerchantBalancesReadOnlyTheNamedMerchantsRows() throws Exception {
-    String firstReference = "per-merchant-first";
-    createCapturedPayment(
-        firstReference,
-        orderCreated(firstReference, "DEMO_MERCHANT_3", Countries.GERMANY.getValue(), NET));
-    String secondReference = "per-merchant-second";
-    createCapturedPayment(
-        secondReference,
-        orderCreated(secondReference, "DEMO_MERCHANT_4", Countries.GERMANY.getValue(), 2 * NET));
+  void merchantReportListsOnlyTheNamedMerchant() throws Exception {
+    LocalDate today = LocalDate.now(ZoneOffset.UTC);
+    String reference = "merchant-report";
+    createCapturedPayment(reference, orderCreated(reference, "DEMO_MERCHANT_3", NET));
 
-    List<BalanceLine> lines = balanceReports.findMerchantBalancesByMerchantCode("DEMO_MERCHANT_4");
+    String report = report("/v1/report/balance/merchant/DEMO_MERCHANT_3", today, today);
 
-    assertThat(lines)
-        .extracting(BalanceLine::accountCode, BalanceLine::currency, BalanceLine::amount)
-        .containsExactly(tuple("DEMO_MERCHANT_4", "EUR", 2 * NET - 2 * NET / 20));
-    assertThat(balanceReports.findMerchantBalancesByMerchantCode("NOBODY")).isEmpty();
-    JsonNode reported =
-        account(report("/v1/report/balance/merchant/DEMO_MERCHANT_3"), "DEMO_MERCHANT_3");
-    assertThat(balanceAmount(reported, "EUR")).isEqualTo(NET - NET / 20);
-    assertThat(
-            JSON.readTree(report("/v1/report/balance/merchant/DEMO_MERCHANT_3")).path("accounts"))
-        .hasSize(1);
+    assertThat(accountCodes(report)).containsExactly("DEMO_MERCHANT_3");
+    assertThat(balance(report, "DEMO_MERCHANT_3", "MERCHANT_PAYABLE")).isEqualTo("95.00");
+    assertThat(accountCodes(report("/v1/report/balance/merchant/NOBODY", today, today))).isEmpty();
+  }
+
+  @Test
+  void periodWithoutPostingsListsEveryBalanceAccountWithoutBalances() throws Exception {
+    LocalDate today = LocalDate.now(ZoneOffset.UTC);
+    LocalDate yesterday = today.minusDays(1);
+    createCapturedPayment("period-without-postings");
+
+    String posted = report("/v1/report/balance", today, today);
+    String unposted = report("/v1/report/balance", yesterday.minusDays(29), yesterday);
+
+    assertThat(balanceAccountKeys(unposted))
+        .isEqualTo(balanceAccountKeys(posted))
+        .contains("DEMO_MERCHANT MERCHANT_PAYABLE", "OUTPOST FEE_REVENUE");
+    for (JsonNode account : JSON.readTree(unposted).path("accounts")) {
+      for (JsonNode balanceAccount : account.path("balance_accounts")) {
+        assertThat(balanceAccount.path("balances")).isEmpty();
+      }
+    }
   }
 
   @Test
   void balanceReportsRequireTheGatewayKey() throws Exception {
+    LocalDate today = LocalDate.now(ZoneOffset.UTC);
+
     mockMvc
-        .perform(get("/v1/report/balance/merchant"))
+        .perform(
+            get("/v1/report/balance")
+                .queryParam("from", today.toString())
+                .queryParam("to", today.toString()))
         .andExpect(status().isUnauthorized())
         .andExpect(content().json("{\"code\":\"UNAUTHENTICATED\"}"));
   }
@@ -506,7 +510,12 @@ class PaymentBookingIntegrationTest {
   }
 
   private static AccountingQueueRequest orderCreated(String reference) {
-    return orderCreated(reference, "DEMO_MERCHANT", Countries.UNITED_STATES.getValue(), NET);
+    return orderCreated(reference, "DEMO_MERCHANT", NET);
+  }
+
+  private static AccountingQueueRequest orderCreated(
+      String reference, String merchantCode, long net) {
+    return orderCreated(reference, merchantCode, Countries.UNITED_STATES.getValue(), net);
   }
 
   private static AccountingQueueRequest orderCreated(
@@ -539,10 +548,12 @@ class PaymentBookingIntegrationTest {
         new Amount(currency, net + tax));
   }
 
-  private String report(String path) throws Exception {
+  private String report(String path, LocalDate from, LocalDate to) throws Exception {
     return mockMvc
         .perform(
             get(path)
+                .queryParam("from", from.toString())
+                .queryParam("to", to.toString())
                 .header(
                     "X-Outpost-Signature",
                     HmacSha256.sign(GATEWAY_KEY, "".getBytes(StandardCharsets.UTF_8)).toBase64()))
@@ -552,26 +563,71 @@ class PaymentBookingIntegrationTest {
         .getContentAsString();
   }
 
-  private static JsonNode account(String report, String accountCode) throws Exception {
-    List<JsonNode> matches = new ArrayList<>();
+  private static List<String> accountCodes(String report) throws Exception {
+    List<String> codes = new ArrayList<>();
     for (JsonNode account : JSON.readTree(report).path("accounts")) {
-      if (accountCode.equals(account.path("account_code").asText())) {
-        matches.add(account);
+      codes.add(account.path("account_code").asText());
+    }
+    return codes;
+  }
+
+  private static JsonNode account(String report, String accountCode) throws Exception {
+    return single(JSON.readTree(report).path("accounts"), "account_code", accountCode);
+  }
+
+  private static List<String> balanceAccountCodes(JsonNode account) {
+    List<String> codes = new ArrayList<>();
+    for (JsonNode balanceAccount : account.path("balance_accounts")) {
+      codes.add(balanceAccount.path("balance_account_code").asText());
+    }
+    return codes;
+  }
+
+  /** Every account and balance account pair in the report, as {@code "<account> <register>"}. */
+  private static Set<String> balanceAccountKeys(String report) throws Exception {
+    Set<String> keys = new TreeSet<>();
+    for (JsonNode account : JSON.readTree(report).path("accounts")) {
+      for (String balanceAccountCode : balanceAccountCodes(account)) {
+        keys.add(account.path("account_code").asText() + " " + balanceAccountCode);
+      }
+    }
+    return keys;
+  }
+
+  private static String balance(String report, String accountCode, String balanceAccountCode)
+      throws Exception {
+    JsonNode balanceAccount =
+        single(
+            account(report, accountCode).path("balance_accounts"),
+            "balance_account_code",
+            balanceAccountCode);
+    return single(balanceAccount.path("balances"), "currency", "EUR").path("balance").asText();
+  }
+
+  private static BigDecimal balanceOrZero(
+      String report, String accountCode, String balanceAccountCode) throws Exception {
+    JsonNode balanceAccount =
+        single(
+            account(report, accountCode).path("balance_accounts"),
+            "balance_account_code",
+            balanceAccountCode);
+    for (JsonNode balance : balanceAccount.path("balances")) {
+      if ("EUR".equals(balance.path("currency").asText())) {
+        return new BigDecimal(balance.path("balance").asText());
+      }
+    }
+    return BigDecimal.ZERO;
+  }
+
+  private static JsonNode single(JsonNode elements, String field, String value) {
+    List<JsonNode> matches = new ArrayList<>();
+    for (JsonNode element : elements) {
+      if (value.equals(element.path(field).asText())) {
+        matches.add(element);
       }
     }
     assertThat(matches).hasSize(1);
     return matches.getFirst();
-  }
-
-  private static long balanceAmount(JsonNode account, String currency) {
-    List<JsonNode> matches = new ArrayList<>();
-    for (JsonNode balance : account.path("balances")) {
-      if (currency.equals(balance.path("currency").asText())) {
-        matches.add(balance);
-      }
-    }
-    assertThat(matches).hasSize(1);
-    return matches.getFirst().path("amount").asLong();
   }
 
   private Map<String, Object> captureChild(long paymentId) {

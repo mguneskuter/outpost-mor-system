@@ -6,7 +6,7 @@ import com.outpost.gateway.order.api.OrderController;
 import com.outpost.gateway.order.api.OrderModificationController;
 import com.outpost.gateway.psp.api.PspController;
 import com.outpost.gateway.psp.api.PspWebhookController;
-import com.outpost.gateway.report.api.BalanceReportController;
+import com.outpost.gateway.report.api.ReportController;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
@@ -28,7 +28,7 @@ class GatewayOpenApiContractTest {
           OrderController.class,
           OrderModificationController.class,
           PspController.class,
-          BalanceReportController.class,
+          ReportController.class,
           PspWebhookController.class);
 
   @Test

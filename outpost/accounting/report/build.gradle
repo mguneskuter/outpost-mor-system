@@ -1,0 +1,22 @@
+plugins {
+    id 'outpost.java-conventions'
+    id 'java-library'
+}
+
+group = 'com.outpost.accounting'
+
+base {
+    archivesName = 'accounting-report'
+}
+
+dependencies {
+    api 'com.fasterxml.jackson.core:jackson-annotations'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'tools.jackson.core:jackson-databind'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

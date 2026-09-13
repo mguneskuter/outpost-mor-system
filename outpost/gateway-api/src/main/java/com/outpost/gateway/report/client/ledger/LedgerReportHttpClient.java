@@ -1,8 +1,8 @@
 package com.outpost.gateway.report.client.ledger;
 
 import com.outpost.accounting.api.BalanceReportApi;
-import com.outpost.accounting.api.BalanceReportResponse;
-import com.outpost.gateway.report.client.BalanceReport;
+import com.outpost.accounting.report.BalanceReport;
+import com.outpost.accounting.report.ReportPeriod;
 import com.outpost.gateway.report.client.LedgerReportClient;
 import java.util.function.Supplier;
 
@@ -16,41 +16,20 @@ public final class LedgerReportHttpClient implements LedgerReportClient {
   }
 
   @Override
-  public BalanceReport taxBalances() {
-    return fetch(balanceReportApi::tax);
+  public BalanceReport platformReport(ReportPeriod period) {
+    return fetch(() -> balanceReportApi.platform(period.from(), period.to()));
   }
 
   @Override
-  public BalanceReport merchantBalances() {
-    return fetch(balanceReportApi::merchant);
+  public BalanceReport merchantReport(String merchantCode, ReportPeriod period) {
+    return fetch(() -> balanceReportApi.merchant(merchantCode, period.from(), period.to()));
   }
 
-  @Override
-  public BalanceReport merchantBalances(String merchantCode) {
-    return fetch(() -> balanceReportApi.merchant(merchantCode));
-  }
-
-  private static BalanceReport fetch(Supplier<BalanceReportResponse> report) {
+  private static BalanceReport fetch(Supplier<BalanceReport> report) {
     try {
-      return toBalanceReport(report.get());
+      return report.get();
     } catch (RuntimeException exception) {
       throw new LedgerReportClientException("Ledger balance report request failed", exception);
     }
-  }
-
-  private static BalanceReport toBalanceReport(BalanceReportResponse response) {
-    return new BalanceReport(
-        response.accounts().stream()
-            .map(
-                account ->
-                    new BalanceReport.Account(
-                        account.accountCode(),
-                        account.name(),
-                        account.balances().stream()
-                            .map(
-                                balance ->
-                                    new BalanceReport.Balance(balance.currency(), balance.amount()))
-                            .toList()))
-            .toList());
   }
 }

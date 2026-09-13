@@ -25,6 +25,7 @@ include(
     ':framework:queue-processor',
     ':accounting:domain',
     ':accounting:persistence',
+    ':accounting:report',
     ':accounting:api',
     ':accounting:api-client',
     ':tax',

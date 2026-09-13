@@ -26,6 +26,7 @@ dependencies {
     implementation project(':payment:repository')
     implementation project(':psp-integration:domain')
     implementation project(':psp-integration:client')
+    implementation project(':accounting:report')
     implementation project(':accounting:api')
     implementation project(':accounting:api-client')
 

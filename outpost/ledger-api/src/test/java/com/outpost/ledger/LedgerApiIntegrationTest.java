@@ -47,6 +47,8 @@ class LedgerApiIntegrationTest {
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8("test-gateway-secret");
   private static final Currencies.Currency EUR = Currencies.EUR.getValue();
   private static final Currencies.Currency USD = Currencies.USD.getValue();
+  private static final LocalDate PERIOD_START = LocalDate.of(2026, 9, 1);
+  private static final LocalDate PERIOD_END = LocalDate.of(2026, 9, 30);
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_ledger_api", "outpost_ledger_api", "outpost_ledger_api");
@@ -129,7 +131,7 @@ class LedgerApiIntegrationTest {
 
   @Test
   void deniesNonEndpointPathsOnTheManagementPort() {
-    assertThat(getManagement("/v1/report/balance/tax").statusCode()).isEqualTo(403);
+    assertThat(getManagement("/v1/report/balance").statusCode()).isEqualTo(403);
   }
 
   @Test
@@ -163,7 +165,7 @@ class LedgerApiIntegrationTest {
     try (AnnotationConfigApplicationContext gateway = ledgerClient(GATEWAY_KEY)) {
       BalanceReportApi reports = gateway.getBean(BalanceReportApi.class);
 
-      assertThatCode(reports::tax).doesNotThrowAnyException();
+      assertThatCode(() -> reports.platform(PERIOD_START, PERIOD_END)).doesNotThrowAnyException();
     }
   }
 
@@ -202,7 +204,8 @@ class LedgerApiIntegrationTest {
         ledgerClient(HmacKey.fromUtf8("unknown-caller-secret"))) {
       BalanceReportApi reports = stranger.getBean(BalanceReportApi.class);
 
-      assertThatThrownBy(reports::tax).isInstanceOf(HttpClientErrorException.Unauthorized.class);
+      assertThatThrownBy(() -> reports.platform(PERIOD_START, PERIOD_END))
+          .isInstanceOf(HttpClientErrorException.Unauthorized.class);
     }
   }
 

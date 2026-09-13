@@ -3,107 +3,116 @@ package com.outpost.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.outpost.gateway.report.client.BalanceReport;
+import com.outpost.accounting.report.BalanceReport;
+import com.outpost.accounting.report.ReportPeriod;
 import com.outpost.gateway.report.client.LedgerReportClient;
 import com.outpost.gateway.report.repository.ReportRepository;
 import com.outpost.gateway.report.service.BalanceReportException;
+import com.outpost.gateway.report.service.GeneratedReports;
 import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.GatewayPrincipal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 class ReportServiceTest {
   private static final long MERCHANT_ACCOUNT_ID = 42L;
+  private static final LocalDate FROM = LocalDate.of(2026, 9, 1);
+  private static final LocalDate TO = LocalDate.of(2026, 9, 30);
+
+  private final StubLedger ledger = new StubLedger();
+  private final GeneratedReports reports = new GeneratedReports(10);
 
   @Test
-  void operatorReceivesTaxBalances() {
-    StubLedger ledger = new StubLedger();
-    ReportService service = new ReportService(ledger, new StubMerchants());
+  void operatorReceivesThePlatformReportOverThePeriod() {
+    ReportService service = new ReportService(ledger, new StubMerchants(), reports);
 
-    BalanceReport report = service.tax(GatewayPrincipal.operator());
+    UUID reportId = service.createReport(GatewayPrincipal.operator(), FROM, TO);
 
-    assertThat(report).isSameAs(ledger.tax);
-  }
-
-  @Test
-  void merchantIsForbiddenFromTaxBalances() {
-    ReportService service = new ReportService(new StubLedger(), new StubMerchants());
-
-    assertThatThrownBy(() -> service.tax(GatewayPrincipal.merchant(MERCHANT_ACCOUNT_ID)))
-        .isInstanceOf(BalanceReportException.class)
-        .extracting(exception -> ((BalanceReportException) exception).status())
-        .isEqualTo(HttpStatus.FORBIDDEN.value());
-  }
-
-  @Test
-  void operatorReceivesEveryMerchantBalance() {
-    StubLedger ledger = new StubLedger();
-    ReportService service = new ReportService(ledger, new StubMerchants());
-
-    BalanceReport report = service.merchant(GatewayPrincipal.operator());
-
-    assertThat(report.accounts())
+    assertThat(ledger.requests).containsExactly("platform " + new ReportPeriod(FROM, TO));
+    assertThat(service.findReport(reportId).accounts())
         .extracting(BalanceReport.Account::accountCode)
-        .containsExactly("merchant-a", "merchant-b");
+        .containsExactly("OUTPOST");
   }
 
   @Test
-  void merchantReceivesOnlyItsOwnBalanceReadByItsAuthenticatedCode() {
-    StubLedger ledger = new StubLedger();
+  void merchantReceivesTheReportOfItsAuthenticatedAccount() {
     ReportService service =
-        new ReportService(ledger, new StubMerchants(MERCHANT_ACCOUNT_ID, "merchant-b"));
+        new ReportService(ledger, new StubMerchants(MERCHANT_ACCOUNT_ID, "merchant-b"), reports);
 
-    BalanceReport report = service.merchant(GatewayPrincipal.merchant(MERCHANT_ACCOUNT_ID));
+    UUID reportId = service.createReport(GatewayPrincipal.merchant(MERCHANT_ACCOUNT_ID), FROM, TO);
 
-    assertThat(ledger.requestedMerchantCodes).containsExactly("merchant-b");
-    assertThat(report.accounts())
+    assertThat(ledger.requests).containsExactly("merchant-b " + new ReportPeriod(FROM, TO));
+    assertThat(service.findReport(reportId).accounts())
         .extracting(BalanceReport.Account::accountCode)
         .containsExactly("merchant-b");
   }
 
   @Test
-  void merchantWithoutAnActiveAccountIsRefusedBeforeTheLedgerIsRead() {
-    StubLedger ledger = new StubLedger();
-    ReportService service = new ReportService(ledger, new StubMerchants());
+  void refusesAnInvalidPeriodBeforeTheLedgerIsRead() {
+    ReportService service = new ReportService(ledger, new StubMerchants(), reports);
 
-    assertThatThrownBy(() -> service.merchant(GatewayPrincipal.merchant(MERCHANT_ACCOUNT_ID)))
-        .isInstanceOf(BalanceReportException.class)
-        .extracting(exception -> ((BalanceReportException) exception).status())
-        .isEqualTo(HttpStatus.UNAUTHORIZED.value());
-    assertThat(ledger.requestedMerchantCodes).isEmpty();
+    assertThatThrownBy(
+            () -> service.createReport(GatewayPrincipal.operator(), FROM, FROM.plusDays(30)))
+        .isInstanceOfSatisfying(
+            BalanceReportException.class,
+            refused -> {
+              assertThat(refused.status()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+              assertThat(refused.code()).isEqualTo("INVALID_REPORT_PERIOD");
+            });
+    assertThat(ledger.requests).isEmpty();
+  }
+
+  @Test
+  void merchantWithoutAnActiveAccountIsRefusedBeforeTheLedgerIsRead() {
+    ReportService service = new ReportService(ledger, new StubMerchants(), reports);
+
+    assertThatThrownBy(
+            () -> service.createReport(GatewayPrincipal.merchant(MERCHANT_ACCOUNT_ID), FROM, TO))
+        .isInstanceOfSatisfying(
+            BalanceReportException.class,
+            refused -> {
+              assertThat(refused.status()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
+              assertThat(refused.code()).isEqualTo("MERCHANT_NOT_FOUND");
+            });
+    assertThat(ledger.requests).isEmpty();
+  }
+
+  @Test
+  void answersAnUnknownReportAsNotFound() {
+    ReportService service = new ReportService(ledger, new StubMerchants(), reports);
+
+    assertThatThrownBy(() -> service.findReport(UUID.randomUUID()))
+        .isInstanceOfSatisfying(
+            BalanceReportException.class,
+            refused -> {
+              assertThat(refused.status()).isEqualTo(HttpStatus.NOT_FOUND.value());
+              assertThat(refused.code()).isEqualTo("REPORT_NOT_FOUND");
+            });
   }
 
   private static final class StubLedger implements LedgerReportClient {
-    private final List<String> requestedMerchantCodes = new ArrayList<>();
-    private final BalanceReport tax =
-        new BalanceReport(
-            List.of(new BalanceReport.Account("tax-authority", "Tax Authority", List.of())));
-    private final BalanceReport merchants =
-        new BalanceReport(
-            List.of(
-                new BalanceReport.Account("merchant-a", "Merchant A", List.of()),
-                new BalanceReport.Account("merchant-b", "Merchant B", List.of())));
+    private final List<String> requests = new ArrayList<>();
 
     @Override
-    public BalanceReport taxBalances() {
-      return tax;
+    public BalanceReport platformReport(ReportPeriod period) {
+      requests.add("platform " + period);
+      return report(period, "OUTPOST");
     }
 
     @Override
-    public BalanceReport merchantBalances() {
-      return merchants;
+    public BalanceReport merchantReport(String merchantCode, ReportPeriod period) {
+      requests.add(merchantCode + " " + period);
+      return report(period, merchantCode);
     }
 
-    @Override
-    public BalanceReport merchantBalances(String merchantCode) {
-      requestedMerchantCodes.add(merchantCode);
+    private static BalanceReport report(ReportPeriod period, String accountCode) {
       return new BalanceReport(
-          merchants.accounts().stream()
-              .filter(account -> account.accountCode().equals(merchantCode))
-              .toList());
+          period.from(), period.to(), List.of(new BalanceReport.Account(accountCode, List.of())));
     }
   }
 

@@ -9,6 +9,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.UncheckedIOException;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -26,8 +28,8 @@ public final class GuidedShell {
           "create an order",
           "pay an order",
           "refund an order",
-          "what Outpost owes this merchant",
-          "what Outpost owes each tax authority",
+          "today's balance report for this merchant",
+          "today's balance report for the platform (operator)",
           "switch merchant");
   private static final List<String> CARDS =
       List.of(
@@ -79,8 +81,8 @@ public final class GuidedShell {
             case 0 -> order();
             case 1 -> pay();
             case 2 -> refund();
-            case 3 -> print(merchantCommands.balanceMerchant());
-            case 4 -> print(merchantCommands.balanceTax());
+            case 3 -> print(merchantCommands.report(today(), today()));
+            case 4 -> print(merchantCommands.reportPlatform(today(), today()));
             default -> chooseMerchant();
           };
       if (!continued) {
@@ -197,6 +199,11 @@ public final class GuidedShell {
     out.println(text);
     out.println();
     return true;
+  }
+
+  /** Today's date in UTC, the calendar the reports are read in. */
+  private static String today() {
+    return LocalDate.now(ZoneOffset.UTC).toString();
   }
 
   /** Asks until the answer is one option's number; empty means quit or step back. */
