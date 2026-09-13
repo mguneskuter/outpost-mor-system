@@ -9,9 +9,7 @@ import com.outpost.payment.order.Order;
 import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.payment.refund.Refund;
 import com.outpost.payment.refund.repository.RefundRepository;
-import java.util.Locale;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 
 /** Refunds a merchant's order in full at its PSP and stores the accepted refund. */
@@ -34,21 +32,16 @@ public final class OrderModificationService {
   /**
    * Refunds one order owned by the caller in full.
    *
-   * @throws ModifyOrderException 400 for an invalid request, 404 ORDER_NOT_FOUND, 409
+   * @throws ModifyOrderException 400 UNSUPPORTED_MODIFICATION_TYPE, 404 ORDER_NOT_FOUND, 409
    *     ORDER_NOT_PAID, 422 REFUND_REJECTED, 503 PSP_RETRYABLE
    */
   public ModifyOrderResult request(long merchantAccountId, ModifyOrderCommand command) {
-    String type = required(command.type(), "type");
-    if (!REFUND_TYPE.equals(type)) {
+    if (!REFUND_TYPE.equals(command.type())) {
       throw failure(HttpStatus.BAD_REQUEST.value(), "UNSUPPORTED_MODIFICATION_TYPE");
     }
-    String orderReference = required(command.orderReference(), "order_reference");
-    String idempotencyKey = required(command.idempotencyKey(), "idempotency_key");
-    String merchantReference = required(command.merchantReference(), "merchant_reference");
-
     Order order =
         orders
-            .findOrderByOrderReference(orderReference)
+            .findOrderByOrderReference(command.orderReference())
             .filter(found -> found.getAccountId() == merchantAccountId)
             .orElseThrow(() -> failure(HttpStatus.NOT_FOUND.value(), "ORDER_NOT_FOUND"));
     String pspReference =
@@ -80,8 +73,8 @@ public final class OrderModificationService {
                 refundReference,
                 order.getOrderId().orElseThrow(),
                 order.getOrderReference(),
-                merchantReference,
-                idempotencyKey,
+                command.merchantReference(),
+                command.idempotencyKey(),
                 pspRefundReference,
                 null));
         yield new ModifyOrderResult(refundReference);
@@ -89,15 +82,6 @@ public final class OrderModificationService {
       case REJECTED -> throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "REFUND_REJECTED");
       case UNKNOWN -> throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     };
-  }
-
-  private static String required(@Nullable String value, String field) {
-    if (value == null || value.isBlank()) {
-      throw failure(
-          HttpStatus.BAD_REQUEST.value(),
-          "INVALID_" + field.toUpperCase(Locale.ROOT).replace('.', '_'));
-    }
-    return value;
   }
 
   private static ModifyOrderException failure(int status, String code) {

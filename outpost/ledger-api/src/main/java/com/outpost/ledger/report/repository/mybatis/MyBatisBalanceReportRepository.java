@@ -27,6 +27,13 @@ public class MyBatisBalanceReportRepository implements BalanceReportRepository {
         .toList();
   }
 
+  @Override
+  public List<BalanceLine> findMerchantBalancesByMerchantCode(String merchantCode) {
+    return mapper.findMerchantBalancesByMerchantCode(merchantCode).stream()
+        .map(MyBatisBalanceReportRepository::line)
+        .toList();
+  }
+
   private static BalanceLine line(BalanceRow row) {
     return new BalanceLine(row.accountCode(), row.accountName(), row.currency(), row.amount());
   }

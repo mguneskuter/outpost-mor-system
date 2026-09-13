@@ -7,6 +7,8 @@ import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.ServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -31,7 +33,9 @@ class SignatureAuthenticationFilterTest {
   private static final String BODY = "{\"amount\":100}";
 
   private final SignatureAuthenticationFilter filter =
-      new SignatureAuthenticationFilter(Map.of("ORDERS", ORDERS_KEY, "BILLING", BILLING_KEY));
+      new SignatureAuthenticationFilter(
+          Map.of("ORDERS", ORDERS_KEY, "BILLING", BILLING_KEY),
+          SignatureAuthenticationFilterTest::writeErrorBody);
 
   @AfterEach
   void clearSecurityContext() {
@@ -107,6 +111,7 @@ class SignatureAuthenticationFilterTest {
     filter.doFilter(request, response, chain);
 
     assertThat(response.getStatus()).isEqualTo(413);
+    assertThat(response.getContentAsString()).isEqualTo("error:BODY_TOO_LARGE");
     assertThat(chain.getRequest()).isNull();
     assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
   }
@@ -116,8 +121,17 @@ class SignatureAuthenticationFilterTest {
     Map<String, HmacKey> keysByCaller =
         Map.of("ORDERS", HmacKey.fromUtf8("shared"), "BILLING", HmacKey.fromUtf8("shared"));
 
-    assertThatThrownBy(() -> new SignatureAuthenticationFilter(keysByCaller))
+    assertThatThrownBy(
+            () ->
+                new SignatureAuthenticationFilter(
+                    keysByCaller, SignatureAuthenticationFilterTest::writeErrorBody))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  private static void writeErrorBody(HttpServletResponse response, int status, String code)
+      throws IOException {
+    response.setStatus(status);
+    response.getWriter().write("error:" + code);
   }
 
   private static Stream<Arguments> bodiesExceededMaxSize() {

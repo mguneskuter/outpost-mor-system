@@ -1,56 +1,30 @@
 package com.outpost.gateway;
 
+import static com.outpost.gateway.OrderServiceFakes.MERCHANT_ACCOUNT_ID;
+import static com.outpost.gateway.OrderServiceFakes.PAYMENT_LINK;
+import static com.outpost.gateway.OrderServiceFakes.PSP_CODE;
+import static com.outpost.gateway.OrderServiceFakes.PSP_REFERENCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.outpost.account.Account;
-import com.outpost.account.AccountTypes;
-import com.outpost.account.configuration.repository.MerchantFeeConfigurationRepository;
-import com.outpost.account.configuration.repository.MerchantPspRepository;
-import com.outpost.account.repository.AccountRepository;
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.AccountingQueueRequestTypes;
-import com.outpost.framework.queue.QueuedItem;
-import com.outpost.framework.queue.TimeOrderedQueue;
 import com.outpost.gateway.order.service.CreateOrderCommand;
 import com.outpost.gateway.order.service.CreateOrderCommand.OrderDetailsCommand;
 import com.outpost.gateway.order.service.CreateOrderCommand.OrderLineCommand;
 import com.outpost.gateway.order.service.CreateOrderCommand.ShopperDetailsCommand;
 import com.outpost.gateway.order.service.CreateOrderResult;
 import com.outpost.gateway.order.service.OrderCreationException;
-import com.outpost.gateway.order.service.OrderService;
 import com.outpost.integration.psp.service.CreateOrderRequest;
-import com.outpost.integration.psp.service.PspClient;
-import com.outpost.integration.psp.service.RefundRequest;
-import com.outpost.integration.psp.service.RefundResult;
 import com.outpost.integration.psp.service.ResultCode;
-import com.outpost.payment.ShopperDetail;
-import com.outpost.payment.order.LineTaxCalculator;
 import com.outpost.payment.order.Order;
-import com.outpost.payment.order.OrderItem;
-import com.outpost.payment.order.repository.OrderRepository;
-import com.outpost.tax.TaxRate;
-import com.outpost.tax.provider.TaxRateProvider;
-import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class OrderServiceTest {
-  private static final long MERCHANT_ACCOUNT_ID = 10;
-  private static final String PSP_CODE = "DEMO_PSP";
-  private static final String PSP_REFERENCE = "psp-1";
-  private static final String PAYMENT_LINK = "https://pay.example/order-1";
-
   @Test
   void createsTheOrderCallsThePspOnceQueuesOrderCreatedAndReturnsTheStoredResponse() {
-    TestDependencies dependencies = new TestDependencies();
+    OrderServiceFakes dependencies = new OrderServiceFakes();
 
     CreateOrderResult result = dependencies.service.create(MERCHANT_ACCOUNT_ID, validCommand());
 
@@ -102,7 +76,7 @@ class OrderServiceTest {
 
   @Test
   void pspFailureReturnsFailureAndLeavesOrderWithoutPspReference() {
-    TestDependencies dependencies = new TestDependencies();
+    OrderServiceFakes dependencies = new OrderServiceFakes();
     dependencies.pspResults.add(
         new com.outpost.integration.psp.service.CreateOrderResult("", "", ResultCode.REJECTED));
 
@@ -114,7 +88,7 @@ class OrderServiceTest {
 
   @Test
   void repeatedRequestAfterSuccessReturnsStoredResponseWithoutCallingLedgerOrPsp() {
-    TestDependencies dependencies = new TestDependencies();
+    OrderServiceFakes dependencies = new OrderServiceFakes();
     CreateOrderResult first = dependencies.service.create(MERCHANT_ACCOUNT_ID, validCommand());
 
     CreateOrderResult repeated = dependencies.service.create(MERCHANT_ACCOUNT_ID, validCommand());
@@ -127,7 +101,7 @@ class OrderServiceTest {
 
   @Test
   void repeatedRequestAfterPspFailureCallsThePspAgainWithTheSameReferenceAndQueuesOnce() {
-    TestDependencies dependencies = new TestDependencies();
+    OrderServiceFakes dependencies = new OrderServiceFakes();
     dependencies.pspResults.add(
         new com.outpost.integration.psp.service.CreateOrderResult("", "", ResultCode.REJECTED));
     assertFailure(dependencies, validCommand(), 503, "PSP_RETRYABLE");
@@ -148,7 +122,7 @@ class OrderServiceTest {
 
   @Test
   void differentRequestUnderUsedIdempotencyKeyIsConflict() {
-    TestDependencies dependencies = new TestDependencies();
+    OrderServiceFakes dependencies = new OrderServiceFakes();
     dependencies.service.create(MERCHANT_ACCOUNT_ID, validCommand());
     CreateOrderCommand changed =
         new CreateOrderCommand(
@@ -166,35 +140,12 @@ class OrderServiceTest {
   }
 
   @Test
-  void rejectsAnOrderWithoutLines() {
-    assertFailure(
-        withOrderDetails(validCommand(), new OrderDetailsCommand(List.of(), 0L, "EUR")),
-        "ORDER_LINES_REQUIRED");
-  }
-
-  @Test
   void rejectsDuplicateLineReferences() {
     assertFailure(
         withOrderDetails(
             validCommand(),
             new OrderDetailsCommand(List.of(line("same", 50L), line("same", 50L)), 100L, "EUR")),
         "DUPLICATE_MERCHANT_LINE_REFERENCE");
-  }
-
-  @Test
-  void rejectsBlankLineReferences() {
-    assertFailure(
-        withOrderDetails(
-            validCommand(), new OrderDetailsCommand(List.of(line("", 100L)), 100L, "EUR")),
-        "INVALID_MERCHANT_LINE_REFERENCE");
-  }
-
-  @Test
-  void rejectsNonPositiveLineAmounts() {
-    assertFailure(
-        withOrderDetails(
-            validCommand(), new OrderDetailsCommand(List.of(line("line-1", 0L)), 0L, "EUR")),
-        "LINE_AMOUNT_MUST_BE_POSITIVE");
   }
 
   @Test
@@ -222,13 +173,6 @@ class OrderServiceTest {
             new OrderDetailsCommand(
                 List.of(line("line-1", Long.MAX_VALUE)), Long.MAX_VALUE, "EUR")),
         "AMOUNT_OVERFLOW");
-  }
-
-  @Test
-  void rejectsBlankShopperEmail() {
-    assertFailure(
-        withShopper(validCommand(), new ShopperDetailsCommand("Shopper", "", "DE", null, null)),
-        "INVALID_SHOPPER_DETAILS_EMAIL");
   }
 
   @Test
@@ -260,7 +204,7 @@ class OrderServiceTest {
 
   @Test
   void appliesHalfEvenRoundingToTaxTies() {
-    TestDependencies dependencies = new TestDependencies(rate("0.25"));
+    OrderServiceFakes dependencies = new OrderServiceFakes(OrderServiceFakes.rate("0.25"));
 
     CreateOrderResult result =
         dependencies.service.create(
@@ -277,7 +221,7 @@ class OrderServiceTest {
 
   @Test
   void sumsTaxAfterRoundingEachLine() {
-    TestDependencies dependencies = new TestDependencies(rate("0.5"));
+    OrderServiceFakes dependencies = new OrderServiceFakes(OrderServiceFakes.rate("0.5"));
 
     CreateOrderResult result =
         dependencies.service.create(
@@ -295,27 +239,39 @@ class OrderServiceTest {
 
   @Test
   void rejectsAnUnavailablePsp() {
-    TestDependencies unavailablePsp = new TestDependencies();
+    OrderServiceFakes unavailablePsp = new OrderServiceFakes();
     unavailablePsp.merchantPsps.pspEnabled = false;
-    assertFailure(unavailablePsp, validCommand(), 422, "PAYMENT_METHOD_UNAVAILABLE");
+    assertFailure(unavailablePsp, validCommand(), 422, "PSP_UNAVAILABLE");
   }
 
   @Test
   void rejectsMissingFeeConfiguration() {
-    TestDependencies missingFee = new TestDependencies();
+    OrderServiceFakes missingFee = new OrderServiceFakes();
     missingFee.feeConfigurations.hasFee = false;
     assertFailure(missingFee, validCommand(), 422, "MISSING_FEE_CONFIGURATION");
   }
 
+  @Test
+  void refusesAnOrderWhoseCountryHasNoTaxAuthorityBeforeStoringItOrCallingThePsp() {
+    OrderServiceFakes noTaxAuthority = new OrderServiceFakes();
+    noTaxAuthority.accounts.taxAuthorityCountryIds.clear();
+
+    assertFailure(noTaxAuthority, validCommand(), 422, "MISSING_TAX_AUTHORITY");
+
+    assertThat(noTaxAuthority.repository.orders).isEmpty();
+    assertThat(noTaxAuthority.pspRequests).isEmpty();
+    assertThat(noTaxAuthority.queued()).isEmpty();
+  }
+
   private static void assertFailure(CreateOrderCommand command, String code) {
-    TestDependencies dependencies = new TestDependencies();
+    OrderServiceFakes dependencies = new OrderServiceFakes();
     assertThatThrownBy(() -> dependencies.service.create(MERCHANT_ACCOUNT_ID, command))
         .isInstanceOf(OrderCreationException.class)
         .satisfies(error -> assertThat(((OrderCreationException) error).code()).isEqualTo(code));
   }
 
   private static void assertFailure(
-      TestDependencies dependencies, CreateOrderCommand command, int status, String code) {
+      OrderServiceFakes dependencies, CreateOrderCommand command, int status, String code) {
     assertThatThrownBy(() -> dependencies.service.create(MERCHANT_ACCOUNT_ID, command))
         .isInstanceOf(OrderCreationException.class)
         .satisfies(
@@ -343,19 +299,13 @@ class OrderServiceTest {
     return new OrderLineCommand(reference, amount, currency, "DIGITAL_GOODS");
   }
 
-  private static TaxRateProvider rate(String value) {
-    BigDecimal rate = new BigDecimal(value);
-    return (country, subdivision, productType) ->
-        new TaxRate(country, subdivision, productType, rate);
-  }
-
   private static CreateOrderCommand withOrderDetails(
       CreateOrderCommand command, OrderDetailsCommand details) {
     return new CreateOrderCommand(
         command.merchantReference(),
         command.idempotencyKey(),
         command.shopperDetails(),
-        command.paymentMethod(),
+        command.pspCode(),
         details);
   }
 
@@ -365,218 +315,7 @@ class OrderServiceTest {
         command.merchantReference(),
         command.idempotencyKey(),
         shopper,
-        command.paymentMethod(),
+        command.pspCode(),
         command.orderDetails());
-  }
-
-  private static final class TestDependencies {
-    private static final Clock FIXED_CLOCK =
-        Clock.fixed(Instant.parse("2026-09-13T10:00:00Z"), ZoneOffset.UTC);
-    private final FakeOrderRepository repository = new FakeOrderRepository();
-    private final FakeMerchantPspRepository merchantPsps = new FakeMerchantPspRepository();
-    private final FakeMerchantFeeConfigurationRepository feeConfigurations =
-        new FakeMerchantFeeConfigurationRepository();
-    private final TimeOrderedQueue<AccountingQueueRequest> accountingQueue =
-        new TimeOrderedQueue<>(FIXED_CLOCK);
-    private final List<CreateOrderRequest> pspRequests = new ArrayList<>();
-    private final List<com.outpost.integration.psp.service.CreateOrderResult> pspResults =
-        new ArrayList<>();
-    private final OrderService service;
-
-    private TestDependencies() {
-      this(rate("0.19"));
-    }
-
-    private TestDependencies(TaxRateProvider taxRates) {
-      service =
-          new OrderService(
-              repository,
-              new FakeAccountRepository(),
-              merchantPsps,
-              feeConfigurations,
-              accountingQueue,
-              new FakePspClient(pspRequests, pspResults),
-              taxRates,
-              new LineTaxCalculator());
-    }
-
-    /** Removes and returns every queued request, in queue order. */
-    private List<AccountingQueueRequest> queued() {
-      List<AccountingQueueRequest> requests = new ArrayList<>();
-      Optional<QueuedItem<AccountingQueueRequest>> item;
-      while ((item = accountingQueue.pollDue()).isPresent()) {
-        requests.add(item.orElseThrow().payload());
-      }
-      return requests;
-    }
-  }
-
-  private static final class FakePspClient implements PspClient {
-    private final List<CreateOrderRequest> requests;
-    private final List<com.outpost.integration.psp.service.CreateOrderResult> results;
-
-    private FakePspClient(
-        List<CreateOrderRequest> requests,
-        List<com.outpost.integration.psp.service.CreateOrderResult> results) {
-      this.requests = requests;
-      this.results = results;
-    }
-
-    @Override
-    public com.outpost.integration.psp.service.CreateOrderResult createOrder(
-        CreateOrderRequest request) {
-      requests.add(request);
-      return results.isEmpty()
-          ? new com.outpost.integration.psp.service.CreateOrderResult(
-              PSP_REFERENCE, PAYMENT_LINK, ResultCode.ACCEPTED)
-          : results.remove(0);
-    }
-
-    @Override
-    public RefundResult refund(RefundRequest request) {
-      throw new UnsupportedOperationException();
-    }
-  }
-
-  private static final class FakeAccountRepository implements AccountRepository {
-    private static final Instant CREATED = Instant.parse("2026-01-01T00:00:00Z");
-    private static final Account ROOT =
-        Account.of(1, AccountTypes.ROOT.getValue(), "ROOT", "Root", true, CREATED, null);
-    private static final Account MERCHANT =
-        Account.of(
-            MERCHANT_ACCOUNT_ID,
-            AccountTypes.MERCHANT.getValue(),
-            "MERCHANT",
-            "Merchant",
-            true,
-            CREATED,
-            ROOT);
-    private static final Account PSP =
-        Account.of(20, AccountTypes.PSP.getValue(), PSP_CODE, "PSP", true, CREATED, ROOT);
-
-    @Override
-    public Optional<Account> findAccountById(long accountId) {
-      return Optional.of(MERCHANT).filter(account -> account.getAccountId() == accountId);
-    }
-
-    @Override
-    public Optional<Account> findAccountByCode(String code) {
-      return Optional.of(PSP).filter(account -> account.getCode().equals(code));
-    }
-  }
-
-  private static final class FakeMerchantPspRepository implements MerchantPspRepository {
-    private boolean pspEnabled = true;
-
-    @Override
-    public boolean isPspEnabled(long merchantAccountId, long pspAccountId) {
-      return pspEnabled;
-    }
-  }
-
-  private static final class FakeMerchantFeeConfigurationRepository
-      implements MerchantFeeConfigurationRepository {
-    private boolean hasFee = true;
-
-    @Override
-    public boolean hasFeeConfiguration(
-        long merchantAccountId, com.outpost.common.iso.Currencies.Currency currency) {
-      return hasFee;
-    }
-  }
-
-  private static final class FakeOrderRepository implements OrderRepository {
-    private static final Instant STORED_AT = Instant.parse("2026-09-12T00:00:00Z");
-    private final Map<String, Order> orders = new HashMap<>();
-    private long nextId = 1;
-
-    private Order onlyOrder() {
-      assertThat(orders).hasSize(1);
-      return orders.values().iterator().next();
-    }
-
-    @Override
-    public Optional<Order> findOrderByIdempotencyKey(long accountId, String idempotencyKey) {
-      return Optional.ofNullable(orders.get(idempotencyKey))
-          .filter(stored -> stored.getAccountId() == accountId);
-    }
-
-    @Override
-    public Optional<Order> findOrderByOrderReference(String orderReference) {
-      return orders.values().stream()
-          .filter(stored -> stored.getOrderReference().equals(orderReference))
-          .findFirst();
-    }
-
-    @Override
-    public Optional<Order> insertOrder(ShopperDetail shopper, Order order) {
-      if (orders.containsKey(order.getIdempotencyKey())) {
-        return Optional.empty();
-      }
-      List<OrderItem> items =
-          order.getItems().stream()
-              .map(
-                  item ->
-                      new OrderItem(
-                          nextId++,
-                          item.getProductType(),
-                          item.getOrderLineReference(),
-                          item.getMerchantLineReference(),
-                          item.getNetAmount(),
-                          item.getTaxAmount(),
-                          item.getTaxRate()))
-              .toList();
-      Order stored =
-          new Order(
-              nextId++,
-              order.getOrderReference(),
-              order.getMerchantReference(),
-              order.getAccountId(),
-              nextId++,
-              order.getShopperCountry(),
-              order.getShopperCountrySubdivision().orElse(null),
-              order.getNetAmount(),
-              order.getTaxAmount(),
-              order.getGrossAmount(),
-              order.getIdempotencyKey(),
-              order.getRequestFingerprint(),
-              order.getPspAccountId(),
-              null,
-              null,
-              STORED_AT,
-              items);
-      orders.put(order.getIdempotencyKey(), stored);
-      return Optional.of(stored);
-    }
-
-    @Override
-    public void updateOrderPspReferenceAndPaymentLink(
-        String orderReference, String pspReference, String paymentLink) {
-      Order stored = findOrderByOrderReference(orderReference).orElseThrow();
-      if (stored.getPspReference().isEmpty()) {
-        orders.put(stored.getIdempotencyKey(), withPspFacts(stored, pspReference, paymentLink));
-      }
-    }
-
-    private static Order withPspFacts(Order order, String pspReference, String paymentLink) {
-      return new Order(
-          order.getOrderId().getAsLong(),
-          order.getOrderReference(),
-          order.getMerchantReference(),
-          order.getAccountId(),
-          order.getShopperId().getAsLong(),
-          order.getShopperCountry(),
-          order.getShopperCountrySubdivision().orElse(null),
-          order.getNetAmount(),
-          order.getTaxAmount(),
-          order.getGrossAmount(),
-          order.getIdempotencyKey(),
-          order.getRequestFingerprint(),
-          order.getPspAccountId(),
-          pspReference,
-          paymentLink,
-          order.getCreatedAt().orElse(null),
-          order.getItems());
-    }
   }
 }

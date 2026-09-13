@@ -1,10 +1,5 @@
 package com.outpost.gateway.order.service;
 
-import org.jspecify.annotations.Nullable;
-
-/** Application input for modifying an existing order. */
+/** Application input for modifying an existing order, as the request boundary validated it. */
 public record ModifyOrderCommand(
-    @Nullable String orderReference,
-    @Nullable String idempotencyKey,
-    @Nullable String merchantReference,
-    @Nullable String type) {}
+    String orderReference, String idempotencyKey, String merchantReference, String type) {}

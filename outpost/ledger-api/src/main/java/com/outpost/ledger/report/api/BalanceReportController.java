@@ -26,6 +26,11 @@ public final class BalanceReportController implements BalanceReportApi {
     return toResponse(service.merchant());
   }
 
+  @Override
+  public BalanceReportResponse merchant(String merchantCode) {
+    return toResponse(service.merchant(merchantCode));
+  }
+
   private static BalanceReportResponse toResponse(BalanceReport report) {
     return new BalanceReportResponse(
         report.accounts().stream()

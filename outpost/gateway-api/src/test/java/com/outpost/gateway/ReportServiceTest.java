@@ -9,6 +9,7 @@ import com.outpost.gateway.report.repository.ReportRepository;
 import com.outpost.gateway.report.service.BalanceReportException;
 import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.GatewayPrincipal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -50,19 +51,33 @@ class ReportServiceTest {
   }
 
   @Test
-  void merchantReceivesOnlyItsOwnBalance() {
+  void merchantReceivesOnlyItsOwnBalanceReadByItsAuthenticatedCode() {
     StubLedger ledger = new StubLedger();
     ReportService service =
         new ReportService(ledger, new StubMerchants(MERCHANT_ACCOUNT_ID, "merchant-b"));
 
     BalanceReport report = service.merchant(GatewayPrincipal.merchant(MERCHANT_ACCOUNT_ID));
 
+    assertThat(ledger.requestedMerchantCodes).containsExactly("merchant-b");
     assertThat(report.accounts())
         .extracting(BalanceReport.Account::accountCode)
         .containsExactly("merchant-b");
   }
 
+  @Test
+  void merchantWithoutAnActiveAccountIsRefusedBeforeTheLedgerIsRead() {
+    StubLedger ledger = new StubLedger();
+    ReportService service = new ReportService(ledger, new StubMerchants());
+
+    assertThatThrownBy(() -> service.merchant(GatewayPrincipal.merchant(MERCHANT_ACCOUNT_ID)))
+        .isInstanceOf(BalanceReportException.class)
+        .extracting(exception -> ((BalanceReportException) exception).status())
+        .isEqualTo(HttpStatus.UNAUTHORIZED.value());
+    assertThat(ledger.requestedMerchantCodes).isEmpty();
+  }
+
   private static final class StubLedger implements LedgerReportClient {
+    private final List<String> requestedMerchantCodes = new ArrayList<>();
     private final BalanceReport tax =
         new BalanceReport(
             List.of(new BalanceReport.Account("tax-authority", "Tax Authority", List.of())));
@@ -80,6 +95,15 @@ class ReportServiceTest {
     @Override
     public BalanceReport merchantBalances() {
       return merchants;
+    }
+
+    @Override
+    public BalanceReport merchantBalances(String merchantCode) {
+      requestedMerchantCodes.add(merchantCode);
+      return new BalanceReport(
+          merchants.accounts().stream()
+              .filter(account -> account.accountCode().equals(merchantCode))
+              .toList());
     }
   }
 

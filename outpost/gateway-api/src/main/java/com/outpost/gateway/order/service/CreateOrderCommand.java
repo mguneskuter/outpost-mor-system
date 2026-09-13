@@ -3,31 +3,31 @@ package com.outpost.gateway.order.service;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
-/** Application input for creating an order. */
+/** Application input for creating an order, as the request boundary validated it. */
 public record CreateOrderCommand(
-    @Nullable String merchantReference,
-    @Nullable String idempotencyKey,
-    @Nullable ShopperDetailsCommand shopperDetails,
-    @Nullable String paymentMethod,
-    @Nullable OrderDetailsCommand orderDetails) {
+    String merchantReference,
+    String idempotencyKey,
+    ShopperDetailsCommand shopperDetails,
+    String pspCode,
+    OrderDetailsCommand orderDetails) {
   /** Shopper details at checkout. */
   public record ShopperDetailsCommand(
-      @Nullable String fullName,
-      @Nullable String email,
-      @Nullable String country,
+      String fullName,
+      String email,
+      String country,
       @Nullable String state,
       @Nullable String zipcode) {}
 
   /** Line inputs and order total. */
   public record OrderDetailsCommand(
-      @Nullable List<@Nullable OrderLineCommand> orderLines,
-      @Nullable Long totalAmount,
-      @Nullable String currency) {}
+      List<OrderLineCommand> orderLines, long totalAmount, String currency) {
+    /** Copies the lines so the command stays immutable. */
+    public OrderDetailsCommand {
+      orderLines = List.copyOf(orderLines);
+    }
+  }
 
   /** A merchant-priced net line. */
   public record OrderLineCommand(
-      @Nullable String merchantLineReference,
-      @Nullable Long amount,
-      @Nullable String currency,
-      @Nullable String type) {}
+      String merchantLineReference, long amount, String currency, String type) {}
 }

@@ -12,7 +12,6 @@ import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
-import com.outpost.accounting.payment.CreatePaymentCommand;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
 import com.outpost.common.iso.Countries.Country;
@@ -73,8 +72,6 @@ public class PaymentCreationService {
       CountrySubdivision subdivision = request.shopperCountrySubdivision();
       Account merchant = account(request.merchantCode(), AccountTypes.MERCHANT);
       Account psp = account(request.pspCode(), AccountTypes.PSP);
-      new CreatePaymentCommand(
-          merchant, psp, request.originalReference(), netAmount, taxAmount, country, subdivision);
       MerchantFeeConfiguration feeConfiguration =
           repository.findFee(merchant.getAccountId(), currency.getCurrencyId());
       if (feeConfiguration == null

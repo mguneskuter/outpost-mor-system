@@ -1,6 +1,8 @@
 package com.outpost.ledger.security;
 
+import com.outpost.accounting.api.LedgerErrorResponse;
 import com.outpost.framework.security.hmac.HmacKey;
+import com.outpost.framework.security.web.ErrorBodyWriter;
 import com.outpost.framework.security.web.SignatureAuthenticationFilter;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,6 +26,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Ledger's request security. On the service port every route is denied unless it is public or
@@ -62,7 +65,10 @@ public class LedgerSecurityConfiguration {
   @Bean
   @Order(2)
   SecurityFilterChain ledgerSecurityFilterChain(
-      HttpSecurity http, LedgerAuthenticationProperties properties) throws Exception {
+      HttpSecurity http, LedgerAuthenticationProperties properties, ObjectMapper objectMapper)
+      throws Exception {
+    ErrorBodyWriter errorBodies =
+        (response, status, code) -> writeError(objectMapper, response, status, code);
     return http.csrf(AbstractHttpConfigurer::disable)
         .logout(AbstractHttpConfigurer::disable)
         .requestCache(AbstractHttpConfigurer::disable)
@@ -70,18 +76,23 @@ public class LedgerSecurityConfiguration {
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .addFilterBefore(
             new SignatureAuthenticationFilter(
-                Map.of(GATEWAY, HmacKey.fromUtf8(properties.gatewayHmacSecret()))),
+                Map.of(GATEWAY, HmacKey.fromUtf8(properties.gatewayHmacSecret())), errorBodies),
             AnonymousAuthenticationFilter.class)
         .exceptionHandling(
             exceptions ->
                 exceptions
                     .authenticationEntryPoint(
                         (request, response, exception) ->
-                            writeError(
-                                response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHENTICATED"))
+                            errorBodies.write(
+                                response,
+                                HttpServletResponse.SC_UNAUTHORIZED,
+                                LedgerErrorResponse.UNAUTHENTICATED))
                     .accessDeniedHandler(
                         (request, response, exception) ->
-                            writeError(response, HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN")))
+                            errorBodies.write(
+                                response,
+                                HttpServletResponse.SC_FORBIDDEN,
+                                LedgerErrorResponse.FORBIDDEN)))
         .authorizeHttpRequests(
             requests ->
                 requests
@@ -95,7 +106,10 @@ public class LedgerSecurityConfiguration {
                     .requestMatchers(HttpMethod.POST, "/v1/accounting-request")
                     .hasAuthority(GATEWAY)
                     .requestMatchers(
-                        HttpMethod.GET, "/v1/report/balance/tax", "/v1/report/balance/merchant")
+                        HttpMethod.GET,
+                        "/v1/report/balance/tax",
+                        "/v1/report/balance/merchant",
+                        "/v1/report/balance/merchant/{merchantCode}")
                     .hasAuthority(GATEWAY)
                     .anyRequest()
                     .denyAll())
@@ -114,10 +128,11 @@ public class LedgerSecurityConfiguration {
             context, WebServerNamespace.MANAGEMENT.getValue());
   }
 
-  private static void writeError(HttpServletResponse response, int status, String code)
+  private static void writeError(
+      ObjectMapper objectMapper, HttpServletResponse response, int status, String code)
       throws IOException {
     response.setStatus(status);
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-    response.getWriter().write("{\"code\":\"" + code + "\"}");
+    objectMapper.writeValue(response.getOutputStream(), LedgerErrorResponse.of(code));
   }
 }

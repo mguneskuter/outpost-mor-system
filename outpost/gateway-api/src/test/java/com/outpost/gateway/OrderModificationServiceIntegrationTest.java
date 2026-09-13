@@ -162,6 +162,34 @@ class OrderModificationServiceIntegrationTest {
   }
 
   @Test
+  void answersRetryableWhenThePspAnswerIsLostAndStoresNothing() {
+    insertOrder(MERCHANT_ACCOUNT_ID, "order-lost", "idem-lost", PSP_REFERENCE);
+    PspClient psp =
+        new PspClient() {
+          @Override
+          public CreateOrderResult createOrder(CreateOrderRequest request) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public RefundResult refund(RefundRequest request) {
+            throw new IllegalStateException("the PSP did not answer");
+          }
+        };
+
+    ModifyOrderException failure =
+        catchThrowableOfType(
+            ModifyOrderException.class,
+            () ->
+                service(psp)
+                    .request(MERCHANT_ACCOUNT_ID, command("order-lost", "refund-idem-lost")));
+
+    assertThat(failure.status()).isEqualTo(503);
+    assertThat(failure.code()).isEqualTo("PSP_RETRYABLE");
+    assertThat(refundCount("order-lost")).isZero();
+  }
+
+  @Test
   void rejectsForeignOrder() {
     insertOrder(OTHER_MERCHANT_ACCOUNT_ID, "order-foreign", "idem-foreign", PSP_REFERENCE);
     RecordingPsp psp = new RecordingPsp(new RefundResult(PSP_REFERENCE, "77", ResultCode.ACCEPTED));

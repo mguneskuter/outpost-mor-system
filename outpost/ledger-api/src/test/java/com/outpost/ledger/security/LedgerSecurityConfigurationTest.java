@@ -1,6 +1,7 @@
 package com.outpost.ledger.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
@@ -9,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
+import com.outpost.framework.security.web.SizeBoundedRequestBody;
 import com.outpost.ledger.accountingrequest.api.AccountingRequestController;
 import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
 import com.outpost.ledger.report.api.BalanceReportController;
@@ -41,6 +43,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import tools.jackson.databind.ObjectMapper;
 
 @SpringJUnitWebConfig(LedgerSecurityConfigurationTest.LedgerRoutes.class)
 @TestPropertySource(
@@ -99,6 +102,29 @@ class LedgerSecurityConfigurationTest {
         .andExpect(status().is(route.successStatus()));
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"/v1/report/balance/merchant", "/v1/report/balance/merchant/DEMO"})
+  void rejectsUnsignedMerchantReports(String path) throws Exception {
+    mockMvc
+        .perform(request(HttpMethod.GET, URI.create(path)))
+        .andExpect(status().isUnauthorized())
+        .andExpect(content().json(UNAUTHENTICATED));
+  }
+
+  @Test
+  void answersSignedBodyOverTheMaximumSizeWithTheLedgerErrorBody() throws Exception {
+    byte[] body = new byte[SizeBoundedRequestBody.MAX_SIZE_BYTES + 1];
+
+    mockMvc
+        .perform(
+            request(HttpMethod.POST, URI.create("/v1/accounting-request"))
+                .contentType("application/json")
+                .content(body)
+                .header("X-Outpost-Signature", HmacSha256.sign(GATEWAY_KEY, body).toBase64()))
+        .andExpect(status().isPayloadTooLarge())
+        .andExpect(content().json("{\"code\":\"BODY_TOO_LARGE\"}"));
+  }
+
   @Test
   void rejectsSignatureThatDoesNotMatchTheBody() throws Exception {
     mockMvc
@@ -134,7 +160,8 @@ class LedgerSecurityConfigurationTest {
     return Stream.of(
         new CallerRoute(HttpMethod.POST, "/v1/accounting-request", "{}", GATEWAY_KEY, 202),
         new CallerRoute(HttpMethod.GET, "/v1/report/balance/tax", "", GATEWAY_KEY, 200),
-        new CallerRoute(HttpMethod.GET, "/v1/report/balance/merchant", "", GATEWAY_KEY, 200));
+        new CallerRoute(HttpMethod.GET, "/v1/report/balance/merchant", "", GATEWAY_KEY, 200),
+        new CallerRoute(HttpMethod.GET, "/v1/report/balance/merchant/DEMO", "", GATEWAY_KEY, 200));
   }
 
   /** A route, the caller granted it, and the status its controller returns on success. */
@@ -176,7 +203,13 @@ class LedgerSecurityConfigurationTest {
       BalanceReportService service = mock(BalanceReportService.class);
       when(service.tax()).thenReturn(new BalanceReport(List.of()));
       when(service.merchant()).thenReturn(new BalanceReport(List.of()));
+      when(service.merchant(anyString())).thenReturn(new BalanceReport(List.of()));
       return service;
+    }
+
+    @Bean
+    ObjectMapper objectMapper() {
+      return new ObjectMapper();
     }
   }
 

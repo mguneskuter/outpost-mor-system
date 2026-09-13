@@ -21,8 +21,7 @@
      ORDER BY account.code, currency.currency_code
   </select>
 
-  <select id="findMerchantBalances"
-      resultType="com.outpost.ledger.report.repository.mybatis.BalanceRow">
+  <sql id="merchantBalanceSelect">
     SELECT account.code AS "accountCode",
            account.name AS "accountName",
            currency.currency_code AS "currency",
@@ -36,7 +35,20 @@
       JOIN account_type account_type ON account_type.account_type_id = account.account_type_id
        AND account_type.code = 'MERCHANT'
       JOIN currency currency ON currency.currency_id = line.currency_id
+  </sql>
+
+  <select id="findMerchantBalances"
+      resultType="com.outpost.ledger.report.repository.mybatis.BalanceRow">
+    <include refid="merchantBalanceSelect"/>
      GROUP BY account.code, account.name, currency.currency_code
      ORDER BY account.code, currency.currency_code
+  </select>
+
+  <select id="findMerchantBalancesByMerchantCode"
+      resultType="com.outpost.ledger.report.repository.mybatis.BalanceRow">
+    <include refid="merchantBalanceSelect"/>
+     WHERE account.code = #{merchantCode}
+     GROUP BY account.code, account.name, currency.currency_code
+     ORDER BY currency.currency_code
   </select>
 </mapper>

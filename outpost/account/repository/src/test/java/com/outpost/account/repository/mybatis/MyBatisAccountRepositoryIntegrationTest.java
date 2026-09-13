@@ -29,6 +29,9 @@ class MyBatisAccountRepositoryIntegrationTest {
   private static long rootAccountId;
   private static long merchantAccountId;
   private static long orphanAccountId;
+  private static long taxAuthorityAccountId;
+  private static final long TAXED_COUNTRY_ID = 6L;
+  private static final long UNTAXED_COUNTRY_ID = 11L;
 
   @BeforeAll
   static void migrateAndSeed() throws Exception {
@@ -53,7 +56,8 @@ class MyBatisAccountRepositoryIntegrationTest {
         new MyBatisAccountRepository(
             new SqlSessionTemplate(Objects.requireNonNull(sessionFactory.getObject())));
     JdbcTemplate jdbc = new JdbcTemplate(database);
-    for (AccountTypes type : List.of(AccountTypes.ROOT, AccountTypes.MERCHANT)) {
+    for (AccountTypes type :
+        List.of(AccountTypes.ROOT, AccountTypes.MERCHANT, AccountTypes.TAX_AUTHORITY)) {
       jdbc.update(
           "INSERT INTO account_type (account_type_id, code) VALUES (?, ?)",
           type.getValue().getAccountTypeId(),
@@ -62,6 +66,19 @@ class MyBatisAccountRepositoryIntegrationTest {
     rootAccountId = account(jdbc, AccountTypes.ROOT, "ROOT", null);
     merchantAccountId = account(jdbc, AccountTypes.MERCHANT, "PARENTED_MERCHANT", rootAccountId);
     orphanAccountId = account(jdbc, AccountTypes.MERCHANT, "ORPHAN_MERCHANT", null);
+    taxAuthorityAccountId =
+        account(jdbc, AccountTypes.TAX_AUTHORITY, "TAX_AUTHORITY", rootAccountId);
+    jdbc.update(
+        "INSERT INTO country (country_id, iso_code, name) VALUES (?, 'DE', 'Germany'), "
+            + "(?, 'FR', 'France')",
+        TAXED_COUNTRY_ID,
+        UNTAXED_COUNTRY_ID);
+    jdbc.update(
+        "INSERT INTO tax_authority_account (country_id, account_id, account_type_id) "
+            + "VALUES (?, ?, ?)",
+        TAXED_COUNTRY_ID,
+        taxAuthorityAccountId,
+        AccountTypes.TAX_AUTHORITY.getValue().getAccountTypeId());
   }
 
   @AfterAll
@@ -86,6 +103,22 @@ class MyBatisAccountRepositoryIntegrationTest {
   void rejectsStoredMerchantAccountWithoutParent() {
     assertThatThrownBy(() -> accounts().findAccountById(orphanAccountId))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void findsTheTaxAuthorityAccountThatCollectsForCountry() {
+    var taxAuthority =
+        accounts().findTaxAuthorityAccountByCountryId(TAXED_COUNTRY_ID).orElseThrow();
+
+    assertThat(taxAuthority.getAccountId()).isEqualTo(taxAuthorityAccountId);
+    assertThat(taxAuthority.getAccountType()).isEqualTo(AccountTypes.TAX_AUTHORITY.getValue());
+    assertThat(taxAuthority.getParentAccount())
+        .hasValueSatisfying(parent -> assertThat(parent.getAccountId()).isEqualTo(rootAccountId));
+  }
+
+  @Test
+  void findsNoTaxAuthorityAccountForCountryWithoutOne() {
+    assertThat(accounts().findTaxAuthorityAccountByCountryId(UNTAXED_COUNTRY_ID)).isEmpty();
   }
 
   @Test

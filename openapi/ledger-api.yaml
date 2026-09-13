@@ -1,0 +1,257 @@
+openapi: 3.1.0
+info:
+  title: Outpost Ledger API
+  version: "1"
+  description: |
+    The Ledger's internal contract, called only by the Gateway. Every request is signed with the
+    Gateway's HMAC key; the Java declaration of this contract is `outpost/accounting/api`.
+    Every refused or failed request answers `LedgerErrorResponse`.
+servers:
+  - url: http://localhost:8081
+    description: The local platform started by `make up`
+security:
+  - GatewaySignature: []
+tags:
+  - name: Accounting requests
+  - name: Reports
+paths:
+  /v1/accounting-request:
+    post:
+      tags: [Accounting requests]
+      summary: Accept an accounting request for booking
+      description: |
+        Validates the request for its type, takes the payment's transaction lock, and queues the
+        request; a worker books it and releases the lock. The booking's outcome is a log line.
+      operationId: submitAccountingRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountingQueueRequest"
+      responses:
+        "202":
+          description: Locked and queued; no body
+        "400":
+          description: "`INVALID_REQUEST`: a field the type requires is absent, or the body could not be read"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "`TRANSACTION_LOCKED`: another request for the same payment is being booked; try again after its lease"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerErrorResponse"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/report/balance/tax:
+    get:
+      tags: [Reports]
+      summary: What Outpost owes each tax authority
+      operationId: taxBalances
+      responses:
+        "200":
+          description: One account per tax authority with a balance per currency
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceReportResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/report/balance/merchant:
+    get:
+      tags: [Reports]
+      summary: What Outpost owes every merchant
+      operationId: merchantBalances
+      responses:
+        "200":
+          description: One account per merchant with a balance per currency
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceReportResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /v1/report/balance/merchant/{merchantCode}:
+    get:
+      tags: [Reports]
+      summary: What Outpost owes one merchant
+      description: Reads only the rows of the named merchant account.
+      operationId: merchantBalancesByCode
+      parameters:
+        - name: merchantCode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: At most one account, with a balance per currency; no account when nothing is booked for it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceReportResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    GatewaySignature:
+      type: apiKey
+      in: header
+      name: X-Outpost-Signature
+      description: Base64 HMAC-SHA-256 of the exact raw request body under the Gateway's key; an empty body is signed as zero bytes
+  responses:
+    Unauthenticated:
+      description: "`UNAUTHENTICATED`: no signature verifies"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerErrorResponse"
+    Forbidden:
+      description: "`FORBIDDEN`: the signing caller is not granted the route"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerErrorResponse"
+    BodyTooLarge:
+      description: "`BODY_TOO_LARGE`: the body is larger than 1 MiB"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerErrorResponse"
+    InternalError:
+      description: "`INTERNAL_ERROR`, with the `correlation_id` of the one log line that records the failure"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LedgerErrorResponse"
+  schemas:
+    LedgerErrorResponse:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+        correlation_id:
+          type: string
+          description: Present on `INTERNAL_ERROR` only
+    Amount:
+      type: object
+      required: [quantity, currency]
+      properties:
+        quantity:
+          type: integer
+          format: int64
+          description: Minor units
+        currency:
+          type: string
+          description: ISO 4217 code
+    AccountingQueueRequest:
+      type: object
+      description: |
+        Every property is present; the ones a type does not use are `null`. `ORDER_CREATED`
+        requires `merchant_code`, `shopper_country`, and the three amounts. `AUTHORISATION` and
+        `CAPTURE` require `success`. `REFUND` requires `success` and `refund_reference`.
+      required:
+        - type
+        - original_reference
+        - merchant_reference
+        - psp_code
+        - psp_reference
+        - success
+        - refund_reference
+        - merchant_code
+        - shopper_country
+        - shopper_country_subdivision
+        - net_amount
+        - tax_amount
+        - gross_amount
+      properties:
+        type:
+          type: string
+          enum: [ORDER_CREATED, AUTHORISATION, CAPTURE, REFUND]
+        original_reference:
+          type: string
+          description: The order reference; the payment and its children are booked under it
+        merchant_reference:
+          type: string
+        psp_code:
+          type: string
+        psp_reference:
+          type: string
+        success:
+          type: [boolean, "null"]
+        refund_reference:
+          type: [string, "null"]
+        merchant_code:
+          type: [string, "null"]
+        shopper_country:
+          type: [string, "null"]
+          description: ISO 3166-1 alpha-2 code
+        shopper_country_subdivision:
+          type: [string, "null"]
+          description: ISO 3166-2 code of a subdivision of `shopper_country`
+        net_amount:
+          oneOf:
+            - $ref: "#/components/schemas/Amount"
+            - type: "null"
+        tax_amount:
+          oneOf:
+            - $ref: "#/components/schemas/Amount"
+            - type: "null"
+        gross_amount:
+          oneOf:
+            - $ref: "#/components/schemas/Amount"
+            - type: "null"
+    BalanceReportResponse:
+      type: object
+      required: [accounts]
+      properties:
+        accounts:
+          type: array
+          items:
+            type: object
+            required: [account_code, name, balances]
+            properties:
+              account_code:
+                type: string
+              name:
+                type: string
+              balances:
+                type: array
+                items:
+                  type: object
+                  required: [currency, amount]
+                  properties:
+                    currency:
+                      type: string
+                    amount:
+                      type: integer
+                      format: int64
+                      description: What Outpost owes the account, in minor units

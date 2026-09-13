@@ -24,6 +24,12 @@ public final class MyBatisAccountRepository implements AccountRepository {
     return Optional.ofNullable(mapper.findAccountByCode(code)).map(this::toAccount);
   }
 
+  @Override
+  public Optional<com.outpost.account.Account> findTaxAuthorityAccountByCountryId(long countryId) {
+    return Optional.ofNullable(mapper.findTaxAuthorityAccountByCountryId(countryId))
+        .map(this::toAccount);
+  }
+
   private com.outpost.account.Account toAccount(Account row) {
     Long parentAccountId = row.parentAccountId();
     com.outpost.account.Account parent =

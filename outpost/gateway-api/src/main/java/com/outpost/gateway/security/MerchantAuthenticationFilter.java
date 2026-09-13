@@ -7,6 +7,7 @@ import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.hmac.HmacSignature;
 import com.outpost.framework.security.web.SizeBoundedRequestBody;
+import com.outpost.gateway.api.ErrorResponse;
 import com.outpost.gateway.security.repository.MerchantApiKeyCredentials;
 import com.outpost.gateway.security.repository.MerchantApiKeyRepository;
 import jakarta.servlet.FilterChain;
@@ -23,8 +24,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.UUID;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.web.filter.OncePerRequestFilter;
+import tools.jackson.databind.ObjectMapper;
 
 /** Authenticates signed Gateway requests and exposes the account identity downstream. */
 public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
@@ -37,13 +41,18 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
   private final MerchantApiKeyRepository merchantApiKeys;
   private final String operatorKey;
   private final AesGcmSecretAdapter secrets;
+  private final ObjectMapper objectMapper;
 
-  /** Creates a filter backed by merchant key storage. */
+  /** Creates a filter backed by merchant key storage that answers rejections as JSON. */
   public MerchantAuthenticationFilter(
-      MerchantApiKeyRepository merchantApiKeys, String operatorKey, AesGcmSecretAdapter secrets) {
+      MerchantApiKeyRepository merchantApiKeys,
+      String operatorKey,
+      AesGcmSecretAdapter secrets,
+      ObjectMapper objectMapper) {
     this.merchantApiKeys = merchantApiKeys;
     this.operatorKey = operatorKey;
     this.secrets = secrets;
+    this.objectMapper = objectMapper;
   }
 
   @Override
@@ -59,7 +68,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     }
     String presented = request.getHeader("X-Outpost-Api-Key");
     if (presented == null || presented.isBlank()) {
-      response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+      unauthenticated(response);
       return;
     }
     if (operatorKey != null
@@ -72,7 +81,10 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     }
     Optional<byte[]> boundedBody = SizeBoundedRequestBody.read(request);
     if (boundedBody.isEmpty()) {
-      response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+      reject(
+          response,
+          HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+          ErrorResponse.of(ErrorResponse.BODY_TOO_LARGE));
       return;
     }
     byte[] body = boundedBody.orElseThrow();
@@ -82,20 +94,22 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     try {
       credentials = merchantApiKeys.findActiveByHash(sha256Hex(presented));
     } catch (RuntimeException exception) {
+      String correlationId = UUID.randomUUID().toString();
       LOGGER.error(
           "merchant credential lookup failed",
           exception,
-          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_STORE"));
-      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_STORE"),
+          new StructuredLogField(LogField.CORRELATION_ID, correlationId));
+      internalError(response, correlationId);
       return;
     }
     if (credentials.isEmpty()) {
-      response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+      unauthenticated(response);
       return;
     }
     String signature = request.getHeader("X-Outpost-Signature");
     if (signature == null || signature.isBlank()) {
-      response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+      unauthenticated(response);
       return;
     }
     MerchantApiKeyCredentials key = credentials.orElseThrow();
@@ -103,12 +117,14 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     try {
       hmacKey = HmacKey.fromUtf8(secrets.decrypt(key.encryptedHmacSecret()));
     } catch (RuntimeException exception) {
+      String correlationId = UUID.randomUUID().toString();
       LOGGER.error(
           "merchant credential decryption failed",
           exception,
           new StructuredLogField(LogField.FAILURE, "CREDENTIAL_DECRYPTION"),
-          new StructuredLogField(LogField.MERCHANT_ACCOUNT_ID, Long.toString(key.accountId())));
-      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+          new StructuredLogField(LogField.MERCHANT_ACCOUNT_ID, Long.toString(key.accountId())),
+          new StructuredLogField(LogField.CORRELATION_ID, correlationId));
+      internalError(response, correlationId);
       return;
     }
     boolean validSignature;
@@ -119,19 +135,41 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
           "merchant signature rejected",
           exception,
           new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
-      response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+      unauthenticated(response);
       return;
     }
     if (!validSignature) {
       LOGGER.warn(
           "merchant signature rejected",
           new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
-      response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+      unauthenticated(response);
       return;
     }
     HttpServletRequest wrapped = new BodyRequest(request, body);
     wrapped.setAttribute(PRINCIPAL_ATTRIBUTE, GatewayPrincipal.merchant(key.accountId()));
     chain.doFilter(wrapped, response);
+  }
+
+  private void unauthenticated(HttpServletResponse response) throws IOException {
+    reject(
+        response,
+        HttpServletResponse.SC_UNAUTHORIZED,
+        ErrorResponse.of(ErrorResponse.UNAUTHENTICATED));
+  }
+
+  private void internalError(HttpServletResponse response, String correlationId)
+      throws IOException {
+    reject(
+        response,
+        HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+        new ErrorResponse(ErrorResponse.INTERNAL_ERROR, correlationId));
+  }
+
+  private void reject(HttpServletResponse response, int status, ErrorResponse body)
+      throws IOException {
+    response.setStatus(status);
+    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+    objectMapper.writeValue(response.getOutputStream(), body);
   }
 
   private static String sha256Hex(String value) {
@@ -184,7 +222,8 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
 
   private enum LogField implements LogFields {
     FAILURE("authentication_failure"),
-    MERCHANT_ACCOUNT_ID("merchant_account_id");
+    MERCHANT_ACCOUNT_ID("merchant_account_id"),
+    CORRELATION_ID("correlation_id");
 
     private final String jsonKey;
 

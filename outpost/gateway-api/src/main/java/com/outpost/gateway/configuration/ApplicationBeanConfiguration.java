@@ -20,9 +20,6 @@ import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.gateway.accounting.LedgerAccountingRequestSender;
 import com.outpost.gateway.order.service.OrderModificationService;
 import com.outpost.gateway.order.service.OrderService;
-import com.outpost.gateway.paymentmethod.repository.PaymentMethodRepository;
-import com.outpost.gateway.paymentmethod.repository.mybatis.MyBatisPaymentMethodRepository;
-import com.outpost.gateway.paymentmethod.repository.mybatis.PaymentMethodMapper;
 import com.outpost.gateway.psp.api.PspWebhookResponses;
 import com.outpost.gateway.psp.api.PspWebhookSignatureFilter;
 import com.outpost.gateway.psp.service.PspWebhookService;
@@ -33,6 +30,7 @@ import com.outpost.gateway.report.repository.mybatis.MyBatisReportRepository;
 import com.outpost.gateway.report.repository.mybatis.ReportMapper;
 import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.AesGcmSecretAdapter;
+import com.outpost.gateway.security.GatewayPrincipalArgumentResolver;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
 import com.outpost.gateway.security.repository.MerchantApiKeyRepository;
 import com.outpost.gateway.security.repository.mybatis.MerchantApiKeyMapper;
@@ -55,6 +53,7 @@ import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.util.List;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -63,6 +62,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import tools.jackson.databind.ObjectMapper;
 
 /** Application bean definitions. */
@@ -84,12 +85,24 @@ public class ApplicationBeanConfiguration {
   FilterRegistrationBean<MerchantAuthenticationFilter> merchantAuthenticationFilter(
       MerchantApiKeyRepository merchantApiKeys,
       AesGcmSecretAdapter secrets,
-      @Value("${OUTPOST_OPERATOR_API_KEY:}") String operatorKey) {
+      @Value("${OUTPOST_OPERATOR_API_KEY:}") String operatorKey,
+      ObjectMapper objectMapper) {
     var registration =
         new FilterRegistrationBean<>(
-            new MerchantAuthenticationFilter(merchantApiKeys, operatorKey, secrets));
+            new MerchantAuthenticationFilter(merchantApiKeys, operatorKey, secrets, objectMapper));
     registration.setOrder(1);
     return registration;
+  }
+
+  /** Lets every controller take the authenticated {@code GatewayPrincipal} as a parameter. */
+  @Bean
+  WebMvcConfigurer gatewayPrincipalResolution() {
+    return new WebMvcConfigurer() {
+      @Override
+      public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        resolvers.add(new GatewayPrincipalArgumentResolver());
+      }
+    };
   }
 
   @Bean
@@ -152,8 +165,9 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  MerchantPspRepository merchantPspRepository(MerchantPspMapper mapper) {
-    return new MyBatisMerchantPspRepository(mapper);
+  MerchantPspRepository merchantPspRepository(
+      MerchantPspMapper mapper, AccountRepository accounts) {
+    return new MyBatisMerchantPspRepository(mapper, accounts);
   }
 
   @Bean
@@ -232,10 +246,5 @@ public class ApplicationBeanConfiguration {
   @Bean
   ReportService reportService(LedgerReportClient ledgerReportClient, ReportRepository repository) {
     return new ReportService(ledgerReportClient, repository);
-  }
-
-  @Bean
-  PaymentMethodRepository paymentMethodRepository(PaymentMethodMapper mapper) {
-    return new MyBatisPaymentMethodRepository(mapper);
   }
 }

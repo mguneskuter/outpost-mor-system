@@ -23,11 +23,14 @@ public final class ReportService {
     return ledger.taxBalances();
   }
 
-  /** Returns merchant balances: every merchant for the operator, only itself for a merchant. */
+  /**
+   * Returns merchant balances: every merchant for the operator, only itself for a merchant. The
+   * merchant's code comes from its authenticated account, never from the request, and the Ledger
+   * reads only that merchant's rows.
+   */
   public BalanceReport merchant(GatewayPrincipal principal) {
-    BalanceReport report = ledger.merchantBalances();
     if (principal.type() == GatewayPrincipal.Type.OPERATOR) {
-      return report;
+      return ledger.merchantBalances();
     }
     String merchantCode =
         repository
@@ -36,10 +39,7 @@ public final class ReportService {
                 () ->
                     new BalanceReportException(
                         HttpStatus.UNAUTHORIZED.value(), "MERCHANT_NOT_FOUND"));
-    return new BalanceReport(
-        report.accounts().stream()
-            .filter(account -> account.accountCode().equals(merchantCode))
-            .toList());
+    return ledger.merchantBalances(merchantCode);
   }
 
   private static void requireOperator(GatewayPrincipal principal) {

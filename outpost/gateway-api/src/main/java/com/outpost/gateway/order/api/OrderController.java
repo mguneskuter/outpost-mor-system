@@ -1,16 +1,11 @@
 package com.outpost.gateway.order.api;
 
-import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.gateway.order.service.OrderCreationException;
 import com.outpost.gateway.order.service.OrderService;
 import com.outpost.gateway.security.GatewayPrincipal;
-import com.outpost.gateway.security.MerchantAuthenticationFilter;
-import jakarta.servlet.http.HttpServletRequest;
-import org.slf4j.LoggerFactory;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,8 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/order")
 public final class OrderController {
-  private static final StructuredLogger LOGGER =
-      new StructuredLogger(LoggerFactory.getLogger(OrderController.class));
   private final OrderService service;
 
   /** Creates a controller backed by the order service. */
@@ -32,33 +25,11 @@ public final class OrderController {
   /** Creates an order for the authenticated merchant. */
   @PostMapping
   public ResponseEntity<CreateOrderResponse> create(
-      @RequestBody CreateOrderRequest request, HttpServletRequest httpRequest) {
-    GatewayPrincipal principal =
-        (GatewayPrincipal)
-            httpRequest.getAttribute(MerchantAuthenticationFilter.PRINCIPAL_ATTRIBUTE);
-    if (principal == null || principal.type() != GatewayPrincipal.Type.MERCHANT) {
+      GatewayPrincipal principal, @Valid @RequestBody CreateOrderRequest request) {
+    if (principal.type() != GatewayPrincipal.Type.MERCHANT) {
       throw new OrderCreationException(HttpStatus.FORBIDDEN.value(), "MERCHANT_REQUIRED");
     }
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(CreateOrderResponse.from(service.create(principal.accountId(), request.toCommand())));
   }
-
-  @ExceptionHandler(OrderCreationException.class)
-  ResponseEntity<ErrorResponse> controlled(OrderCreationException exception) {
-    return ResponseEntity.status(exception.status()).body(new ErrorResponse(exception.code()));
-  }
-
-  @ExceptionHandler(HttpMessageNotReadableException.class)
-  ResponseEntity<ErrorResponse> malformed(HttpMessageNotReadableException exception) {
-    LOGGER.warn("order request could not be read", exception);
-    return ResponseEntity.badRequest().body(new ErrorResponse("INVALID_REQUEST"));
-  }
-
-  @ExceptionHandler(RuntimeException.class)
-  ResponseEntity<ErrorResponse> unexpected(RuntimeException exception) {
-    LOGGER.warn("order request failed", exception);
-    return ResponseEntity.internalServerError().body(new ErrorResponse("INTERNAL_ERROR"));
-  }
-
-  record ErrorResponse(String code) {}
 }
