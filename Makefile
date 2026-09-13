@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify smoke smoke-flow tail
+.PHONY: all clean hooks format format-check lint build test psp-simulator merchant-cli precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify smoke smoke-flow tail
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -42,6 +42,12 @@ psp-simulator:
 	./outpost/gradlew -p psp-simulator bootRun
 endif
 
+# The shell reads .env for the database, the Gateway keys, and the PSP simulator key; it runs
+# from its jar because it needs the terminal Gradle does not pass through.
+merchant-cli:
+	./outpost/gradlew -p merchant-cli bootJar --quiet
+	set -a; . ./.env; set +a; java -jar merchant-cli/build/libs/merchant-cli.jar
+
 images:
 	./outpost/gradlew -p outpost :gateway-api:bootBuildImage :ledger-api:bootBuildImage :static-data-job:bootBuildImage
 	./outpost/gradlew -p psp-simulator bootBuildImage
@@ -54,7 +60,7 @@ precommit:
 verify:
 	./outpost/gradlew -p outpost spotlessCheck checkstyleMain checkstyleTest build
 	./outpost/gradlew -p psp-simulator spotlessCheck checkstyleMain checkstyleTest build
-	./outpost/gradlew -p merchant-simulator spotlessCheck checkstyleMain checkstyleTest build
+	./outpost/gradlew -p merchant-cli spotlessCheck checkstyleMain checkstyleTest build
 	$(MAKE) seed-test
 
 setup:
