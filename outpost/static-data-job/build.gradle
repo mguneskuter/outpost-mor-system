@@ -37,6 +37,11 @@ springBoot {
     mainClass = 'com.outpost.platform.staticdata.job.EnsureStaticDataJobApplication'
 }
 
+tasks.named('bootBuildImage') {
+    builder = 'paketobuildpacks/builder-noble-java-tiny:0.0.187'
+    environment = ['BP_JVM_VERSION': '21.0.12']
+}
+
 tasks.named('test') {
     useJUnitPlatform()
     systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
