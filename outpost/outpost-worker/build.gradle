@@ -7,6 +7,11 @@ springBoot {
     mainClass = 'com.outpost.worker.OutpostWorkerApplication'
 }
 
+tasks.named('bootBuildImage') {
+    builder = 'paketobuildpacks/builder-noble-java-tiny:0.0.187'
+    environment = ['BP_JVM_VERSION': '21.0.12']
+}
+
 dependencies {
     implementation project(':framework:persistence')
     implementation project(':framework:security')

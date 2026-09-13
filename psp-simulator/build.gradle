@@ -20,6 +20,7 @@ java {
 
 dependencies {
     implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.flywaydb:flyway-core'
@@ -68,4 +69,9 @@ tasks.named('test') {
 
 springBoot {
     mainClass = 'com.outpost.pspsimulator.PspSimulatorApplication'
+}
+
+tasks.named('bootBuildImage') {
+    builder = 'paketobuildpacks/builder-noble-java-tiny:0.0.187'
+    environment = ['BP_JVM_VERSION': '21.0.12']
 }
