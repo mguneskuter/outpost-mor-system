@@ -39,12 +39,16 @@ public final class PspWebhookSignatureFilter extends OncePerRequestFilter {
   private static final Pattern WEBHOOK_PATH = Pattern.compile("/v1/psp/([^/]+)/webhook");
   private final PspConfigurationRepository configurations;
   private final ObjectMapper objectMapper;
+  private final PspWebhookResponses responses;
 
   /** Creates a filter that resolves each addressed PSP's signing secret. */
   public PspWebhookSignatureFilter(
-      PspConfigurationRepository configurations, ObjectMapper objectMapper) {
+      PspConfigurationRepository configurations,
+      ObjectMapper objectMapper,
+      PspWebhookResponses responses) {
     this.configurations = configurations;
     this.objectMapper = objectMapper;
+    this.responses = responses;
   }
 
   @Override
@@ -87,7 +91,7 @@ public final class PspWebhookSignatureFilter extends OncePerRequestFilter {
 
   private void reject(HttpServletResponse response, PspWebhookProcessResultCodes code)
       throws IOException {
-    ResponseEntity<PspWebhookEventResponse> rejection = PspWebhookResponses.respond(code);
+    ResponseEntity<PspWebhookEventResponse> rejection = responses.respond(code);
     response.setStatus(rejection.getStatusCode().value());
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     objectMapper.writeValue(response.getOutputStream(), rejection.getBody());

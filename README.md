@@ -38,6 +38,7 @@ It downloads verified, pinned TruffleHog and Gitleaks binaries into `bin/`, then
 | `make ensure-static-data` | Materialise enum reference data explicitly.              |
 | `make seed`               | Run deterministic non-enum seed SQL explicitly.          |
 | `make lifecycle`          | Run migration, enum materialisation, then seed SQL.      |
+| `make journal-controls`   | Run the read-only journal integrity controls.            |
 
 ## Framework foundation
 

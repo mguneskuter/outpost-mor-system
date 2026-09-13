@@ -4,21 +4,31 @@ import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.gateway.psp.service.PspWebhookProcessResultCodes;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-/** Answers PSP event notifications and logs every rejection without its payload. */
-final class PspWebhookResponses {
+/**
+ * Answers PSP event notifications. Every notification that is not recorded is logged without its
+ * payload and counted in {@code outpost.webhook.rejected}, tagged by {@code reason}.
+ */
+public final class PspWebhookResponses {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(PspWebhookResponses.class));
+  private static final String REJECTED_METER = "outpost.webhook.rejected";
+  private final MeterRegistry meterRegistry;
 
-  private PspWebhookResponses() {}
+  /** Creates responses that count rejections in {@code meterRegistry}. */
+  public PspWebhookResponses(MeterRegistry meterRegistry) {
+    this.meterRegistry = meterRegistry;
+  }
 
-  static ResponseEntity<PspWebhookEventResponse> respond(PspWebhookProcessResultCodes code) {
+  ResponseEntity<PspWebhookEventResponse> respond(PspWebhookProcessResultCodes code) {
     if (code != PspWebhookProcessResultCodes.ACCEPTED) {
       LOGGER.warn(
           "PSP webhook rejected", new StructuredLogField(LogField.REJECTION_REASON, code.name()));
+      meterRegistry.counter(REJECTED_METER, "reason", code.name()).increment();
     }
     return ResponseEntity.status(status(code)).body(new PspWebhookEventResponse(code.name()));
   }
@@ -29,7 +39,9 @@ final class PspWebhookResponses {
       case UNKNOWN_PSP -> HttpStatus.NOT_FOUND;
       case INVALID_SIGNATURE -> HttpStatus.UNAUTHORIZED;
       case INVALID_PAYLOAD -> HttpStatus.BAD_REQUEST;
-      case UNKNOWN_PAYMENT -> HttpStatus.UNPROCESSABLE_CONTENT;
+      // An authenticated event that matches no stored payment is acknowledged as processed with a
+      // negative result, so the PSP does not redeliver it; it is never recorded.
+      case UNKNOWN_PAYMENT, FOREIGN_PAYMENT, PSP_REFERENCE_MISMATCH -> HttpStatus.OK;
     };
   }
 

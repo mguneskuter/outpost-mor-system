@@ -44,6 +44,8 @@ class GatewayApiIntegrationTest {
   private static final String PSP_SECRET = "webhook-test-secret";
   private static final String PAYMENT_REFERENCE = "webhook-payment";
   private static final String FOREIGN_PAYMENT_REFERENCE = "foreign-webhook-payment";
+  private static final String PSP_REFERENCE = "webhook-psp-payment";
+  private static final String FOREIGN_PSP_REFERENCE = "foreign-webhook-psp-payment";
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_gateway_api", "outpost_gateway_api", "outpost_gateway_api");
@@ -107,9 +109,16 @@ class GatewayApiIntegrationTest {
         Objects.requireNonNull(
             seed.queryForObject(
                 "SELECT currency_id FROM currency WHERE currency_code = 'EUR'", Long.class));
-    seedOrder(seed, merchantAccount, shopper, currency, PAYMENT_REFERENCE, pspAccount);
     seedOrder(
-        seed, merchantAccount, shopper, currency, FOREIGN_PAYMENT_REFERENCE, foreignPspAccount);
+        seed, merchantAccount, shopper, currency, PAYMENT_REFERENCE, pspAccount, PSP_REFERENCE);
+    seedOrder(
+        seed,
+        merchantAccount,
+        shopper,
+        currency,
+        FOREIGN_PAYMENT_REFERENCE,
+        foreignPspAccount,
+        FOREIGN_PSP_REFERENCE);
   }
 
   @DynamicPropertySource
@@ -152,7 +161,7 @@ class GatewayApiIntegrationTest {
 
   @Test
   void receivesOneVerifiedWebhookAndRejectsInvalidRequestsWithoutPersistingThem() {
-    String valid = payload(PSP_CODE, PAYMENT_REFERENCE, "event-1");
+    String valid = payload(PSP_CODE, PAYMENT_REFERENCE, PSP_REFERENCE);
     assertResult(postWebhook(PSP_CODE, valid, signature(valid)), 200, "ACCEPTED");
     assertResult(postWebhook(PSP_CODE, valid, signature(valid)), 200, "ACCEPTED");
     assertThat(queueCount()).isEqualTo(1);
@@ -167,10 +176,15 @@ class GatewayApiIntegrationTest {
     assertResult(postWebhook("UNKNOWN", valid, "bad"), 404, "UNKNOWN_PSP");
     String unknownPayment = payload(PSP_CODE, "unknown-payment", "event-3");
     assertResult(
-        postWebhook(PSP_CODE, unknownPayment, signature(unknownPayment)), 422, "UNKNOWN_PAYMENT");
-    String foreignPayment = payload(PSP_CODE, FOREIGN_PAYMENT_REFERENCE, "event-4");
+        postWebhook(PSP_CODE, unknownPayment, signature(unknownPayment)), 200, "UNKNOWN_PAYMENT");
+    String foreignPayment = payload(PSP_CODE, FOREIGN_PAYMENT_REFERENCE, FOREIGN_PSP_REFERENCE);
     assertResult(
-        postWebhook(PSP_CODE, foreignPayment, signature(foreignPayment)), 422, "UNKNOWN_PAYMENT");
+        postWebhook(PSP_CODE, foreignPayment, signature(foreignPayment)), 200, "FOREIGN_PAYMENT");
+    String otherReference = payload(PSP_CODE, PAYMENT_REFERENCE, "other-psp-reference");
+    assertResult(
+        postWebhook(PSP_CODE, otherReference, signature(otherReference)),
+        200,
+        "PSP_REFERENCE_MISMATCH");
     assertThat(queueCount()).isEqualTo(1);
   }
 
@@ -244,15 +258,16 @@ class GatewayApiIntegrationTest {
       long shopper,
       long currency,
       String paymentReference,
-      long pspAccount) {
+      long pspAccount,
+      String pspReference) {
     jdbcTemplate.update(
         "INSERT INTO merchant_order (order_reference, merchant_reference, account_id, "
             + "account_type_id, shopper_id, currency_id, net_amount, tax_amount, gross_amount, "
             + "idempotency_key, request_fingerprint, payment_reference, psp_account_id, "
-            + "shopper_country_id, created_ts) "
+            + "psp_reference, shopper_country_id, created_ts) "
             + "VALUES (?, ?, ?, "
             + "(SELECT account_type_id FROM account_type WHERE code = 'MERCHANT'), ?, ?, "
-            + "100, 0, 100, ?, ?, ?, ?, "
+            + "100, 0, 100, ?, ?, ?, ?, ?, "
             + "(SELECT country_id FROM shopper_detail WHERE shopper_id = ?), now())",
         paymentReference + "-order",
         paymentReference + "-order",
@@ -263,6 +278,7 @@ class GatewayApiIntegrationTest {
         paymentReference + "-fingerprint",
         paymentReference,
         pspAccount,
+        pspReference,
         shopper);
   }
 

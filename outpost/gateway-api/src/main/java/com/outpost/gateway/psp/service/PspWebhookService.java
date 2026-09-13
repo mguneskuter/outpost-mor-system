@@ -18,26 +18,34 @@ public final class PspWebhookService {
   /**
    * Records one PSP event notification whose signature already matched {@code psp}.
    *
+   * <p>A valid signature proves which PSP sent the event, not that the event belongs to the payment
+   * it names, so the event is recorded only when that payment was created with the signing PSP's
+   * account and carries the event's PSP reference.
+   *
    * @param payload the notification body exactly as signed; it is stored unchanged
-   * @return {@code ACCEPTED} also when the same event was already recorded
+   * @return {@code ACCEPTED} also when the same event was already recorded; every other code means
+   *     nothing was recorded
    */
   public PspWebhookProcessResultCodes process(
       PspConfiguration psp, PspWebhookEvent event, String payload) {
     if (!psp.code().equals(event.pspCode())) {
       return PspWebhookProcessResultCodes.INVALID_PAYLOAD;
     }
-    Optional<PaymentAccounts> accounts =
-        events
-            .findPaymentAccounts(event.paymentReference())
-            .filter(value -> value.pspAccountId() == psp.accountId());
-    if (accounts.isEmpty()) {
+    Optional<PaymentAccounts> found = events.findPaymentAccounts(event.paymentReference());
+    if (found.isEmpty()) {
       return PspWebhookProcessResultCodes.UNKNOWN_PAYMENT;
     }
-    PaymentAccounts paymentAccounts = accounts.orElseThrow();
+    PaymentAccounts payment = found.orElseThrow();
+    if (payment.pspAccountId() != psp.accountId()) {
+      return PspWebhookProcessResultCodes.FOREIGN_PAYMENT;
+    }
+    if (!event.pspReference().equals(payment.pspReference())) {
+      return PspWebhookProcessResultCodes.PSP_REFERENCE_MISMATCH;
+    }
     events.recordReceived(
         new ReceivedPspEvent(
-            paymentAccounts.merchantAccountId(),
-            paymentAccounts.pspAccountId(),
+            payment.merchantAccountId(),
+            payment.pspAccountId(),
             event.eventReference(),
             event.paymentReference(),
             event.eventCode(),

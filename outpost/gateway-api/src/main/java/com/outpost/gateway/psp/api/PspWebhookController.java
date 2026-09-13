@@ -14,10 +14,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public final class PspWebhookController {
   private final PspWebhookService service;
+  private final PspWebhookResponses responses;
 
   /** Creates a webhook receiver. */
-  public PspWebhookController(PspWebhookService service) {
+  public PspWebhookController(PspWebhookService service, PspWebhookResponses responses) {
     this.service = service;
+    this.responses = responses;
   }
 
   /** Records a PSP event notification for its payment. */
@@ -26,12 +28,11 @@ public final class PspWebhookController {
       @RequestAttribute(PspWebhookSignatureFilter.VERIFIED_WEBHOOK_ATTRIBUTE)
           VerifiedPspWebhook webhook,
       @RequestBody PspWebhookEventRequest request) {
-    return PspWebhookResponses.respond(
-        service.process(webhook.psp(), request.toEvent(), webhook.payload()));
+    return responses.respond(service.process(webhook.psp(), request.toEvent(), webhook.payload()));
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<PspWebhookEventResponse> unreadable(HttpMessageNotReadableException exception) {
-    return PspWebhookResponses.respond(PspWebhookProcessResultCodes.INVALID_PAYLOAD);
+    return responses.respond(PspWebhookProcessResultCodes.INVALID_PAYLOAD);
   }
 }

@@ -18,8 +18,7 @@ public final class MyBatisPspEventRepository implements PspEventRepository {
 
   @Override
   public Optional<PaymentAccounts> findPaymentAccounts(String paymentReference) {
-    return Optional.ofNullable(mapper.findPaymentAccounts(paymentReference))
-        .map(row -> new PaymentAccounts(row.merchantAccountId(), row.pspAccountId()));
+    return Optional.ofNullable(mapper.findPaymentAccounts(paymentReference));
   }
 
   @Override
