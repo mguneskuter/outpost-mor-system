@@ -4,14 +4,20 @@ import com.outpost.accounting.queue.AccountingRequest;
 import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.accounting.queue.AccountingRequestResults;
 import com.outpost.common.iso.Currencies;
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.worker.accounting.client.LedgerPaymentClient;
 import com.outpost.worker.accounting.client.LedgerPaymentClientException;
 import java.util.Arrays;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.LoggerFactory;
 
 /** Applies each PSP outcome or merchant refund request in the accounting request queue. */
 public final class AccountingRequestProcessor {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(AccountingRequestProcessor.class));
   private final AccountingRequestQueue requests;
   private final LedgerPaymentClient ledger;
   private final MerchantRefundWorkflow refundWorkflow;
@@ -36,7 +42,21 @@ public final class AccountingRequestProcessor {
     if (request == null) {
       return false;
     }
-    requests.complete(request, apply(request));
+    AccountingRequestResults result;
+    try {
+      result = apply(request);
+    } catch (LedgerPaymentClientException exception) {
+      requests.complete(request, AccountingRequestResults.FAILED);
+      LOGGER.warn(
+          "accounting request failed", exception, fields(request, AccountingRequestResults.FAILED));
+      return true;
+    }
+    requests.complete(request, result);
+    if (result == AccountingRequestResults.FAILED) {
+      LOGGER.warn("accounting request failed", fields(request, result));
+    } else {
+      LOGGER.info("accounting request completed", fields(request, result));
+    }
     return true;
   }
 
@@ -73,26 +93,48 @@ public final class AccountingRequestProcessor {
   }
 
   private AccountingRequestResults applyCaptureResult(AccountingRequest request) {
-    try {
-      ledger.recordCapture(
-          request.getOriginalReference(),
-          request.getReference(),
-          Boolean.TRUE.equals(request.getSuccess()),
-          requireLong(request.getAmount(), "amount"),
-          currencyCode(requireLong(request.getCurrencyId(), "currencyId")));
-      return AccountingRequestResults.SUCCESS;
-    } catch (LedgerPaymentClientException exception) {
-      return AccountingRequestResults.FAILED;
-    }
+    ledger.recordCapture(
+        request.getOriginalReference(),
+        request.getReference(),
+        Boolean.TRUE.equals(request.getSuccess()),
+        requireLong(request.getAmount(), "amount"),
+        currencyCode(requireLong(request.getCurrencyId(), "currencyId")));
+    return AccountingRequestResults.SUCCESS;
   }
 
   private AccountingRequestResults recordEvent(
       String paymentReference, @Nullable String refundReference, String event) {
-    try {
-      ledger.recordEvent(paymentReference, refundReference, event);
-      return AccountingRequestResults.SUCCESS;
-    } catch (LedgerPaymentClientException exception) {
-      return AccountingRequestResults.FAILED;
+    ledger.recordEvent(paymentReference, refundReference, event);
+    return AccountingRequestResults.SUCCESS;
+  }
+
+  private static StructuredLogField[] fields(
+      AccountingRequest request, AccountingRequestResults result) {
+    return new StructuredLogField[] {
+      new StructuredLogField(LogField.REQUEST_TYPE, request.getType().name()),
+      new StructuredLogField(LogField.QUEUE_ID, Long.toString(request.getQueueId())),
+      new StructuredLogField(LogField.PAYMENT_REFERENCE, request.getOriginalReference()),
+      new StructuredLogField(LogField.MERCHANT_ACCOUNT_ID, Long.toString(request.getAccountId())),
+      new StructuredLogField(LogField.RESULT, result.name())
+    };
+  }
+
+  private enum LogField implements LogFields {
+    PAYMENT_REFERENCE("payment_reference"),
+    QUEUE_ID("queue_id"),
+    REQUEST_TYPE("request_type"),
+    MERCHANT_ACCOUNT_ID("merchant_account_id"),
+    RESULT("result");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
     }
   }
 

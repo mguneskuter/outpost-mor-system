@@ -3,17 +3,17 @@ package com.outpost.payment.repository.mybatis;
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
 import com.outpost.payment.PspEventStatuses;
-import com.outpost.payment.repository.PspEventQueue;
+import com.outpost.payment.repository.PspEventRepository;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Optional;
 
 /** MyBatis-backed PSP event queue. */
-public final class MyBatisPspEventQueue implements PspEventQueue {
+public final class MyBatisPspEventRepository implements PspEventRepository {
   private final PspEventQueueMapper mapper;
 
   /** Creates a queue backed by the supplied mapper. */
-  public MyBatisPspEventQueue(PspEventQueueMapper mapper) {
+  public MyBatisPspEventRepository(PspEventQueueMapper mapper) {
     this.mapper = mapper;
   }
 

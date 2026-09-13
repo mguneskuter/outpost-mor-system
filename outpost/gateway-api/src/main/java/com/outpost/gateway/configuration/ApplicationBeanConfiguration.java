@@ -11,6 +11,7 @@ import com.outpost.gateway.order.service.OrderService;
 import com.outpost.gateway.paymentmethod.repository.PaymentMethodRepository;
 import com.outpost.gateway.paymentmethod.repository.mybatis.MyBatisPaymentMethodRepository;
 import com.outpost.gateway.paymentmethod.repository.mybatis.PaymentMethodMapper;
+import com.outpost.gateway.psp.api.PspWebhookSignatureFilter;
 import com.outpost.gateway.psp.service.PspWebhookService;
 import com.outpost.gateway.report.client.LedgerReportClient;
 import com.outpost.gateway.report.client.ledger.LedgerReportHttpClient;
@@ -30,8 +31,8 @@ import com.outpost.integration.psp.simulator.SimulatorPspClient;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.MyBatisPspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationMapper;
-import com.outpost.payment.repository.PspEventQueue;
-import com.outpost.payment.repository.mybatis.MyBatisPspEventQueue;
+import com.outpost.payment.repository.PspEventRepository;
+import com.outpost.payment.repository.mybatis.MyBatisPspEventRepository;
 import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
@@ -39,10 +40,10 @@ import com.outpost.tax.repository.TaxRateRepository;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.time.Duration;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -51,6 +52,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /** Application bean definitions. */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties({GatewayLedgerProperties.class, GatewayPspClientProperties.class})
 public class ApplicationBeanConfiguration {
 
   @Bean
@@ -81,19 +83,31 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  PspConfigurationRepository pspConfigurationRepository(PspConfigurationMapper mapper) {
-    return new MyBatisPspConfigurationRepository(mapper, 10_000, 30_000);
+  PspConfigurationRepository pspConfigurationRepository(
+      PspConfigurationMapper mapper, GatewayPspClientProperties properties) {
+    return new MyBatisPspConfigurationRepository(
+        mapper,
+        Math.toIntExact(properties.connectTimeout().toMillis()),
+        Math.toIntExact(properties.readTimeout().toMillis()));
   }
 
   @Bean
-  PspEventQueue pspEventQueue(PspEventQueueMapper mapper) {
-    return new MyBatisPspEventQueue(mapper);
+  PspEventRepository pspEventRepository(PspEventQueueMapper mapper) {
+    return new MyBatisPspEventRepository(mapper);
   }
 
   @Bean
-  PspWebhookService pspWebhookService(
-      PspConfigurationRepository configurations, PspEventQueue events, ObjectMapper objectMapper) {
-    return new PspWebhookService(configurations, events, objectMapper);
+  FilterRegistrationBean<PspWebhookSignatureFilter> pspWebhookSignatureFilter(
+      PspConfigurationRepository configurations, ObjectMapper objectMapper) {
+    var registration =
+        new FilterRegistrationBean<>(new PspWebhookSignatureFilter(configurations, objectMapper));
+    registration.setOrder(2);
+    return registration;
+  }
+
+  @Bean
+  PspWebhookService pspWebhookService(PspEventRepository events) {
+    return new PspWebhookService(events);
   }
 
   /** Creates the tax-rate provider. */
@@ -156,13 +170,13 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  LedgerClient ledgerClient(
-      ObjectMapper objectMapper,
-      @Value("${outpost.gateway.ledger.base-url:http://localhost:8081}") String baseUrl,
-      @Value("${outpost.gateway.ledger.hmac-secret}") String hmacSecret,
-      @Value("${outpost.gateway.ledger.connect-timeout:PT1S}") Duration connectTimeout,
-      @Value("${outpost.gateway.ledger.read-timeout:PT5S}") Duration readTimeout) {
-    return new LedgerHttpClient(baseUrl, hmacSecret, connectTimeout, readTimeout, objectMapper);
+  LedgerClient ledgerClient(ObjectMapper objectMapper, GatewayLedgerProperties properties) {
+    return new LedgerHttpClient(
+        properties.baseUrl(),
+        properties.hmacSecret(),
+        properties.connectTimeout(),
+        properties.readTimeout(),
+        objectMapper);
   }
 
   @Bean
@@ -183,13 +197,13 @@ public class ApplicationBeanConfiguration {
 
   @Bean
   LedgerReportClient ledgerReportClient(
-      ObjectMapper objectMapper,
-      @Value("${outpost.gateway.ledger.base-url:http://localhost:8081}") String baseUrl,
-      @Value("${outpost.gateway.ledger.hmac-secret}") String hmacSecret,
-      @Value("${outpost.gateway.ledger.connect-timeout:PT1S}") Duration connectTimeout,
-      @Value("${outpost.gateway.ledger.read-timeout:PT5S}") Duration readTimeout) {
+      ObjectMapper objectMapper, GatewayLedgerProperties properties) {
     return new LedgerReportHttpClient(
-        baseUrl, hmacSecret, connectTimeout, readTimeout, objectMapper);
+        properties.baseUrl(),
+        properties.hmacSecret(),
+        properties.connectTimeout(),
+        properties.readTimeout(),
+        objectMapper);
   }
 
   @Bean

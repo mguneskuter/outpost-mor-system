@@ -11,10 +11,14 @@ import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
 import com.outpost.payment.PspEventStatuses;
+import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -109,7 +113,7 @@ class OutpostWorkerStartupFailureIntegrationTest {
     assertThatThrownBy(() -> start(/* ledgerHmacSecret= */ null))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .hasMessageContaining("outpost.worker.ledger.hmac-secret");
+        .hasMessageContaining("hmacSecret");
   }
 
   @Test
@@ -117,10 +121,38 @@ class OutpostWorkerStartupFailureIntegrationTest {
     assertThatThrownBy(() -> start(""))
         .isInstanceOf(Exception.class)
         .rootCause()
-        .hasMessageContaining("outpost.worker.ledger.hmac-secret");
+        .hasMessageContaining("hmacSecret");
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidOperationalSettings")
+  void failsClosedForInvalidOperationalSetting(String property, String value, String fieldName) {
+    assertThatThrownBy(() -> start("worker-test-key", property, value))
+        .isInstanceOf(Exception.class)
+        .rootCause()
+        .hasMessageContaining(fieldName);
+  }
+
+  private static Stream<Arguments> invalidOperationalSettings() {
+    return Stream.of(
+        Arguments.of("outpost.worker.psp.worker-count", "0", "workerCount"),
+        Arguments.of("outpost.worker.psp.worker-count", "-1", "workerCount"),
+        Arguments.of("outpost.worker.psp.worker-count", "65", "workerCount"),
+        Arguments.of("outpost.worker.accounting.poll-interval", "PT0S", "pollInterval"),
+        Arguments.of("outpost.worker.accounting.poll-interval", "-PT1S", "pollInterval"),
+        Arguments.of("outpost.worker.accounting.poll-interval", "PT2M", "pollInterval"),
+        Arguments.of("outpost.worker.ledger.connect-timeout", "PT0S", "connectTimeout"),
+        Arguments.of("outpost.worker.ledger.connect-timeout", "-PT1S", "connectTimeout"),
+        Arguments.of("outpost.worker.ledger.read-timeout", "PT6M", "readTimeout"),
+        Arguments.of("outpost.worker.ledger.base-url", "not-a-url", "baseUrl"));
   }
 
   private void start(@Nullable String ledgerHmacSecret) {
+    start(ledgerHmacSecret, null, null);
+  }
+
+  private void start(
+      @Nullable String ledgerHmacSecret, @Nullable String property, @Nullable String value) {
     MockEnvironment env = new MockEnvironment();
     env.setProperty("spring.datasource.url", DATABASE.getJdbcUrl());
     env.setProperty("spring.datasource.username", DATABASE.getUsername());
@@ -130,6 +162,9 @@ class OutpostWorkerStartupFailureIntegrationTest {
     env.setProperty("outpost.worker.ledger.base-url", "http://localhost:8081");
     if (ledgerHmacSecret != null) {
       env.setProperty("outpost.worker.ledger.hmac-secret", ledgerHmacSecret);
+    }
+    if (property != null && value != null) {
+      env.setProperty(property, value);
     }
     new SpringApplicationBuilder(OutpostWorkerApplication.class)
         .web(WebApplicationType.NONE)

@@ -29,10 +29,11 @@ It downloads verified, pinned TruffleHog and Gitleaks binaries into `bin/`, then
 | `make lint`               | Run Checkstyle for main and test sources.                |
 | `make build`              | Compile and run all build checks, including Error Prone. |
 | `make test`               | Run the test suite.                                      |
+| `make verify`             | Verify every Gradle root and the seed runner.            |
 | `make precommit`          | Run every content hook across repository files.          |
 | `make up`                 | Start the local platform Compose services.               |
 | `make status`             | Show local platform container status.                    |
-| `make down`               | Stop the local platform; preserves the named volume.     |
+| `make down`               | Stop the local platform and remove its named volume.     |
 | `make migrate`            | Run Flyway migrations against the local database.        |
 | `make ensure-static-data` | Materialise enum reference data explicitly.              |
 | `make seed`               | Run deterministic non-enum seed SQL explicitly.          |

@@ -30,6 +30,10 @@ class JavaConventionsPlugin implements Plugin<Project> {
             'implementation',
             project.dependencies.platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
         )
+        // Tomcat 11.0.25 fixes CVE-2026-65182; remove once the Spring Boot BOM manages 11.0.25 or later.
+        ['tomcat-embed-core', 'tomcat-embed-el', 'tomcat-embed-websocket'].each { tomcatModule ->
+            project.dependencies.constraints.add('implementation', "org.apache.tomcat.embed:${tomcatModule}:11.0.25")
+        }
         project.extensions.configure(SpotlessExtension) { spotlessExtension ->
             spotlessExtension.java {
                 googleJavaFormat()

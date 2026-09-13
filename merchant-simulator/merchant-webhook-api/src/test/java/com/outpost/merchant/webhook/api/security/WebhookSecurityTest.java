@@ -51,7 +51,7 @@ class WebhookSecurityTest {
   }
 
   @Test
-  void verifierUsesASeparateDigestForConcurrentCalls() throws Exception {
+  void verifierUsesSeparateDigestForConcurrentCalls() throws Exception {
     String body = "body";
     String signature = signature("secret", body);
     HmacSignatureVerifier verifier = new HmacSignatureVerifier("secret");

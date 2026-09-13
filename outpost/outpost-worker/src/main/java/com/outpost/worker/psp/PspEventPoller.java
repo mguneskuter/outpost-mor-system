@@ -1,7 +1,7 @@
 package com.outpost.worker.psp;
 
-import com.outpost.payment.repository.PspEventQueue;
-import com.outpost.payment.repository.PspEventQueue.PspEvent;
+import com.outpost.payment.repository.PspEventRepository;
+import com.outpost.payment.repository.PspEventRepository.PspEvent;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -110,7 +110,7 @@ public final class PspEventPoller implements SmartLifecycle {
     }
   }
 
-  private Optional<PspEvent> claimNextWhenRunning(PspEventQueue events) {
+  private Optional<PspEvent> claimNextWhenRunning(PspEventRepository events) {
     synchronized (monitor) {
       if (!claiming) {
         return java.util.Optional.empty();

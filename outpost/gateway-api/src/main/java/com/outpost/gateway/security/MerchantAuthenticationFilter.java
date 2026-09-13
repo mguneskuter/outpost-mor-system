@@ -1,5 +1,8 @@
 package com.outpost.gateway.security;
 
+import com.outpost.framework.logging.LogFields;
+import com.outpost.framework.logging.StructuredLogField;
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.hmac.HmacSignature;
@@ -19,10 +22,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Optional;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /** Authenticates signed Gateway requests and exposes the account identity downstream. */
 public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(MerchantAuthenticationFilter.class));
   private static final String ACTUATOR_PATH_PREFIX = "/actuator/";
   private static final String PSP_WEBHOOK_PATH_PATTERN = "/v1/psp/[^/]+/webhook";
   public static final String PRINCIPAL_ATTRIBUTE =
@@ -44,6 +50,8 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws ServletException, IOException {
     if (request.getRequestURI().startsWith(ACTUATOR_PATH_PREFIX)
+        || request.getRequestURI().equals("/livez")
+        || request.getRequestURI().equals("/readyz")
         || request.getRequestURI().matches(PSP_WEBHOOK_PATH_PATTERN)) {
       chain.doFilter(request, response);
       return;
@@ -61,8 +69,16 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       chain.doFilter(request, response);
       return;
     }
-    Optional<MerchantApiKeyCredentials> credentials =
-        merchantApiKeys.findActiveByHash(sha256Hex(presented));
+    Optional<MerchantApiKeyCredentials> credentials;
+    try {
+      credentials = merchantApiKeys.findActiveByHash(sha256Hex(presented));
+    } catch (RuntimeException exception) {
+      LOGGER.error(
+          "merchant credential lookup failed",
+          exception,
+          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_STORE"));
+      throw exception;
+    }
     if (credentials.isEmpty()) {
       response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
       return;
@@ -74,15 +90,31 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     }
     byte[] body = request.getInputStream().readAllBytes();
     MerchantApiKeyCredentials key = credentials.orElseThrow();
-    HmacKey hmacKey = HmacKey.fromUtf8(secrets.decrypt(key.encryptedHmacSecret()));
+    HmacKey hmacKey;
+    try {
+      hmacKey = HmacKey.fromUtf8(secrets.decrypt(key.encryptedHmacSecret()));
+    } catch (RuntimeException exception) {
+      LOGGER.error(
+          "merchant credential decryption failed",
+          exception,
+          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_DECRYPTION"));
+      throw exception;
+    }
     boolean validSignature;
     try {
       validSignature = HmacSha256.verify(hmacKey, body, HmacSignature.fromBase64(signature));
     } catch (IllegalArgumentException exception) {
+      LOGGER.warn(
+          "merchant signature rejected",
+          exception,
+          new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
       response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
       return;
     }
     if (!validSignature) {
+      LOGGER.warn(
+          "merchant signature rejected",
+          new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
       response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
       return;
     }
@@ -136,6 +168,21 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
         @Override
         public void setReadListener(ReadListener listener) {}
       };
+    }
+  }
+
+  private enum LogField implements LogFields {
+    FAILURE("authentication_failure");
+
+    private final String jsonKey;
+
+    LogField(String jsonKey) {
+      this.jsonKey = jsonKey;
+    }
+
+    @Override
+    public String getJsonKey() {
+      return jsonKey;
     }
   }
 }

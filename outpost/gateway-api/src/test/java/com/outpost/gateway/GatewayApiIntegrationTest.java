@@ -29,12 +29,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.client.DefaultResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
+import tools.jackson.databind.ObjectMapper;
 
 @SpringBootTest(classes = GatewayApiApplication.class, webEnvironment = WebEnvironment.RANDOM_PORT)
 class GatewayApiIntegrationTest {
@@ -46,6 +48,7 @@ class GatewayApiIntegrationTest {
       PostgresTestDatabase.startContainer(
           "outpost_gateway_api", "outpost_gateway_api", "outpost_gateway_api");
   private static final RestTemplate REST_TEMPLATE = restTemplateIgnoringErrorStatus();
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   @LocalServerPort private int port;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -137,26 +140,26 @@ class GatewayApiIntegrationTest {
 
   @Test
   void reportsLivenessAndReadinessUpAfterSuccessfulStartup() {
-    assertThat(statusOf("/actuator/health/liveness")).isEqualTo("UP");
-    assertThat(statusOf("/actuator/health/readiness")).isEqualTo("UP");
+    assertThat(statusOf("/livez")).isEqualTo("UP");
+    assertThat(statusOf("/readyz")).isEqualTo("UP");
   }
 
   @Test
-  void exposesOnlyHealthAndMetricsOnTheServicePort() {
-    assertThat(get("/actuator/health").getStatusCode()).isEqualTo(HttpStatus.OK);
-    assertThat(get("/actuator/metrics").getStatusCode()).isEqualTo(HttpStatus.OK);
-    assertThat(get("/actuator/env").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+  void exposesOnlyHealthProbesOnTheServicePort() {
+    assertThat(get("/livez").getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(get("/readyz").getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(get("/actuator/metrics").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     assertThat(get("/orders/123").getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 
   @Test
   void repeatedHealthRequestsDoNotRerunStaticDataOrTaxValidation() {
-    assertThat(statusOf("/actuator/health/readiness")).isEqualTo("UP");
+    assertThat(statusOf("/readyz")).isEqualTo("UP");
 
     jdbcTemplate.update("UPDATE country SET iso_code = 'ZZ' WHERE country_id = 1");
     try {
-      assertThat(statusOf("/actuator/health/readiness")).isEqualTo("UP");
-      assertThat(statusOf("/actuator/health/readiness")).isEqualTo("UP");
+      assertThat(statusOf("/readyz")).isEqualTo("UP");
+      assertThat(statusOf("/readyz")).isEqualTo("UP");
     } finally {
       jdbcTemplate.update("UPDATE country SET iso_code = 'AT' WHERE country_id = 1");
     }
@@ -165,39 +168,24 @@ class GatewayApiIntegrationTest {
   @Test
   void receivesOneVerifiedWebhookAndRejectsInvalidRequestsWithoutPersistingThem() {
     String valid = payload(PSP_CODE, PAYMENT_REFERENCE, "event-1");
-    assertThat(postWebhook(PSP_CODE, valid, signature(valid)).getStatusCode())
-        .isEqualTo(HttpStatus.OK);
-    assertThat(postWebhook(PSP_CODE, valid, signature(valid)).getStatusCode())
-        .isEqualTo(HttpStatus.OK);
+    assertResult(postWebhook(PSP_CODE, valid, signature(valid)), 200, "ACCEPTED");
+    assertResult(postWebhook(PSP_CODE, valid, signature(valid)), 200, "ACCEPTED");
     assertThat(queueCount()).isEqualTo(1);
     assertThat(receivedEvent())
         .containsEntry("merchant_code", "WEBHOOK_MERCHANT")
         .containsEntry("psp_code", PSP_CODE)
         .containsEntry("status_code", "RECEIVED");
 
-    assertThat(postWebhook(PSP_CODE, valid, "bad").getStatusCode())
-        .isEqualTo(HttpStatus.UNAUTHORIZED);
-    assertThat(
-            postWebhook(
-                    PSP_CODE,
-                    payload("OTHER", PAYMENT_REFERENCE, "event-2"),
-                    signature(payload("OTHER", PAYMENT_REFERENCE, "event-2")))
-                .getStatusCode())
-        .isEqualTo(HttpStatus.BAD_REQUEST);
-    assertThat(postWebhook("UNKNOWN", valid, "bad").getStatusCode())
-        .isEqualTo(HttpStatus.NOT_FOUND);
+    assertResult(postWebhook(PSP_CODE, valid, "bad"), 401, "INVALID_SIGNATURE");
+    String otherPsp = payload("OTHER", PAYMENT_REFERENCE, "event-2");
+    assertResult(postWebhook(PSP_CODE, otherPsp, signature(otherPsp)), 400, "INVALID_PAYLOAD");
+    assertResult(postWebhook("UNKNOWN", valid, "bad"), 404, "UNKNOWN_PSP");
     String unknownPayment = payload(PSP_CODE, "unknown-payment", "event-3");
-    assertThat(
-            postWebhook(PSP_CODE, unknownPayment, signature(unknownPayment))
-                .getStatusCode()
-                .value())
-        .isEqualTo(422);
+    assertResult(
+        postWebhook(PSP_CODE, unknownPayment, signature(unknownPayment)), 422, "UNKNOWN_PAYMENT");
     String foreignPayment = payload(PSP_CODE, FOREIGN_PAYMENT_REFERENCE, "event-4");
-    assertThat(
-            postWebhook(PSP_CODE, foreignPayment, signature(foreignPayment))
-                .getStatusCode()
-                .value())
-        .isEqualTo(422);
+    assertResult(
+        postWebhook(PSP_CODE, foreignPayment, signature(foreignPayment)), 422, "UNKNOWN_PAYMENT");
     assertThat(queueCount()).isEqualTo(1);
   }
 
@@ -214,9 +202,29 @@ class GatewayApiIntegrationTest {
     jdbcTemplate.update("DELETE FROM psp_event_queue");
     String malformedBody = "{";
 
-    assertThat(postWebhook(PSP_CODE, malformedBody, signature(malformedBody)).getStatusCode())
-        .isEqualTo(HttpStatus.BAD_REQUEST);
+    assertResult(
+        postWebhook(PSP_CODE, malformedBody, signature(malformedBody)), 400, "INVALID_PAYLOAD");
     assertThat(queueCount()).isZero();
+  }
+
+  @Test
+  void rejectsAuthenticatedWebhookMissingRequiredFieldWithoutQueueing() {
+    jdbcTemplate.update("DELETE FROM psp_event_queue");
+    String withoutPaymentReference =
+        payload(PSP_CODE, PAYMENT_REFERENCE, "event-5")
+            .replace("\"payment_reference\":\"" + PAYMENT_REFERENCE + "\",", "");
+
+    assertResult(
+        postWebhook(PSP_CODE, withoutPaymentReference, signature(withoutPaymentReference)),
+        400,
+        "INVALID_PAYLOAD");
+    assertThat(queueCount()).isZero();
+  }
+
+  private static void assertResult(ResponseEntity<String> response, int status, String code) {
+    assertThat(response.getStatusCode().value()).isEqualTo(status);
+    assertThat(JSON.readTree(Objects.requireNonNull(response.getBody())).get("code").asString())
+        .isEqualTo(code);
   }
 
   private ResponseEntity<String> postWebhook(String code, String body, @Nullable String signature) {
@@ -310,7 +318,8 @@ class GatewayApiIntegrationTest {
   }
 
   private static RestTemplate restTemplateIgnoringErrorStatus() {
-    RestTemplate restTemplate = new RestTemplate();
+    // HttpURLConnection, the RestTemplate default, discards the body of a 401 answer to a POST.
+    RestTemplate restTemplate = new RestTemplate(new JdkClientHttpRequestFactory());
     restTemplate.setErrorHandler(
         new DefaultResponseErrorHandler() {
           @Override

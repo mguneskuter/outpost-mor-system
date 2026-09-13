@@ -1,11 +1,12 @@
 package com.outpost.gateway.order.api;
 
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.gateway.order.service.OrderCreationException;
 import com.outpost.gateway.order.service.OrderService;
 import com.outpost.gateway.security.GatewayPrincipal;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
-import org.jspecify.annotations.Nullable;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -19,6 +20,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/order")
 public final class OrderController {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(OrderController.class));
   private final OrderService service;
 
   /** Creates a controller backed by the order service. */
@@ -46,12 +49,14 @@ public final class OrderController {
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
-  ResponseEntity<ErrorResponse> malformed(HttpMessageNotReadableException ignored) {
+  ResponseEntity<ErrorResponse> malformed(HttpMessageNotReadableException exception) {
+    LOGGER.warn("order request could not be read", exception);
     return ResponseEntity.badRequest().body(new ErrorResponse("INVALID_REQUEST"));
   }
 
   @ExceptionHandler(RuntimeException.class)
-  ResponseEntity<ErrorResponse> unexpected(@Nullable RuntimeException ignored) {
+  ResponseEntity<ErrorResponse> unexpected(RuntimeException exception) {
+    LOGGER.warn("order request failed", exception);
     return ResponseEntity.internalServerError().body(new ErrorResponse("INTERNAL_ERROR"));
   }
 

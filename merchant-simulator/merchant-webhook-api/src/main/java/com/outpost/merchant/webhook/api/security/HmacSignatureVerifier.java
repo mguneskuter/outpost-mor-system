@@ -9,14 +9,17 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/** Verifies HMAC-SHA-256 signatures without retaining mutable MAC state. */
 public final class HmacSignatureVerifier {
   private static final Logger log = LoggerFactory.getLogger(HmacSignatureVerifier.class);
   private final byte[] secret;
 
+  /** Creates a verifier from the configured secret. */
   public HmacSignatureVerifier(String secret) {
     this.secret = secret.getBytes(StandardCharsets.UTF_8);
   }
 
+  /** Returns whether the signature matches the request body. */
   public boolean isValid(@Nullable String signature, byte[] body) {
     if (signature == null) {
       log.warn("Webhook HMAC verification failed: signature missing");

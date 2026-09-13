@@ -7,10 +7,10 @@ import com.outpost.integration.psp.simulator.repository.PspConfigurationReposito
 import com.outpost.integration.psp.simulator.repository.mybatis.MyBatisPspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationMapper;
 import com.outpost.payment.repository.PaymentOrderRepository;
-import com.outpost.payment.repository.PspEventQueue;
+import com.outpost.payment.repository.PspEventRepository;
 import com.outpost.payment.repository.RefundItemRepository;
 import com.outpost.payment.repository.mybatis.MyBatisPaymentOrderRepository;
-import com.outpost.payment.repository.mybatis.MyBatisPspEventQueue;
+import com.outpost.payment.repository.mybatis.MyBatisPspEventRepository;
 import com.outpost.payment.repository.mybatis.MyBatisRefundItemRepository;
 import com.outpost.payment.repository.mybatis.PaymentOrderMapper;
 import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
@@ -39,7 +39,8 @@ import tools.jackson.databind.ObjectMapper;
 @EnableConfigurationProperties({
   PspWorkerProperties.class,
   AccountingWorkerProperties.class,
-  LedgerWorkerProperties.class
+  LedgerWorkerProperties.class,
+  PspClientProperties.class
 })
 public class WorkerConfiguration {
   @Bean
@@ -48,13 +49,13 @@ public class WorkerConfiguration {
   }
 
   @Bean
-  PspEventQueue pspEventQueue(PspEventQueueMapper mapper) {
-    return new MyBatisPspEventQueue(mapper);
+  PspEventRepository pspEventRepository(PspEventQueueMapper mapper) {
+    return new MyBatisPspEventRepository(mapper);
   }
 
   @Bean
   PspEventProcessor pspEventProcessor(
-      PspEventQueue events,
+      PspEventRepository events,
       AccountingRequestQueue requests,
       ObjectMapper objectMapper,
       PlatformTransactionManager transactionManager,
@@ -73,8 +74,12 @@ public class WorkerConfiguration {
   }
 
   @Bean
-  PspConfigurationRepository pspConfigurationRepository(PspConfigurationMapper mapper) {
-    return new MyBatisPspConfigurationRepository(mapper, 10_000, 30_000);
+  PspConfigurationRepository pspConfigurationRepository(
+      PspConfigurationMapper mapper, PspClientProperties properties) {
+    return new MyBatisPspConfigurationRepository(
+        mapper,
+        Math.toIntExact(properties.connectTimeout().toMillis()),
+        Math.toIntExact(properties.readTimeout().toMillis()));
   }
 
   @Bean

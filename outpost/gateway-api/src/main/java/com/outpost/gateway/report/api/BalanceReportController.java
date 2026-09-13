@@ -1,12 +1,13 @@
 package com.outpost.gateway.report.api;
 
+import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.gateway.report.service.BalanceReportException;
 import com.outpost.gateway.report.service.ReportService;
 import com.outpost.gateway.security.GatewayPrincipal;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Objects;
-import org.jspecify.annotations.Nullable;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/v1/report/balance")
 public final class BalanceReportController {
+  private static final StructuredLogger LOGGER =
+      new StructuredLogger(LoggerFactory.getLogger(BalanceReportController.class));
   private final ReportService service;
 
   /** Creates a controller backed by the report service. */
@@ -49,7 +52,8 @@ public final class BalanceReportController {
   }
 
   @ExceptionHandler(RuntimeException.class)
-  ResponseEntity<ErrorResponse> unexpected(@Nullable RuntimeException ignored) {
+  ResponseEntity<ErrorResponse> unexpected(RuntimeException exception) {
+    LOGGER.warn("balance report request failed", exception);
     return ResponseEntity.internalServerError().body(new ErrorResponse("INTERNAL_ERROR"));
   }
 

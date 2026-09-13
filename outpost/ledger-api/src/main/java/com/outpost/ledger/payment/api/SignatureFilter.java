@@ -18,7 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -26,16 +26,15 @@ import org.springframework.stereotype.Component;
 /** Authenticates Ledger requests over their exact raw request bytes. */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
+@EnableConfigurationProperties(LedgerAuthenticationProperties.class)
 public final class SignatureFilter implements Filter {
   private final HmacKey gatewayKey;
   private final HmacKey workerKey;
 
   /** Creates a filter with the externally configured Gateway and Worker keys. */
-  public SignatureFilter(
-      @Value("${outpost.ledger.gateway-hmac-secret}") String gatewaySecret,
-      @Value("${outpost.ledger.worker-hmac-secret}") String workerSecret) {
-    gatewayKey = key(gatewaySecret, "Gateway");
-    workerKey = key(workerSecret, "Worker");
+  public SignatureFilter(LedgerAuthenticationProperties properties) {
+    gatewayKey = key(properties.gatewayHmacSecret(), "Gateway");
+    workerKey = key(properties.workerHmacSecret(), "Worker");
   }
 
   /** Authenticates payment requests before dispatch. */

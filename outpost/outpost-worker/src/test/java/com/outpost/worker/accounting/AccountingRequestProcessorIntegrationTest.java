@@ -6,6 +6,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.outpost.accounting.queue.AccountingRequestLine;
 import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.accounting.queue.AccountingRequestResults;
@@ -34,6 +37,7 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -208,6 +212,41 @@ class AccountingRequestProcessorIntegrationTest {
   }
 
   @Test
+  void failedRequestEmitsOneWarningWithOperationalReferences() {
+    seedPaymentTransaction("payment-log-failure");
+    submit(
+        AccountingRequestTypes.AUTHORISATION_RESULT,
+        "payment-log-failure",
+        "payment-log-failure",
+        true,
+        null,
+        null);
+    ledger.failNextEvent = true;
+    ListAppender<ILoggingEvent> appender = appender();
+
+    try {
+      processor().processNext();
+
+      assertThat(appender.list).hasSize(1);
+      ILoggingEvent event = appender.list.getFirst();
+      assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+      assertThat(event.getMDCPropertyMap())
+          .containsEntry("request_type", "AUTHORISATION_RESULT")
+          .containsEntry("payment_reference", "payment-log-failure")
+          .containsEntry("result", "FAILED")
+          .containsEntry("merchant_account_id", "10")
+          .containsKey("queue_id")
+          .doesNotContainValue("demo-hmac-secret")
+          .doesNotContainValue("demo-outpost-api-key")
+          .doesNotContainValue("shopper@example.test")
+          .doesNotContainValue("https://payments.example.test/link");
+      assertThat(event.getThrowableProxy()).isNotNull();
+    } finally {
+      detach(appender);
+    }
+  }
+
+  @Test
   void refundRequestDelegatesToTheMerchantRefundWorkflow() {
     seedPaymentTransaction("payment-refund-request");
     submit(
@@ -284,6 +323,20 @@ class AccountingRequestProcessorIntegrationTest {
 
   private AccountingRequestProcessor processor() {
     return new AccountingRequestProcessor(requests, ledger, mock(MerchantRefundWorkflow.class));
+  }
+
+  private static ListAppender<ILoggingEvent> appender() {
+    Logger logger = (Logger) LoggerFactory.getLogger(AccountingRequestProcessor.class);
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detach(ListAppender<ILoggingEvent> appender) {
+    Logger logger = (Logger) LoggerFactory.getLogger(AccountingRequestProcessor.class);
+    logger.detachAppender(appender);
+    appender.stop();
   }
 
   private void submit(

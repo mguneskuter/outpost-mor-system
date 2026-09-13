@@ -1,6 +1,7 @@
 package com.outpost.framework.persistence.flyway;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.FeeModes;
@@ -17,8 +18,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -28,6 +33,8 @@ class SeedSqlExecutionIntegrationTest {
   private static final String PSP_SIMULATOR_BASE_URL = "http://localhost:8081";
   private static final String PSP_SIMULATOR_API_KEY = "demo-outpost-api-key";
   private static final String PSP_SIMULATOR_HMAC_SECRET = "demo-hmac-secret";
+  private static final String UNIQUE_VIOLATION = "23505";
+  private static final String AUSTRIA_RATE_ROW = "(1, 1, NULL, 0.2000)";
 
   private static final List<String> REFERENCE_TABLES =
       List.of(
@@ -55,8 +62,46 @@ class SeedSqlExecutionIntegrationTest {
         for (String table : REFERENCE_TABLES) {
           assertThat(count(connection, table)).isGreaterThan(0);
         }
+        assertThat(taxJurisdictions(connection))
+            .containsExactlyInAnyOrderElementsOf(expectedTaxJurisdictions());
+        assertThat(zeroRateJurisdictions(connection))
+            .containsExactlyInAnyOrderElementsOf(expectedZeroRateJurisdictions());
+        assertThat(nextTaxRateIdentifier(connection))
+            .isGreaterThan(maxTaxRateIdentifier(connection));
+        assertThatExceptionOfType(SQLException.class)
+            .isThrownBy(() -> executeSeedFile(connection, taxRateFile()))
+            .extracting(SQLException::getSQLState)
+            .isEqualTo(UNIQUE_VIOLATION);
+        assertThatExceptionOfType(SQLException.class)
+            .isThrownBy(() -> executeSeedFile(connection, taxRateFileWithChangedRate()))
+            .extracting(SQLException::getSQLState)
+            .isEqualTo(UNIQUE_VIOLATION);
       }
     }
+  }
+
+  private static Set<String> expectedTaxJurisdictions() {
+    Set<String> jurisdictions = new HashSet<>();
+    for (Countries country : Countries.values()) {
+      if (country != Countries.UNITED_STATES) {
+        jurisdictions.add(country.getValue().getIsoCode());
+      }
+    }
+    for (CountrySubdivisions subdivision : CountrySubdivisions.values()) {
+      jurisdictions.add(subdivision.getValue().getCode());
+    }
+    return jurisdictions;
+  }
+
+  private static Set<String> expectedZeroRateJurisdictions() {
+    return Stream.of(
+            CountrySubdivisions.US_AK,
+            CountrySubdivisions.US_DE,
+            CountrySubdivisions.US_MT,
+            CountrySubdivisions.US_NH,
+            CountrySubdivisions.US_OR)
+        .map(subdivision -> subdivision.getValue().getCode())
+        .collect(Collectors.toSet());
   }
 
   private static void migrate(PostgreSQLContainer<?> database) {
@@ -69,15 +114,34 @@ class SeedSqlExecutionIntegrationTest {
         .migrate();
   }
 
+  private static Path seedDirectory() {
+    return repositoryRoot().resolve("local").resolve("seed_data");
+  }
+
   private static List<Path> seedFilesInLexicographicOrder() throws IOException {
-    Path seedDirectory = repositoryRoot().resolve("local").resolve("seed_data");
-    try (var files = Files.list(seedDirectory)) {
+    try (var files = Files.list(seedDirectory())) {
       return files.filter(path -> path.toString().endsWith(".sql")).sorted().toList();
     }
   }
 
+  private static Path taxRateFile() {
+    return seedDirectory().resolve("tax_rate.sql");
+  }
+
   private static void executeSeedFile(Connection connection, Path seedFile) throws SQLException {
     execute(connection, substitutePsqlVariables(readSql(seedFile)));
+  }
+
+  private static Path taxRateFileWithChangedRate() throws IOException {
+    String sql = readSql(taxRateFile());
+    if (!sql.contains(AUSTRIA_RATE_ROW)) {
+      throw new IllegalStateException("tax_rate.sql no longer contains " + AUSTRIA_RATE_ROW);
+    }
+    Path changed = Files.createTempFile("tax-rate-changed", ".sql");
+    Files.writeString(
+        changed, sql.replace(AUSTRIA_RATE_ROW, "(1, 1, NULL, 0.1999)"), StandardCharsets.UTF_8);
+    changed.toFile().deleteOnExit();
+    return changed;
   }
 
   private static String readSql(Path seedFile) {
@@ -181,6 +245,49 @@ class SeedSqlExecutionIntegrationTest {
     try (var result = connection.createStatement().executeQuery("SELECT count(*) FROM " + table)) {
       result.next();
       return result.getLong(1);
+    }
+  }
+
+  private static long maxTaxRateIdentifier(Connection connection) throws SQLException {
+    try (var result =
+        connection.createStatement().executeQuery("SELECT max(tax_rate_id) FROM tax_rate")) {
+      result.next();
+      return result.getLong(1);
+    }
+  }
+
+  private static long nextTaxRateIdentifier(Connection connection) throws SQLException {
+    try (var result = connection.createStatement().executeQuery("SELECT nextval('tax_rate_seq')")) {
+      result.next();
+      return result.getLong(1);
+    }
+  }
+
+  private static Set<String> taxJurisdictions(Connection connection) throws SQLException {
+    return strings(
+        connection,
+        "SELECT COALESCE(s.code, c.iso_code) "
+            + "FROM tax_rate t JOIN country c ON c.country_id = t.country_id "
+            + "LEFT JOIN country_subdivision s "
+            + "ON s.country_subdivision_id = t.country_subdivision_id");
+  }
+
+  private static Set<String> zeroRateJurisdictions(Connection connection) throws SQLException {
+    return strings(
+        connection,
+        "SELECT s.code FROM tax_rate t "
+            + "JOIN country_subdivision s "
+            + "ON s.country_subdivision_id = t.country_subdivision_id "
+            + "WHERE t.rate = 0");
+  }
+
+  private static Set<String> strings(Connection connection, String sql) throws SQLException {
+    try (var result = connection.createStatement().executeQuery(sql)) {
+      Set<String> values = new HashSet<>();
+      while (result.next()) {
+        values.add(result.getString(1));
+      }
+      return values;
     }
   }
 

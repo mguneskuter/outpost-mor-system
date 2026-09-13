@@ -7,17 +7,136 @@ services:
       POSTGRES_DB: outpost
       POSTGRES_USER: outpost_bootstrap
       POSTGRES_PASSWORD: ${OUTPOST_DB_PASSWORD:?OUTPOST_DB_PASSWORD must be set in .env}
-    ports:
-      - "${OUTPOST_DB_PORT:-5432}:5432"
+    ports: ["${OUTPOST_DB_PORT:-5432}:5432"]
     volumes:
       - outpost-postgres-data:/var/lib/postgresql
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks: [edge, data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U outpost -d outpost"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  gateway-api:
+    image: gateway-api:latest
+    environment:
+      OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
+      OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
+      OUTPOST_DB_PASSWORD: ${OUTPOST_DB_PASSWORD:?OUTPOST_DB_PASSWORD must be set in .env}
+      OUTPOST_HMAC_ENCRYPTION_KEY: ${OUTPOST_HMAC_ENCRYPTION_KEY:?OUTPOST_HMAC_ENCRYPTION_KEY must be set in .env}
+      OUTPOST_OPERATOR_API_KEY: ${OUTPOST_OPERATOR_API_KEY:?OUTPOST_OPERATOR_API_KEY must be set in .env}
+      OUTPOST_LEDGER_BASE_URL: http://ledger-api:8081
+      OUTPOST_LEDGER_GATEWAY_HMAC_SECRET: ${OUTPOST_LEDGER_GATEWAY_HMAC_SECRET:?OUTPOST_LEDGER_GATEWAY_HMAC_SECRET must be set in .env}
+    ports: ["8080:8080"]
+    networks: [edge, data, ledger]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The Paketo tiny run image has no shell and no wget/curl; exec the bundled JRE directly
+      # against the shared readiness probe with the service's readiness URL instead.
+      test:
+        [
+          "CMD",
+          "/layers/paketo-buildpacks_bellsoft-liberica/jre/bin/java",
+          "-cp",
+          "/workspace/BOOT-INF/lib/*",
+          "com.outpost.framework.healthprobe.ReadinessProbe",
+          "http://localhost:8080/readyz",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  ledger-api:
+    image: ledger-api:latest
+    environment:
+      OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
+      OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
+      OUTPOST_DB_PASSWORD: ${OUTPOST_DB_PASSWORD:?OUTPOST_DB_PASSWORD must be set in .env}
+      OUTPOST_LEDGER_GATEWAY_HMAC_SECRET: ${OUTPOST_LEDGER_GATEWAY_HMAC_SECRET:?OUTPOST_LEDGER_GATEWAY_HMAC_SECRET must be set in .env}
+      OUTPOST_LEDGER_WORKER_HMAC_SECRET: ${OUTPOST_WORKER_LEDGER_HMAC_SECRET:?OUTPOST_WORKER_LEDGER_HMAC_SECRET must be set in .env}
+    networks: [data, ledger]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/layers/paketo-buildpacks_bellsoft-liberica/jre/bin/java",
+          "-cp",
+          "/workspace/BOOT-INF/lib/*",
+          "com.outpost.framework.healthprobe.ReadinessProbe",
+          "http://localhost:8081/readyz",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  outpost-worker:
+    image: outpost-worker:latest
+    environment:
+      OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
+      OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
+      OUTPOST_DB_PASSWORD: ${OUTPOST_DB_PASSWORD:?OUTPOST_DB_PASSWORD must be set in .env}
+      OUTPOST_LEDGER_BASE_URL: http://ledger-api:8081
+      OUTPOST_WORKER_LEDGER_HMAC_SECRET: ${OUTPOST_WORKER_LEDGER_HMAC_SECRET:?OUTPOST_WORKER_LEDGER_HMAC_SECRET must be set in .env}
+    networks: [data, ledger]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/layers/paketo-buildpacks_bellsoft-liberica/jre/bin/java",
+          "-cp",
+          "/workspace/BOOT-INF/lib/*",
+          "com.outpost.framework.healthprobe.ReadinessProbe",
+          "http://localhost:8082/readyz",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  psp-simulator:
+    image: psp-simulator:latest
+    environment:
+      OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
+      OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
+      OUTPOST_DB_PASSWORD: ${OUTPOST_DB_PASSWORD:?OUTPOST_DB_PASSWORD must be set in .env}
+      OUTPOST_PSP_SIMULATOR_API_KEY: ${OUTPOST_PSP_SIMULATOR_API_KEY:?OUTPOST_PSP_SIMULATOR_API_KEY must be set in .env}
+      OUTPOST_PSP_SIMULATOR_HMAC_SECRET: ${OUTPOST_PSP_SIMULATOR_HMAC_SECRET:?OUTPOST_PSP_SIMULATOR_HMAC_SECRET must be set in .env}
+      SIMULATOR_OUTPOST_BASE_URL: http://gateway-api:8080
+    ports: ["8083:8083"]
+    networks: [edge, data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway-api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/layers/paketo-buildpacks_bellsoft-liberica/jre/bin/java",
+          "-cp",
+          "/workspace/BOOT-INF/classes",
+          "com.outpost.pspsimulator.readiness.ReadinessProbe",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+networks:
+  edge: {}
+  data:
+    internal: true
+  ledger:
+    internal: true
 
 volumes:
   outpost-postgres-data:

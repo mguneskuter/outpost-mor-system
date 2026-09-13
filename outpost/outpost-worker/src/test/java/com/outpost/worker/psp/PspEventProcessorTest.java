@@ -13,9 +13,9 @@ import com.outpost.accounting.queue.AccountingRequestTypes;
 import com.outpost.accounting.queue.SubmitAccountingRequestCommand;
 import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
-import com.outpost.payment.repository.PspEventQueue;
-import com.outpost.payment.repository.PspEventQueue.PspEvent;
-import com.outpost.payment.repository.PspEventQueue.ReceivedPspEvent;
+import com.outpost.payment.repository.PspEventRepository;
+import com.outpost.payment.repository.PspEventRepository.PspEvent;
+import com.outpost.payment.repository.PspEventRepository.ReceivedPspEvent;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
@@ -53,7 +54,7 @@ class PspEventProcessorTest {
             """
             {"psp_reference":"psp-reference","success":true,"amount":1250,"currency":"EUR"}
             """);
-    TestPspEventQueue events = new TestPspEventQueue(event);
+    TestPspEventRepository events = new TestPspEventRepository(event);
 
     boolean processed = processor(events).processNext();
 
@@ -85,7 +86,7 @@ class PspEventProcessorTest {
             """
             {"psp_reference":"psp-reference","success":true,"amount":1250,"currency":"XXX"}
             """);
-    TestPspEventQueue events = new TestPspEventQueue(event);
+    TestPspEventRepository events = new TestPspEventRepository(event);
 
     boolean processed = processor(events).processNext();
 
@@ -106,7 +107,7 @@ class PspEventProcessorTest {
             """
             {"psp_reference":"psp-reference","success":true,"amount":1250,"currency":"EUR"}
             """);
-    TestPspEventQueue events = new TestPspEventQueue(event);
+    TestPspEventRepository events = new TestPspEventRepository(event);
 
     boolean processed = processor(events).processNext();
 
@@ -127,7 +128,7 @@ class PspEventProcessorTest {
             """
             {"psp_reference":"psp-reference","success":true,"amount":1250,"currency":"EUR","refund_reference":" "}
             """);
-    TestPspEventQueue events = new TestPspEventQueue(event);
+    TestPspEventRepository events = new TestPspEventRepository(event);
 
     boolean processed = processor(events).processNext();
 
@@ -140,8 +141,8 @@ class PspEventProcessorTest {
   @MethodSource("paymentReferenceEvents")
   void createsPaymentReferenceRequestForEvent(
       PspEventCodes eventCode, AccountingRequestTypes requestType) {
-    TestPspEventQueue events =
-        new TestPspEventQueue(
+    TestPspEventRepository events =
+        new TestPspEventRepository(
             new PspEvent(
                 41,
                 21,
@@ -166,8 +167,8 @@ class PspEventProcessorTest {
 
   @Test
   void createsRefundRequestUsingOurRefundReference() {
-    TestPspEventQueue events =
-        new TestPspEventQueue(
+    TestPspEventRepository events =
+        new TestPspEventRepository(
             new PspEvent(
                 41,
                 21,
@@ -196,7 +197,7 @@ class PspEventProcessorTest {
     CountDownLatch allowDatabaseClaim = new CountDownLatch(1);
     CountDownLatch databaseClaimed = new CountDownLatch(1);
     CountDownLatch stopStarted = new CountDownLatch(1);
-    PspEventQueue events = mock(PspEventQueue.class);
+    PspEventRepository events = mock(PspEventRepository.class);
     when(events.claimNext())
         .thenAnswer(
             ignored -> {
@@ -218,11 +219,16 @@ class PspEventProcessorTest {
       poller.start();
       assertThat(admittedBeforeDatabaseClaim.await(5, TimeUnit.SECONDS)).isTrue();
 
-      executor.submit(
-          () -> {
-            stopStarted.countDown();
-            poller.stop();
-          });
+      // Submitted here so the stop begins concurrently with the spin-wait below; awaited only
+      // after that wait and its assertions run, which checkstyle's declaration-distance check
+      // cannot see is deliberate ordering rather than a stale variable.
+      @SuppressWarnings("VariableDeclarationUsageDistance")
+      Future<?> stopTask =
+          executor.submit(
+              () -> {
+                stopStarted.countDown();
+                poller.stop();
+              });
       assertThat(stopStarted.await(5, TimeUnit.SECONDS)).isTrue();
       while (poller.isRunning()) {
         Thread.onSpinWait();
@@ -230,6 +236,7 @@ class PspEventProcessorTest {
       assertThat(poller.isRunning()).isFalse();
       allowDatabaseClaim.countDown();
       executor.shutdown();
+      stopTask.get(5, TimeUnit.SECONDS);
       assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 
       assertThat(poller.isRunning()).isFalse();
@@ -241,7 +248,7 @@ class PspEventProcessorTest {
     }
   }
 
-  private PspEventProcessor processor(PspEventQueue events) {
+  private PspEventProcessor processor(PspEventRepository events) {
     when(transactions.execute(any()))
         .thenAnswer(
             invocation -> {
@@ -262,11 +269,11 @@ class PspEventProcessorTest {
         Arguments.of(PspEventCodes.CANCELLATION, AccountingRequestTypes.CANCELLATION_RESULT));
   }
 
-  private static final class TestPspEventQueue implements PspEventQueue {
+  private static final class TestPspEventRepository implements PspEventRepository {
     private final PspEvent event;
     private @Nullable PspEventResults result;
 
-    TestPspEventQueue(PspEvent event) {
+    TestPspEventRepository(PspEvent event) {
       this.event = event;
     }
 

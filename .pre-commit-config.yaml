@@ -1,6 +1,8 @@
 fail_fast: true
 default_install_hook_types: [pre-commit, pre-push]
 
+# The commit hook runs only fast formatting and staged-secret checks. `make precommit` and CI
+# run every hook, including the slower `manual`-stage ones.
 repos:
   # 🔒 security
   - repo: local
@@ -10,7 +12,7 @@ repos:
         language: system
         entry: local/trufflehog-working-tree.sh
         pass_filenames: false
-        stages: [pre-commit]
+        stages: [manual]
       - id: trufflehog-git-history
         name: "🔒 security · Scan pushed history with TruffleHog"
         language: system
@@ -22,7 +24,7 @@ repos:
         language: system
         entry: ./bin/gitleaks protect --staged --redact --verbose
         pass_filenames: false
-        stages: [pre-commit]
+        stages: [pre-commit, manual]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -42,11 +44,13 @@ repos:
         language: system
         entry: ./outpost/gradlew -p outpost checkstyleMain checkstyleTest
         pass_filenames: false
+        stages: [manual]
       - id: build
         name: "☕ java · Build"
         language: system
         entry: ./outpost/gradlew -p outpost build
         pass_filenames: false
+        stages: [manual]
 
   # 🗂 files
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -82,6 +86,7 @@ repos:
     hooks:
       - id: shellcheck
         name: "🐚 shell · Check shell scripts"
+        stages: [manual]
   - repo: https://github.com/openstack/bashate
     rev: 2.1.1
     hooks:
@@ -89,6 +94,7 @@ repos:
         name: "🐚 shell · Check shell style"
         language: python
         files: ^local/.*\.sh$
+        stages: [manual]
 
   # 🔨 make
   - repo: https://github.com/checkmake/checkmake
@@ -96,6 +102,7 @@ repos:
     hooks:
       - id: checkmake
         name: "🔨 make · Check Makefiles"
+        stages: [manual]
 
   # 🗄 sql
   - repo: https://github.com/sqlfluff/sqlfluff
@@ -107,6 +114,7 @@ repos:
       - id: sqlfluff-lint
         name: "🗄 sql · Lint PostgreSQL"
         args: [--dialect, postgres]
+        stages: [manual]
 
   # 🌳 git
   - repo: https://github.com/pre-commit/pre-commit-hooks

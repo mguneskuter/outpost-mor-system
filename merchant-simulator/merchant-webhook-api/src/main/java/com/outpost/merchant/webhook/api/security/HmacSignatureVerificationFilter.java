@@ -11,9 +11,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+/** Verifies webhook request signatures before dispatch. */
 public final class HmacSignatureVerificationFilter extends OncePerRequestFilter {
   private final HmacSignatureVerifier verifier;
 
+  /** Creates a signature filter. */
   public HmacSignatureVerificationFilter(HmacSignatureVerifier verifier) {
     this.verifier = verifier;
   }
