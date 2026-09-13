@@ -5,9 +5,9 @@ import com.outpost.accounting.queue.AccountingRequestLine;
 import com.outpost.accounting.queue.AccountingRequestQueue;
 import com.outpost.accounting.queue.AccountingRequestTypes;
 import com.outpost.accounting.queue.SubmitAccountingRequestCommand;
-import com.outpost.gateway.order.repository.OrderRepository;
-import com.outpost.gateway.order.repository.OrderRepository.Line;
-import com.outpost.gateway.order.repository.OrderRepository.PersistedOrder;
+import com.outpost.payment.order.Order;
+import com.outpost.payment.order.OrderItem;
+import com.outpost.payment.order.repository.OrderRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -42,10 +42,10 @@ public final class OrderModificationService {
     String idempotencyKey = required(command.idempotencyKey(), "idempotency_key");
     String merchantReference = required(command.merchantReference(), "merchant_reference");
 
-    PersistedOrder order = orders.findByReference(merchantAccountId, orderReference);
-    if (order == null) {
-      throw failure(HttpStatus.NOT_FOUND.value(), "ORDER_NOT_FOUND");
-    }
+    Order order =
+        orders
+            .findOrderByOrderReference(merchantAccountId, orderReference)
+            .orElseThrow(() -> failure(HttpStatus.NOT_FOUND.value(), "ORDER_NOT_FOUND"));
     List<AccountingRequestLine> lines = resolveLines(order, command.refundLines());
 
     String refundReference = "refund-" + UUID.randomUUID();
@@ -54,7 +54,7 @@ public final class OrderModificationService {
             new SubmitAccountingRequestCommand(
                 AccountingRequestTypes.REFUND_REQUEST,
                 refundReference,
-                order.paymentReference(),
+                order.getPaymentReference(),
                 merchantAccountId,
                 null,
                 idempotencyKey,
@@ -68,16 +68,16 @@ public final class OrderModificationService {
   }
 
   private static List<AccountingRequestLine> resolveLines(
-      PersistedOrder order, @Nullable List<ModifyOrderCommand.RefundLineCommand> requested) {
+      Order order, @Nullable List<ModifyOrderCommand.RefundLineCommand> requested) {
     if (requested == null || requested.isEmpty()) {
       return List.of();
     }
-    Map<String, Line> byOrderLineReference =
-        order.lines().stream()
-            .collect(Collectors.toMap(Line::orderLineReference, Function.identity()));
-    Map<String, Line> byMerchantLineReference =
-        order.lines().stream()
-            .collect(Collectors.toMap(Line::merchantLineReference, Function.identity()));
+    Map<String, OrderItem> byOrderLineReference =
+        order.getItems().stream()
+            .collect(Collectors.toMap(OrderItem::getOrderLineReference, Function.identity()));
+    Map<String, OrderItem> byMerchantLineReference =
+        order.getItems().stream()
+            .collect(Collectors.toMap(OrderItem::getMerchantLineReference, Function.identity()));
     List<AccountingRequestLine> resolved = new ArrayList<>();
     Set<String> seen = new HashSet<>();
     for (ModifyOrderCommand.RefundLineCommand line : requested) {
@@ -89,7 +89,7 @@ public final class OrderModificationService {
       if (hasOrderLineReference == hasMerchantLineReference) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "AMBIGUOUS_LINE_REFERENCE");
       }
-      Line matched =
+      OrderItem matched =
           hasOrderLineReference
               ? byOrderLineReference.get(line.orderLineReference())
               : byMerchantLineReference.get(line.merchantLineReference());
@@ -100,10 +100,10 @@ public final class OrderModificationService {
       if (amount != null && amount <= 0) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "LINE_AMOUNT_MUST_BE_POSITIVE");
       }
-      if (!seen.add(matched.orderLineReference())) {
+      if (!seen.add(matched.getOrderLineReference())) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "DUPLICATE_LINE_REFERENCE");
       }
-      resolved.add(new AccountingRequestLine(matched.orderLineReference(), amount));
+      resolved.add(new AccountingRequestLine(matched.getOrderLineReference(), amount));
     }
     return resolved;
   }

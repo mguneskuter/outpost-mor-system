@@ -4,11 +4,12 @@ import com.outpost.payment.common.Amount;
 import com.outpost.payment.common.ProductTypes.ProductType;
 import java.math.BigDecimal;
 import java.util.Objects;
+import java.util.OptionalLong;
+import org.jspecify.annotations.Nullable;
 
 /** One priced line of a payment order, carrying the tax rate applied to it. */
 public final class OrderItem {
-  private final long orderItemId;
-  private final int sequence;
+  @Nullable private final Long orderItemId;
   private final ProductType productType;
   private final String orderLineReference;
   private final String merchantLineReference;
@@ -16,24 +17,19 @@ public final class OrderItem {
   private final Amount taxAmount;
   private final BigDecimal taxRate;
 
-  /** Creates an order item. */
+  /** Creates an order item; {@code orderItemId} is absent until the item is stored. */
   public OrderItem(
-      long orderItemId,
-      int sequence,
+      @Nullable Long orderItemId,
       ProductType productType,
       String orderLineReference,
       String merchantLineReference,
       Amount netAmount,
       Amount taxAmount,
       BigDecimal taxRate) {
-    if (orderItemId <= 0) {
+    if (orderItemId != null && orderItemId <= 0) {
       throw new IllegalArgumentException("orderItemId must be positive: " + orderItemId);
     }
     this.orderItemId = orderItemId;
-    if (sequence <= 0) {
-      throw new IllegalArgumentException("sequence must be positive: " + sequence);
-    }
-    this.sequence = sequence;
     this.productType = Objects.requireNonNull(productType, "productType");
     if (orderLineReference == null || orderLineReference.isBlank()) {
       throw new IllegalArgumentException("orderLineReference must not be null or blank");
@@ -60,14 +56,9 @@ public final class OrderItem {
     }
   }
 
-  /** Returns the line identity. */
-  public long getOrderItemId() {
-    return orderItemId;
-  }
-
-  /** Returns the line's position within the order. */
-  public int getSequence() {
-    return sequence;
+  /** Returns the line identity; empty until the item is stored. */
+  public OptionalLong getOrderItemId() {
+    return orderItemId == null ? OptionalLong.empty() : OptionalLong.of(orderItemId);
   }
 
   /** Returns the line's goods type. */
@@ -108,8 +99,7 @@ public final class OrderItem {
     if (!(other instanceof OrderItem that)) {
       return false;
     }
-    return orderItemId == that.orderItemId
-        && sequence == that.sequence
+    return Objects.equals(orderItemId, that.orderItemId)
         && Objects.equals(productType, that.productType)
         && Objects.equals(orderLineReference, that.orderLineReference)
         && Objects.equals(merchantLineReference, that.merchantLineReference)
@@ -122,7 +112,6 @@ public final class OrderItem {
   public int hashCode() {
     return Objects.hash(
         orderItemId,
-        sequence,
         productType,
         orderLineReference,
         merchantLineReference,

@@ -6,13 +6,12 @@ import com.outpost.integration.psp.simulator.SimulatorPspClient;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.MyBatisPspConfigurationRepository;
 import com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationMapper;
-import com.outpost.payment.repository.PaymentOrderRepository;
+import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.payment.repository.PspEventRepository;
 import com.outpost.payment.repository.RefundItemRepository;
-import com.outpost.payment.repository.mybatis.MyBatisPaymentOrderRepository;
+import com.outpost.payment.repository.mybatis.MyBatisOrderRepository;
 import com.outpost.payment.repository.mybatis.MyBatisPspEventRepository;
 import com.outpost.payment.repository.mybatis.MyBatisRefundItemRepository;
-import com.outpost.payment.repository.mybatis.PaymentOrderMapper;
 import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
 import com.outpost.payment.repository.mybatis.RefundItemMapper;
 import com.outpost.worker.accounting.AccountingRequestPoller;
@@ -26,6 +25,7 @@ import com.outpost.worker.accounting.repository.mybatis.MyBatisLedgerTransaction
 import com.outpost.worker.psp.PspEventPoller;
 import com.outpost.worker.psp.PspEventProcessor;
 import java.time.Clock;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -88,8 +88,9 @@ public class WorkerConfiguration {
   }
 
   @Bean
-  PaymentOrderRepository paymentOrderRepository(PaymentOrderMapper mapper) {
-    return new MyBatisPaymentOrderRepository(mapper);
+  OrderRepository orderRepository(
+      SqlSessionTemplate sqlSessionTemplate, PlatformTransactionManager transactionManager) {
+    return new MyBatisOrderRepository(sqlSessionTemplate, transactionManager);
   }
 
   @Bean
@@ -115,7 +116,7 @@ public class WorkerConfiguration {
 
   @Bean
   MerchantRefundWorkflow merchantRefundWorkflow(
-      PaymentOrderRepository orders,
+      OrderRepository orders,
       RefundItemRepository refundItems,
       LedgerTransactionRepository transactions,
       LedgerPaymentClient ledger,

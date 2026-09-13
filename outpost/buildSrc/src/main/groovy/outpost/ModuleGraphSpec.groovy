@@ -77,6 +77,8 @@ class ModuleGraphSpec {
         ],
         ':merchant-configuration:repository': [
             ':merchant-configuration:domain',
+            ':common-iso:domain',
+            ':account:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
@@ -144,6 +146,7 @@ class ModuleGraphSpec {
         ],
         ':payment:repository': [
             ':payment:domain',
+            ':account:domain',
             ':common-iso:domain',
             ':common-payment:domain',
             ':platform-sanity:static-data-repository',

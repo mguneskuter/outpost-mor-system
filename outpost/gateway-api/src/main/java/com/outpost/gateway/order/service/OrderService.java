@@ -1,5 +1,10 @@
 package com.outpost.gateway.order.service;
 
+import com.outpost.account.Account;
+import com.outpost.account.AccountTypes;
+import com.outpost.account.configuration.repository.MerchantFeeConfigurationRepository;
+import com.outpost.account.configuration.repository.MerchantPspRepository;
+import com.outpost.account.repository.AccountRepository;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions;
@@ -9,16 +14,17 @@ import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.gateway.order.client.LedgerClient;
 import com.outpost.gateway.order.client.LedgerPayment;
 import com.outpost.gateway.order.client.ledger.LedgerClientException;
-import com.outpost.gateway.order.repository.OrderRepository;
-import com.outpost.gateway.order.repository.OrderRepository.Line;
-import com.outpost.gateway.order.repository.OrderRepository.NewOrder;
-import com.outpost.gateway.order.repository.OrderRepository.PersistedOrder;
 import com.outpost.integration.psp.service.CreateOrderRequest;
 import com.outpost.integration.psp.service.PspClient;
 import com.outpost.integration.psp.service.ResultCode;
+import com.outpost.payment.ShopperDetail;
 import com.outpost.payment.common.Amount;
 import com.outpost.payment.common.ProductTypes;
 import com.outpost.payment.common.ProductTypes.ProductType;
+import com.outpost.payment.order.LineTaxCalculator;
+import com.outpost.payment.order.Order;
+import com.outpost.payment.order.OrderItem;
+import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import java.nio.charset.StandardCharsets;
@@ -32,180 +38,171 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 
-/** Coordinates tax calculation, durable order creation, Ledger, and PSP calls. */
+/** Creates merchant orders and the payment that collects each of them. */
 public final class OrderService {
-  private static final long PHASE_WAIT_NANOS = 65_000_000_000L;
-  private final OrderRepository repository;
+  private final OrderRepository orders;
+  private final AccountRepository accounts;
+  private final MerchantPspRepository merchantPsps;
+  private final MerchantFeeConfigurationRepository feeConfigurations;
   private final LedgerClient ledger;
   private final PspClient psp;
   private final TaxRateProvider taxRates;
+  private final LineTaxCalculator lineTaxCalculator;
   private final Clock clock;
 
   /** Creates an order service from its persistence and external boundaries. */
   public OrderService(
-      OrderRepository repository,
+      OrderRepository orders,
+      AccountRepository accounts,
+      MerchantPspRepository merchantPsps,
+      MerchantFeeConfigurationRepository feeConfigurations,
       LedgerClient ledger,
       PspClient psp,
       TaxRateProvider taxRates,
+      LineTaxCalculator lineTaxCalculator,
       Clock clock) {
-    this.repository = repository;
+    this.orders = orders;
+    this.accounts = accounts;
+    this.merchantPsps = merchantPsps;
+    this.feeConfigurations = feeConfigurations;
     this.ledger = ledger;
     this.psp = psp;
     this.taxRates = taxRates;
+    this.lineTaxCalculator = lineTaxCalculator;
     this.clock = clock;
   }
 
-  /** Creates or resumes an order for one authenticated merchant. */
+  /**
+   * Creates an order for one authenticated merchant, or answers a repeat of an earlier request
+   * under the same idempotency key.
+   *
+   * <p>The shopper, the order, and its lines are stored as one unit, which stores nothing when
+   * another request has already used the idempotency key. Ledger and the PSP are called afterwards,
+   * outside any transaction. A repeated request whose order has no PSP reference calls them again
+   * with the order's existing references.
+   *
+   * @throws OrderCreationException for an invalid request, a different request under a used
+   *     idempotency key, or a failed Ledger or PSP call
+   */
   public CreateOrderResult create(long merchantAccountId, CreateOrderCommand command) {
     String fingerprint = fingerprint(command);
     String idempotencyKey = required(command.idempotencyKey(), "idempotency_key");
-    PersistedOrder existing = repository.findByIdempotency(merchantAccountId, idempotencyKey);
-    if (existing != null) {
-      if (!existing.requestFingerprint().equals(fingerprint)) {
-        throw failure(HttpStatus.CONFLICT.value(), "IDEMPOTENCY_CONFLICT");
-      }
-      return resume(existing);
+    Optional<Order> existing = orders.findOrderByIdempotencyKey(merchantAccountId, idempotencyKey);
+    if (existing.isPresent()) {
+      return repeat(merchantAccountId, existing.orElseThrow(), command, fingerprint);
     }
-
-    PreparedOrder prepared = prepare(merchantAccountId, command, fingerprint);
-    PersistedOrder persisted = repository.insert(prepared.order());
-    if (persisted == null) {
-      PersistedOrder concurrent = repository.findByIdempotency(merchantAccountId, idempotencyKey);
-      if (concurrent == null || !concurrent.requestFingerprint().equals(fingerprint)) {
-        throw failure(HttpStatus.CONFLICT.value(), "IDEMPOTENCY_CONFLICT");
-      }
-      return resume(concurrent);
+    Checkout checkout = checkout(merchantAccountId, command);
+    Optional<Order> created =
+        orders.insertOrder(
+            checkout.shopper(),
+            unsavedOrder(merchantAccountId, idempotencyKey, fingerprint, checkout));
+    if (created.isEmpty()) {
+      Order winner =
+          orders
+              .findOrderByIdempotencyKey(merchantAccountId, idempotencyKey)
+              .orElseThrow(
+                  () -> new IllegalStateException("idempotency key is used by no stored order"));
+      return repeat(merchantAccountId, winner, command, fingerprint);
     }
-    return resume(persisted);
+    return pay(merchantAccountId, created.orElseThrow(), checkout);
   }
 
-  private CreateOrderResult resume(PersistedOrder order) {
-    PersistedOrder current = order;
-    if (current.phase() == OrderPhases.ORDER_PERSISTED) {
-      UUID claimToken = UUID.randomUUID();
-      if (!claimOrWait(current, OrderPhases.ORDER_PERSISTED, claimToken)) {
-        return resume(reload(current));
-      }
-      try {
-        ledger.createPayment(toLedgerPayment(current));
-      } catch (LedgerClientException exception) {
-        repository.releasePhaseClaim(current.orderId(), OrderPhases.ORDER_PERSISTED, claimToken);
-        if (exception.retryable()) {
-          throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "LEDGER_RETRYABLE");
-        }
-        throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "LEDGER_REJECTED");
-      } catch (RuntimeException exception) {
-        repository.releasePhaseClaim(current.orderId(), OrderPhases.ORDER_PERSISTED, claimToken);
+  private CreateOrderResult repeat(
+      long merchantAccountId, Order order, CreateOrderCommand command, String fingerprint) {
+    if (!order.getRequestFingerprint().equals(fingerprint)) {
+      throw failure(HttpStatus.CONFLICT.value(), "IDEMPOTENCY_CONFLICT");
+    }
+    if (order.getPspReference().isPresent()) {
+      return result(order);
+    }
+    return pay(merchantAccountId, order, checkout(merchantAccountId, command));
+  }
+
+  private Order unsavedOrder(
+      long merchantAccountId, String idempotencyKey, String fingerprint, Checkout checkout) {
+    ShopperDetail shopper = checkout.shopper();
+    return new Order(
+        null,
+        "order-" + UUID.randomUUID(),
+        checkout.merchantReference(),
+        merchantAccountId,
+        null,
+        shopper.getCountry(),
+        shopper.getCountrySubdivision().orElse(null),
+        checkout.netAmount(),
+        checkout.taxAmount(),
+        checkout.grossAmount(),
+        idempotencyKey,
+        fingerprint,
+        "payment-" + UUID.randomUUID(),
+        checkout.psp().getAccountId(),
+        null,
+        null,
+        Instant.now(clock).truncatedTo(ChronoUnit.MICROS),
+        checkout.items());
+  }
+
+  private CreateOrderResult pay(long merchantAccountId, Order order, Checkout checkout) {
+    createLedgerPayment(order, checkout.merchant().getCode(), checkout.psp().getCode());
+    PspOrder pspOrder = createPspOrder(order, checkout.psp().getCode());
+    orders.updateOrderPspReferenceAndPaymentLink(
+        order.getPaymentReference(), pspOrder.pspReference(), pspOrder.paymentLink());
+    return result(
+        orders
+            .findOrderByIdempotencyKey(merchantAccountId, order.getIdempotencyKey())
+            .orElseThrow(() -> new IllegalStateException("stored order disappeared")));
+  }
+
+  private void createLedgerPayment(Order order, String merchantCode, String pspCode) {
+    try {
+      ledger.createPayment(
+          new LedgerPayment(
+              order.getPaymentReference(),
+              merchantCode,
+              pspCode,
+              order.getShopperCountry(),
+              order.getShopperCountrySubdivision().orElse(null),
+              order.getNetAmount(),
+              order.getTaxAmount(),
+              order.getGrossAmount()));
+    } catch (LedgerClientException exception) {
+      if (exception.retryable()) {
         throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "LEDGER_RETRYABLE");
       }
-      repository.markLedgerCreated(current.orderId(), claimToken);
-      current = reload(current);
+      throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "LEDGER_REJECTED");
+    } catch (RuntimeException exception) {
+      throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "LEDGER_RETRYABLE");
     }
-    if (current.phase() == OrderPhases.LEDGER_CREATED) {
-      UUID claimToken = UUID.randomUUID();
-      if (!claimOrWait(current, OrderPhases.LEDGER_CREATED, claimToken)) {
-        return resume(reload(current));
-      }
-      com.outpost.integration.psp.service.CreateOrderResult pspResult;
-      try {
-        pspResult =
-            psp.createOrder(
-                new CreateOrderRequest(
-                    current.pspCode(),
-                    current.paymentReference(),
-                    new Amount(currency(current), current.grossAmount())));
-      } catch (RuntimeException exception) {
-        repository.releasePhaseClaim(current.orderId(), OrderPhases.LEDGER_CREATED, claimToken);
-        throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
-      }
-      if (pspResult.resultCode() != ResultCode.ACCEPTED
-          || pspResult.pspReference() == null
-          || pspResult.pspReference().isBlank()
-          || pspResult.paymentUrl() == null
-          || pspResult.paymentUrl().isBlank()) {
-        repository.releasePhaseClaim(current.orderId(), OrderPhases.LEDGER_CREATED, claimToken);
-        throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
-      }
-      repository.markPspCreated(
-          current.orderId(), claimToken, pspResult.pspReference(), pspResult.paymentUrl());
-      current = reload(current);
-    }
-    if (current.phase() == OrderPhases.PSP_CREATED) {
-      UUID claimToken = UUID.randomUUID();
-      if (!claimOrWait(current, OrderPhases.PSP_CREATED, claimToken)) {
-        return resume(reload(current));
-      }
-      repository.markCompleted(current.orderId(), claimToken);
-      current = reload(current);
-    }
-    if (current.phase() != OrderPhases.COMPLETED || current.paymentLink() == null) {
-      throw new IllegalStateException("order has no completed payment link: " + current.orderId());
-    }
-    return result(current);
   }
 
-  private boolean claimOrWait(PersistedOrder order, OrderPhases phase, UUID claimToken) {
-    if (repository.claimPhase(order.orderId(), phase, claimToken)) {
-      return true;
+  private PspOrder createPspOrder(Order order, String pspCode) {
+    com.outpost.integration.psp.service.CreateOrderResult pspResult;
+    try {
+      pspResult =
+          psp.createOrder(
+              new CreateOrderRequest(pspCode, order.getPaymentReference(), order.getGrossAmount()));
+    } catch (RuntimeException exception) {
+      throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     }
-    long deadline = System.nanoTime() + PHASE_WAIT_NANOS;
-    while (System.nanoTime() < deadline) {
-      PersistedOrder current = reload(order);
-      if (current.phase() != phase) {
-        return false;
-      }
-      try {
-        Thread.sleep(10);
-      } catch (InterruptedException exception) {
-        Thread.currentThread().interrupt();
-        throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "ORDER_RETRYABLE");
-      }
-      if (repository.claimPhase(order.orderId(), phase, claimToken)) {
-        return true;
-      }
+    String pspReference = pspResult.pspReference();
+    String paymentLink = pspResult.paymentUrl();
+    if (pspResult.resultCode() != ResultCode.ACCEPTED
+        || pspReference == null
+        || pspReference.isBlank()
+        || paymentLink == null
+        || paymentLink.isBlank()) {
+      throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
     }
-    throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "ORDER_RETRYABLE");
+    return new PspOrder(pspReference, paymentLink);
   }
 
-  private PersistedOrder reload(PersistedOrder previous) {
-    PersistedOrder current =
-        repository.findByIdempotency(previous.merchantAccountId(), previous.idempotencyKey());
-    if (current == null) {
-      throw new IllegalStateException("order disappeared: " + previous.orderId());
-    }
-    return current;
-  }
-
-  private LedgerPayment toLedgerPayment(PersistedOrder order) {
-    Country country =
-        Countries.fromIsoCode(order.paymentShopperCountry())
-            .orElseThrow(() -> new IllegalStateException("persisted country is not supported"));
-    CountrySubdivision subdivision =
-        order.paymentShopperCountrySubdivision() == null
-            ? null
-            : CountrySubdivisions.fromCode(country, order.paymentShopperCountrySubdivision())
-                .orElseThrow(
-                    () -> new IllegalStateException("persisted subdivision is not supported"));
-    Currency currency = currency(order);
-    return new LedgerPayment(
-        order.paymentReference(),
-        order.merchantCode(),
-        order.pspCode(),
-        country,
-        subdivision,
-        new Amount(currency, order.netAmount()),
-        new Amount(currency, order.taxAmount()),
-        new Amount(currency, order.grossAmount()));
-  }
-
-  private PreparedOrder prepare(
-      long merchantAccountId, CreateOrderCommand command, String fingerprint) {
+  private Checkout checkout(long merchantAccountId, CreateOrderCommand command) {
     final String merchantReference = required(command.merchantReference(), "merchant_reference");
     final String paymentMethod = required(command.paymentMethod(), "payment_method");
     CreateOrderCommand.ShopperDetailsCommand shopper =
@@ -227,15 +224,14 @@ public final class OrderService {
         Currencies.fromCurrencyCode(required(details.currency(), "order_details.currency"))
             .orElseThrow(() -> failure(HttpStatus.BAD_REQUEST.value(), "UNSUPPORTED_CURRENCY"));
     long requestedTotal = required(details.totalAmount(), "order_details.total_amount");
-    Set<String> merchantReferences = new HashSet<>();
-    List<Line> lines = new ArrayList<>();
-    long netTotal = 0;
-    long taxTotal = 0;
+    Set<String> merchantLineReferences = new HashSet<>();
+    List<OrderItem> items = new ArrayList<>();
+    Amount netAmount = new Amount(currency, 0);
+    Amount taxAmount = new Amount(currency, 0);
     LocalDate asOf = LocalDate.now(clock);
-    for (int index = 0; index < requestLines.size(); index++) {
-      CreateOrderCommand.OrderLineCommand input = requestLines.get(index);
+    for (CreateOrderCommand.OrderLineCommand input : requestLines) {
       String lineReference = required(input.merchantLineReference(), "merchant_line_reference");
-      if (!merchantReferences.add(lineReference)) {
+      if (!merchantLineReferences.add(lineReference)) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "DUPLICATE_MERCHANT_LINE_REFERENCE");
       }
       long net = required(input.amount(), "order_lines.amount");
@@ -254,74 +250,65 @@ public final class OrderService {
       } catch (RuntimeException exception) {
         throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "TAX_RATE_UNAVAILABLE");
       }
-      long tax;
-      long gross;
+      Amount lineNet = new Amount(currency, net);
+      Amount lineTax;
       try {
-        tax = BigDecimalSupport.roundedMinorUnits(net, rate.rate());
-        gross = Math.addExact(net, tax);
-        netTotal = Math.addExact(netTotal, net);
-        taxTotal = Math.addExact(taxTotal, tax);
+        lineTax = lineTaxCalculator.calculateTax(lineNet, rate.rate());
+        netAmount = netAmount.plus(lineNet);
+        taxAmount = taxAmount.plus(lineTax);
       } catch (ArithmeticException exception) {
         throw failure(HttpStatus.BAD_REQUEST.value(), "AMOUNT_OVERFLOW");
       }
-      lines.add(
-          new Line(
-              index + 1,
-              productType.getProductTypeId(),
+      items.add(
+          new OrderItem(
+              null,
+              productType,
               "line-" + UUID.randomUUID(),
               lineReference,
-              net,
-              tax,
-              rate.rate().toPlainString()));
-      if (gross <= 0) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "AMOUNT_OVERFLOW");
-      }
+              lineNet,
+              lineTax,
+              rate.rate()));
     }
-    if (requestedTotal != netTotal) {
+    if (requestedTotal != netAmount.quantity()) {
       throw failure(HttpStatus.BAD_REQUEST.value(), "TOTAL_AMOUNT_MISMATCH");
     }
-    long grossTotal;
+    Amount grossAmount;
     try {
-      grossTotal = Math.addExact(netTotal, taxTotal);
+      // Net and tax amounts are never negative, so no line's gross exceeds the order's gross.
+      grossAmount = netAmount.plus(taxAmount);
     } catch (ArithmeticException exception) {
       throw failure(HttpStatus.BAD_REQUEST.value(), "AMOUNT_OVERFLOW");
     }
-    if (repository.findMerchant(merchantAccountId).isEmpty()) {
-      throw failure(HttpStatus.UNAUTHORIZED.value(), "MERCHANT_NOT_FOUND");
-    }
-    OrderRepository.Psp pspAccount =
-        repository
-            .findEnabledPsp(merchantAccountId, paymentMethod)
+    Account merchant =
+        accounts
+            .findAccountById(merchantAccountId)
+            .filter(account -> isActive(account, AccountTypes.MERCHANT))
+            .orElseThrow(() -> failure(HttpStatus.UNAUTHORIZED.value(), "MERCHANT_NOT_FOUND"));
+    Account pspAccount =
+        accounts
+            .findAccountByCode(paymentMethod)
+            .filter(account -> isActive(account, AccountTypes.PSP))
+            .filter(account -> merchantPsps.isPspEnabled(merchantAccountId, account.getAccountId()))
             .orElseThrow(
                 () ->
                     failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "PAYMENT_METHOD_UNAVAILABLE"));
-    if (!repository.hasFeeConfiguration(merchantAccountId, currency.getCurrencyId())) {
+    if (!feeConfigurations.hasFeeConfiguration(merchantAccountId, currency)) {
       throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "MISSING_FEE_CONFIGURATION");
     }
-    Instant createdAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
-    NewOrder order =
-        new NewOrder(
-            "order-" + UUID.randomUUID(),
-            merchantReference,
-            merchantAccountId,
-            0,
-            currency.getCurrencyId(),
-            netTotal,
-            taxTotal,
-            grossTotal,
-            required(command.idempotencyKey(), "idempotency_key"),
-            fingerprint,
-            "payment-" + UUID.randomUUID(),
-            pspAccount.accountId(),
-            createdAt,
-            new OrderRepository.Shopper(
-                email,
-                fullName,
-                country.getCountryId(),
-                subdivision == null ? null : subdivision.getCountrySubdivisionId(),
-                nullableText(shopper.zipcode())),
-            lines);
-    return new PreparedOrder(order);
+    return new Checkout(
+        merchant,
+        pspAccount,
+        merchantReference,
+        new ShopperDetail(
+            null, email, fullName, country, subdivision, nullableText(shopper.zipcode())),
+        List.copyOf(items),
+        netAmount,
+        taxAmount,
+        grossAmount);
+  }
+
+  private static boolean isActive(Account account, AccountTypes type) {
+    return account.isActive() && account.getAccountType().equals(type.getValue());
   }
 
   private static List<CreateOrderCommand.OrderLineCommand> nonNullLines(List<?> lines) {
@@ -422,43 +409,41 @@ public final class OrderService {
     return new OrderCreationException(status, code);
   }
 
-  private CreateOrderResult result(PersistedOrder order) {
+  private static CreateOrderResult result(Order order) {
     return new CreateOrderResult(
-        order.orderReference(),
-        order.createdAt(),
-        order.netAmount(),
-        order.currency(),
-        order.taxAmount(),
-        order.grossAmount(),
-        Objects.requireNonNull(order.paymentLink(), "paymentLink"),
-        order.lines().stream()
+        order.getOrderReference(),
+        order.getCreatedAt(),
+        order.getNetAmount().quantity(),
+        order.getNetAmount().currency().getCurrencyCode(),
+        order.getTaxAmount().quantity(),
+        order.getGrossAmount().quantity(),
+        order
+            .getPaymentLink()
+            .orElseThrow(() -> new IllegalStateException("order has no payment link")),
+        order.getItems().stream()
             .map(
-                line ->
+                item ->
                     new CreateOrderResult.OrderLineResult(
-                        line.orderLineReference(),
-                        line.merchantLineReference(),
-                        line.netAmount(),
-                        line.taxAmount(),
-                        Math.addExact(line.netAmount(), line.taxAmount()),
-                        line.taxRate()))
+                        item.getOrderLineReference(),
+                        item.getMerchantLineReference(),
+                        item.getNetAmount().quantity(),
+                        item.getTaxAmount().quantity(),
+                        item.getNetAmount().plus(item.getTaxAmount()).quantity(),
+                        item.getTaxRate().toPlainString()))
             .toList());
   }
 
-  private static Currency currency(PersistedOrder order) {
-    return Currencies.fromCurrencyCode(order.currency())
-        .orElseThrow(() -> new IllegalStateException("persisted currency is not supported"));
-  }
+  /** The validated, priced request, its shopper, and the accounts that serve it. */
+  private record Checkout(
+      Account merchant,
+      Account psp,
+      String merchantReference,
+      ShopperDetail shopper,
+      List<OrderItem> items,
+      Amount netAmount,
+      Amount taxAmount,
+      Amount grossAmount) {}
 
-  private record PreparedOrder(NewOrder order) {}
-
-  private static final class BigDecimalSupport {
-    private BigDecimalSupport() {}
-
-    static long roundedMinorUnits(long amount, java.math.BigDecimal rate) {
-      return java.math.BigDecimal.valueOf(amount)
-          .multiply(rate)
-          .setScale(0, java.math.RoundingMode.HALF_EVEN)
-          .longValueExact();
-    }
-  }
+  /** The order a PSP created for a payment reference. */
+  private record PspOrder(String pspReference, String paymentLink) {}
 }

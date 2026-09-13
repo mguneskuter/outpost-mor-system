@@ -38,9 +38,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.security.web.context.AbstractSecurityWebApplicationInitializer;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -90,12 +90,13 @@ class PaymentCreationIntegrationTest {
         .locations("filesystem:" + migrationLocation())
         .load()
         .migrate();
-    DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.postgresql.Driver");
-    dataSource.setUrl(DATABASE.getJdbcUrl());
-    dataSource.setUsername(DATABASE.getUsername());
-    dataSource.setPassword(DATABASE.getPassword());
-    JdbcTemplate seed = new JdbcTemplate(dataSource);
+    JdbcTemplate seed =
+        new JdbcTemplate(
+            DataSourceBuilder.create()
+                .url(DATABASE.getJdbcUrl())
+                .username(DATABASE.getUsername())
+                .password(DATABASE.getPassword())
+                .build());
     materializeStaticData(seed);
     LedgerStaticDataFixtures.insertRates(seed, java.time.LocalDate.of(2026, 9, 10), true);
     LedgerStaticDataFixtures.insertFees(seed, true);

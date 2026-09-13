@@ -6,21 +6,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
-import com.outpost.gateway.order.repository.OrderRepository;
-import com.outpost.gateway.order.repository.OrderRepository.Line;
-import com.outpost.gateway.order.repository.OrderRepository.NewOrder;
-import com.outpost.gateway.order.repository.OrderRepository.PersistedOrder;
 import com.outpost.gateway.order.service.ModifyOrderCommand;
 import com.outpost.gateway.order.service.ModifyOrderCommand.RefundLineCommand;
 import com.outpost.gateway.order.service.ModifyOrderException;
 import com.outpost.gateway.order.service.ModifyOrderResult;
 import com.outpost.gateway.order.service.OrderModificationService;
+import com.outpost.payment.ShopperDetail;
+import com.outpost.payment.common.Amount;
 import com.outpost.payment.common.ProductTypes;
+import com.outpost.payment.order.Order;
+import com.outpost.payment.order.OrderItem;
+import com.outpost.payment.order.repository.OrderRepository;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -37,8 +38,6 @@ class OrderModificationServiceIntegrationTest {
   private static final long MERCHANT_ACCOUNT_ID = 300L;
   private static final long OTHER_MERCHANT_ACCOUNT_ID = 301L;
   private static final long PSP_ACCOUNT_ID = 302L;
-  private static final long PRODUCT_TYPE_ID =
-      ProductTypes.DIGITAL_GOODS.getValue().getProductTypeId();
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_gateway_modification",
@@ -90,8 +89,7 @@ class OrderModificationServiceIntegrationTest {
 
   @Test
   void storesRefundRequestWithResolvedLinesAndReturnsReceived() {
-    PersistedOrder order =
-        insertOrder(MERCHANT_ACCOUNT_ID, "order-valid", "payment-valid", "idem-valid");
+    Order order = insertOrder(MERCHANT_ACCOUNT_ID, "order-valid", "payment-valid", "idem-valid");
 
     ModifyOrderResult result =
         service.request(
@@ -102,9 +100,10 @@ class OrderModificationServiceIntegrationTest {
                 "merchant-ref-valid",
                 "REFUND",
                 List.of(
-                    new RefundLineCommand(order.lines().get(0).orderLineReference(), null, 20L),
                     new RefundLineCommand(
-                        null, order.lines().get(1).merchantLineReference(), null))));
+                        order.getItems().get(0).getOrderLineReference(), null, 20L),
+                    new RefundLineCommand(
+                        null, order.getItems().get(1).getMerchantLineReference(), null))));
 
     assertThat(result.status()).isEqualTo("RECEIVED");
     assertThat(result.refundReference()).isNotBlank();
@@ -126,7 +125,8 @@ class OrderModificationServiceIntegrationTest {
             result.refundReference());
     assertThat(lineReferences)
         .containsExactlyInAnyOrder(
-            order.lines().get(0).orderLineReference(), order.lines().get(1).orderLineReference());
+            order.getItems().get(0).getOrderLineReference(),
+            order.getItems().get(1).getOrderLineReference());
   }
 
   @Test
@@ -191,7 +191,7 @@ class OrderModificationServiceIntegrationTest {
 
   @Test
   void rejectsLineNamingBothReferences() {
-    PersistedOrder order =
+    Order order =
         insertOrder(MERCHANT_ACCOUNT_ID, "order-ambiguous", "payment-ambiguous", "idem-ambiguous");
 
     assertThatThrownBy(
@@ -205,58 +205,66 @@ class OrderModificationServiceIntegrationTest {
                         "REFUND",
                         List.of(
                             new RefundLineCommand(
-                                order.lines().get(0).orderLineReference(),
-                                order.lines().get(0).merchantLineReference(),
+                                order.getItems().get(0).getOrderLineReference(),
+                                order.getItems().get(0).getMerchantLineReference(),
                                 null)))))
         .isInstanceOf(ModifyOrderException.class)
         .extracting(exception -> ((ModifyOrderException) exception).code())
         .isEqualTo("AMBIGUOUS_LINE_REFERENCE");
   }
 
-  private PersistedOrder insertOrder(
+  private Order insertOrder(
       long merchantAccountId,
       String orderReference,
       String paymentReference,
       String idempotencyKey) {
-    NewOrder order =
-        new NewOrder(
+    ShopperDetail shopper =
+        new ShopperDetail(
+            null,
+            orderReference + "@example.test",
+            "Shopper " + orderReference,
+            Countries.GERMANY.getValue(),
+            null,
+            null);
+    Order order =
+        new Order(
+            null,
             orderReference,
             "merchant-ref-for-" + orderReference,
             merchantAccountId,
-            0,
-            Currencies.EUR.getValue().getCurrencyId(),
-            100L,
-            19L,
-            119L,
+            null,
+            Countries.GERMANY.getValue(),
+            null,
+            eur(100L),
+            eur(19L),
+            eur(119L),
             idempotencyKey,
             "fingerprint-" + orderReference,
             paymentReference,
             PSP_ACCOUNT_ID,
+            null,
+            null,
             Instant.parse("2026-09-12T00:00:00Z"),
-            new OrderRepository.Shopper(
-                orderReference + "@example.test",
-                "Shopper " + orderReference,
-                Countries.GERMANY.getValue().getCountryId(),
-                null,
-                null),
             List.of(
-                new Line(
-                    1,
-                    PRODUCT_TYPE_ID,
-                    orderReference + "-line-1",
-                    orderReference + "-merchant-line-1",
-                    50L,
-                    10L,
-                    "0.1900"),
-                new Line(
-                    2,
-                    PRODUCT_TYPE_ID,
-                    orderReference + "-line-2",
-                    orderReference + "-merchant-line-2",
-                    50L,
-                    9L,
-                    "0.1900")));
-    return Objects.requireNonNull(orderRepository.insert(order));
+                item(orderReference + "-line-1", orderReference + "-merchant-line-1", 50L, 10L),
+                item(orderReference + "-line-2", orderReference + "-merchant-line-2", 50L, 9L)));
+    return orderRepository.insertOrder(shopper, order).orElseThrow();
+  }
+
+  private static OrderItem item(
+      String orderLineReference, String merchantLineReference, long net, long tax) {
+    return new OrderItem(
+        null,
+        ProductTypes.DIGITAL_GOODS.getValue(),
+        orderLineReference,
+        merchantLineReference,
+        eur(net),
+        eur(tax),
+        new BigDecimal("0.1900"));
+  }
+
+  private static Amount eur(long quantity) {
+    return new Amount(Currencies.EUR.getValue(), quantity);
   }
 
   private static void execute(Connection connection, String sql) throws SQLException {

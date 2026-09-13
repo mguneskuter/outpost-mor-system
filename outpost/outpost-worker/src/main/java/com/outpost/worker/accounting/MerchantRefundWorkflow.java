@@ -13,8 +13,8 @@ import com.outpost.payment.RefundItem;
 import com.outpost.payment.common.Amount;
 import com.outpost.payment.order.Order;
 import com.outpost.payment.order.OrderItem;
-import com.outpost.payment.repository.PaymentOrderRepository;
-import com.outpost.payment.repository.PaymentOrderRepository.PspRouting;
+import com.outpost.payment.order.repository.OrderRepository;
+import com.outpost.payment.order.repository.OrderRepository.PspRouting;
 import com.outpost.payment.repository.RefundItemRepository;
 import com.outpost.worker.accounting.RefundLineComputation.LineRefund;
 import com.outpost.worker.accounting.RefundLineComputation.RefundLineRejectedException;
@@ -35,7 +35,7 @@ import org.jspecify.annotations.Nullable;
  * PSP, or reserves, refunds, and books a captured one.
  */
 public final class MerchantRefundWorkflow {
-  private final PaymentOrderRepository orders;
+  private final OrderRepository orders;
   private final RefundItemRepository refundItems;
   private final LedgerTransactionRepository transactions;
   private final LedgerPaymentClient ledger;
@@ -43,7 +43,7 @@ public final class MerchantRefundWorkflow {
 
   /** Creates the workflow over its repository, Ledger, and PSP collaborators. */
   public MerchantRefundWorkflow(
-      PaymentOrderRepository orders,
+      OrderRepository orders,
       RefundItemRepository refundItems,
       LedgerTransactionRepository transactions,
       LedgerPaymentClient ledger,
@@ -81,7 +81,7 @@ public final class MerchantRefundWorkflow {
       AccountingRequest request, String paymentReference, String pspCode, String pspReference) {
     Order order =
         orders
-            .findByPaymentReference(paymentReference)
+            .findOrderByPaymentReference(paymentReference)
             .orElseThrow(() -> noOrder(paymentReference));
     List<LineRefund> planned;
     try {
@@ -171,11 +171,17 @@ public final class MerchantRefundWorkflow {
     }
     List<LineRefund> planned = new ArrayList<>();
     for (OrderItem item : targets) {
+      long orderItemId =
+          item.getOrderItemId()
+              .orElseThrow(() -> new IllegalStateException("order line is not stored"));
       LedgerTransactionRepository.RefundedTotal alreadyActive =
-          transactions.activeRefundedTotal(item.getOrderItemId(), request.getReference());
+          transactions.activeRefundedTotal(orderItemId, request.getReference());
       planned.add(
           RefundLineComputation.compute(
-              item, alreadyActive, requestedAmounts.get(item.getOrderLineReference())));
+              orderItemId,
+              item,
+              alreadyActive,
+              requestedAmounts.get(item.getOrderLineReference())));
     }
     return planned;
   }

@@ -16,10 +16,10 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -47,12 +47,13 @@ class LedgerApiIntegrationTest {
         .locations("filesystem:" + migrationLocation())
         .load()
         .migrate();
-    DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.postgresql.Driver");
-    dataSource.setUrl(DATABASE.getJdbcUrl());
-    dataSource.setUsername(DATABASE.getUsername());
-    dataSource.setPassword(DATABASE.getPassword());
-    JdbcTemplate seed = new JdbcTemplate(dataSource);
+    JdbcTemplate seed =
+        new JdbcTemplate(
+            DataSourceBuilder.create()
+                .url(DATABASE.getJdbcUrl())
+                .username(DATABASE.getUsername())
+                .password(DATABASE.getPassword())
+                .build());
     LedgerStaticDataFixtures.materialize(seed);
     LedgerStaticDataFixtures.insertRates(seed, LocalDate.of(2026, 9, 10), true);
     LedgerStaticDataFixtures.insertFees(seed, true);

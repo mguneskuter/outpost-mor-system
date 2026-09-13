@@ -20,7 +20,7 @@ class RefundLineComputationTest {
   void noAmountRefundsTheWholeUnrefundedLine() {
     OrderItem item = item(1000, 190, "0.19");
 
-    LineRefund refund = RefundLineComputation.compute(item, new RefundedTotal(0, 0), null);
+    LineRefund refund = RefundLineComputation.compute(1L, item, new RefundedTotal(0, 0), null);
 
     assertThat(refund.net()).isEqualTo(1000);
     assertThat(refund.tax()).isEqualTo(190);
@@ -30,7 +30,7 @@ class RefundLineComputationTest {
   void partialAmountComputesTaxAtTheLinesOwnRate() {
     OrderItem item = item(1000, 190, "0.19");
 
-    LineRefund refund = RefundLineComputation.compute(item, new RefundedTotal(0, 0), 400L);
+    LineRefund refund = RefundLineComputation.compute(1L, item, new RefundedTotal(0, 0), 400L);
 
     assertThat(refund.net()).isEqualTo(400);
     assertThat(refund.tax()).isEqualTo(76L);
@@ -40,9 +40,9 @@ class RefundLineComputationTest {
   void finalRefundTakesTheResidualTaxInsteadOfRoundedTax() {
     OrderItem item = item(999, 190, "0.19");
 
-    LineRefund first = RefundLineComputation.compute(item, new RefundedTotal(0, 0), 500L);
+    LineRefund first = RefundLineComputation.compute(1L, item, new RefundedTotal(0, 0), 500L);
     LineRefund last =
-        RefundLineComputation.compute(item, new RefundedTotal(first.net(), first.tax()), null);
+        RefundLineComputation.compute(1L, item, new RefundedTotal(first.net(), first.tax()), null);
 
     assertThat(last.net()).isEqualTo(499);
     assertThat(last.tax()).isEqualTo(190 - first.tax());
@@ -52,7 +52,8 @@ class RefundLineComputationTest {
   void rejectsAnAmountBeyondTheRemainingNet() {
     OrderItem item = item(1000, 190, "0.19");
 
-    assertThatThrownBy(() -> RefundLineComputation.compute(item, new RefundedTotal(600, 114), 500L))
+    assertThatThrownBy(
+            () -> RefundLineComputation.compute(1L, item, new RefundedTotal(600, 114), 500L))
         .isInstanceOf(RefundLineRejectedException.class);
   }
 
@@ -61,14 +62,13 @@ class RefundLineComputationTest {
     OrderItem item = item(1000, 190, "0.19");
 
     assertThatThrownBy(
-            () -> RefundLineComputation.compute(item, new RefundedTotal(1000, 190), null))
+            () -> RefundLineComputation.compute(1L, item, new RefundedTotal(1000, 190), null))
         .isInstanceOf(RefundLineRejectedException.class);
   }
 
   private static OrderItem item(long netAmount, long taxAmount, String taxRate) {
     return new OrderItem(
-        1,
-        1,
+        1L,
         ProductTypes.PHYSICAL_GOODS.getValue(),
         "line-reference",
         "merchant-line-reference",

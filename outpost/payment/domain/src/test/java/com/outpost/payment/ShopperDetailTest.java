@@ -20,6 +20,15 @@ class ShopperDetailTest {
   }
 
   @Test
+  void anUnsavedShopperHasNoId() {
+    ShopperDetail shopper =
+        new ShopperDetail(
+            null, "jane@example.com", "Jane Doe", Countries.NETHERLANDS.getValue(), null, null);
+
+    assertTrue(shopper.getShopperId().isEmpty());
+  }
+
+  @Test
   void rejectsSubdivisionThatDoesNotBelongToTheCountry() {
     assertThrows(
         IllegalArgumentException.class,

@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
@@ -39,9 +40,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -383,13 +384,12 @@ class AccountingRequestProcessorIntegrationTest {
         Timestamp.from(Instant.parse("2026-09-12T10:00:00Z")));
   }
 
-  private static DriverManagerDataSource dataSource() {
-    DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.postgresql.Driver");
-    dataSource.setUrl(DATABASE.getJdbcUrl());
-    dataSource.setUsername(DATABASE.getUsername());
-    dataSource.setPassword(DATABASE.getPassword());
-    return dataSource;
+  private static DataSource dataSource() {
+    return DataSourceBuilder.create()
+        .url(DATABASE.getJdbcUrl())
+        .username(DATABASE.getUsername())
+        .password(DATABASE.getPassword())
+        .build();
   }
 
   private static void seedReferenceData(JdbcTemplate seed) {

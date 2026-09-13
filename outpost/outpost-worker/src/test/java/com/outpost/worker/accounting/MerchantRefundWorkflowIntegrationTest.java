@@ -23,7 +23,7 @@ import com.outpost.payment.PspEventCodes;
 import com.outpost.payment.PspEventResults;
 import com.outpost.payment.PspEventStatuses;
 import com.outpost.payment.common.Amount;
-import com.outpost.payment.repository.PaymentOrderRepository;
+import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.payment.repository.RefundItemRepository;
 import com.outpost.worker.accounting.client.LedgerPaymentClient;
 import com.outpost.worker.accounting.repository.LedgerTransactionRepository;
@@ -32,15 +32,16 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -62,7 +63,7 @@ class MerchantRefundWorkflowIntegrationTest {
   @Autowired private JdbcTemplate jdbcTemplate;
   @Autowired private AccountingRequestQueue requests;
   @Autowired private LedgerTransactionRepository transactions;
-  @Autowired private PaymentOrderRepository orders;
+  @Autowired private OrderRepository orders;
   @Autowired private RefundItemRepository refundItems;
   @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
@@ -209,7 +210,9 @@ class MerchantRefundWorkflowIntegrationTest {
     jdbcTemplate.update(
         "INSERT INTO merchant_order (order_id, order_reference, merchant_reference, account_id, "
             + "account_type_id, shopper_id, currency_id, net_amount, tax_amount, gross_amount, "
-            + "idempotency_key, created_ts) VALUES (?, ?, ?, 10, 2, ?, 3, ?, ?, ?, ?, ?)",
+            + "idempotency_key, request_fingerprint, payment_reference, psp_account_id, "
+            + "psp_reference, shopper_country_id, created_ts) "
+            + "VALUES (?, ?, ?, 10, 2, ?, 3, ?, ?, ?, ?, ?, ?, 11, ?, 1, ?)",
         orderId,
         orderReference,
         slug + "-merchant-ref",
@@ -218,25 +221,20 @@ class MerchantRefundWorkflowIntegrationTest {
         taxAmount,
         grossAmount,
         slug + "-idempotency",
+        slug + "-fingerprint",
+        paymentReference,
+        "psp-" + paymentReference,
         Timestamp.from(Instant.parse("2026-09-12T09:00:00Z")));
     jdbcTemplate.update(
-        "INSERT INTO order_item (order_item_id, order_id, sequence, product_type_id, "
+        "INSERT INTO order_item (order_item_id, order_id, product_type_id, "
             + "order_line_reference, merchant_line_reference, net_amount, tax_amount, tax_rate) "
-            + "VALUES (?, ?, 1, 2, ?, ?, ?, ?, 0.19)",
+            + "VALUES (?, ?, 2, ?, ?, ?, ?, 0.19)",
         orderItemId,
         orderId,
         orderLineReference,
         slug + "-merchant-line",
         netAmount,
         taxAmount);
-    jdbcTemplate.update(
-        "INSERT INTO order_payment (order_id, payment_reference, psp_account_id, "
-            + "psp_account_type_id, psp_reference, shopper_country_id, created_ts) "
-            + "VALUES (?, ?, 11, 4, ?, 1, ?)",
-        orderId,
-        paymentReference,
-        "psp-" + paymentReference,
-        Timestamp.from(Instant.parse("2026-09-12T09:00:01Z")));
     jdbcTemplate.update(
         "INSERT INTO transaction (transaction_type_id, account_id, reference, quantity, "
             + "currency_id, created_ts) VALUES (1, 10, ?, ?, 3, ?)",
@@ -341,8 +339,8 @@ class MerchantRefundWorkflowIntegrationTest {
     return Objects.requireNonNull(
         jdbcTemplate.queryForObject(
             "SELECT oi.order_item_id FROM order_item oi "
-                + "JOIN order_payment op ON op.order_id = oi.order_id "
-                + "WHERE op.payment_reference = ?",
+                + "JOIN merchant_order mo ON mo.order_id = oi.order_id "
+                + "WHERE mo.payment_reference = ?",
             Long.class,
             paymentReference));
   }
@@ -359,13 +357,12 @@ class MerchantRefundWorkflowIntegrationTest {
     return new Amount(Currencies.EUR.getValue(), quantity);
   }
 
-  private static DriverManagerDataSource dataSource() {
-    DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.postgresql.Driver");
-    dataSource.setUrl(DATABASE.getJdbcUrl());
-    dataSource.setUsername(DATABASE.getUsername());
-    dataSource.setPassword(DATABASE.getPassword());
-    return dataSource;
+  private static DataSource dataSource() {
+    return DataSourceBuilder.create()
+        .url(DATABASE.getJdbcUrl())
+        .username(DATABASE.getUsername())
+        .password(DATABASE.getPassword())
+        .build();
   }
 
   private static void seedReferenceData(JdbcTemplate seed) {

@@ -4,18 +4,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import java.time.LocalDate;
+import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.env.MockEnvironment;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 class LedgerApiStartupFailureIntegrationTest {
+  private static @Nullable DataSource seedDataSource;
 
   private static final String GATEWAY_SECRET_ENVIRONMENT_VARIABLE =
       "OUTPOST_LEDGER_GATEWAY_HMAC_SECRET";
@@ -221,11 +223,16 @@ class LedgerApiStartupFailureIntegrationTest {
   }
 
   private static JdbcTemplate jdbcTemplate() {
-    DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.postgresql.Driver");
-    dataSource.setUrl(DATABASE.getJdbcUrl());
-    dataSource.setUsername(DATABASE.getUsername());
-    dataSource.setPassword(DATABASE.getPassword());
+    DataSource dataSource = seedDataSource;
+    if (dataSource == null) {
+      dataSource =
+          DataSourceBuilder.create()
+              .url(DATABASE.getJdbcUrl())
+              .username(DATABASE.getUsername())
+              .password(DATABASE.getPassword())
+              .build();
+      seedDataSource = dataSource;
+    }
     return new JdbcTemplate(dataSource);
   }
 
