@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify
+.PHONY: all clean hooks format format-check lint build test psp-simulator precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -84,6 +84,11 @@ seed:
 
 seed-test:
 	./local/seed_test.sh
+
+journal-controls:
+	@test -n "$(OUTPOST_DB_PASSWORD)" || { echo "OUTPOST_DB_PASSWORD must be set in .env (see .env.example)"; exit 1; }
+	OUTPOST_DB_PORT="$(OUTPOST_DB_PORT)" OUTPOST_DB_USER="$(OUTPOST_DB_USER)" OUTPOST_DB_PASSWORD="$(OUTPOST_DB_PASSWORD)" \
+		./local/run-journal-controls.sh
 
 lifecycle: migrate ensure-static-data seed
 generate-fx-seed:

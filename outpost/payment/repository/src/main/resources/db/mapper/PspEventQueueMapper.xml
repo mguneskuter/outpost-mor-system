@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.outpost.payment.repository.mybatis.PspEventQueueMapper">
-  <select id="findPaymentAccounts" resultType="com.outpost.payment.repository.mybatis.PaymentAccountsRow">
-    SELECT account_id AS merchantAccountId, psp_account_id AS pspAccountId
+  <resultMap id="paymentAccounts" type="com.outpost.payment.repository.PspEventRepository$PaymentAccounts">
+    <constructor>
+      <arg column="merchant_account_id" javaType="_long"/>
+      <arg column="psp_account_id" javaType="_long"/>
+      <arg column="psp_reference" javaType="String"/>
+    </constructor>
+  </resultMap>
+  <select id="findPaymentAccounts" resultMap="paymentAccounts">
+    SELECT account_id AS merchant_account_id, psp_account_id, psp_reference
     FROM merchant_order
     WHERE payment_reference = #{paymentReference}
   </select>

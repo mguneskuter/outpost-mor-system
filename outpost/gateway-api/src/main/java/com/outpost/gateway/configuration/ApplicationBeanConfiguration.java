@@ -21,6 +21,7 @@ import com.outpost.gateway.order.service.OrderService;
 import com.outpost.gateway.paymentmethod.repository.PaymentMethodRepository;
 import com.outpost.gateway.paymentmethod.repository.mybatis.MyBatisPaymentMethodRepository;
 import com.outpost.gateway.paymentmethod.repository.mybatis.PaymentMethodMapper;
+import com.outpost.gateway.psp.api.PspWebhookResponses;
 import com.outpost.gateway.psp.api.PspWebhookSignatureFilter;
 import com.outpost.gateway.psp.service.PspWebhookService;
 import com.outpost.gateway.report.client.LedgerReportClient;
@@ -50,6 +51,7 @@ import com.outpost.payment.repository.mybatis.PspEventQueueMapper;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Value;
@@ -109,10 +111,18 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
+  PspWebhookResponses pspWebhookResponses(MeterRegistry meterRegistry) {
+    return new PspWebhookResponses(meterRegistry);
+  }
+
+  @Bean
   FilterRegistrationBean<PspWebhookSignatureFilter> pspWebhookSignatureFilter(
-      PspConfigurationRepository configurations, ObjectMapper objectMapper) {
+      PspConfigurationRepository configurations,
+      ObjectMapper objectMapper,
+      PspWebhookResponses responses) {
     var registration =
-        new FilterRegistrationBean<>(new PspWebhookSignatureFilter(configurations, objectMapper));
+        new FilterRegistrationBean<>(
+            new PspWebhookSignatureFilter(configurations, objectMapper, responses));
     registration.setOrder(2);
     return registration;
   }

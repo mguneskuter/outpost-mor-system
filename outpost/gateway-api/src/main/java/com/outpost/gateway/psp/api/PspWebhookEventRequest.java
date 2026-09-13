@@ -38,6 +38,6 @@ public record PspWebhookEventRequest(
         eventCode == PspEventCodes.REFUND
             ? Objects.requireNonNull(pspRefundReference, "pspRefundReference")
             : pspReference;
-    return new PspWebhookEvent(pspCode, paymentReference, eventCode, eventReference);
+    return new PspWebhookEvent(pspCode, pspReference, paymentReference, eventCode, eventReference);
   }
 }

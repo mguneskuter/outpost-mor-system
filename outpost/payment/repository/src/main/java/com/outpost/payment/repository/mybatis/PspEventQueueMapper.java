@@ -1,6 +1,7 @@
 package com.outpost.payment.repository.mybatis;
 
 import com.outpost.framework.persistence.RegisteredMapper;
+import com.outpost.payment.repository.PspEventRepository.PaymentAccounts;
 import java.time.Instant;
 import org.apache.ibatis.annotations.Param;
 import org.jspecify.annotations.Nullable;
@@ -8,9 +9,8 @@ import org.jspecify.annotations.Nullable;
 /** Maps PSP event queue operations. */
 @RegisteredMapper
 public interface PspEventQueueMapper {
-  /** Finds the accounts for a payment reference. */
-  @Nullable PaymentAccountsRow findPaymentAccounts(
-      @Param("paymentReference") String paymentReference);
+  /** Finds the accounts and stored PSP reference for a payment reference. */
+  @Nullable PaymentAccounts findPaymentAccounts(@Param("paymentReference") String paymentReference);
 
   /** Inserts a received PSP event. */
   int insertReceived(ReceivedPspEventRow event);
