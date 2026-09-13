@@ -12,6 +12,9 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.postgresql.util.PSQLException;
+import org.postgresql.util.PSQLState;
+import org.postgresql.util.ServerErrorMessage;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 class AccountingSchemaIntegrationTest {
@@ -589,6 +592,34 @@ class AccountingSchemaIntegrationTest {
                       connection, "DELETE FROM transaction_event WHERE transaction_event_id = 300"))
           .isInstanceOf(SQLException.class);
       connection.rollback();
+    }
+  }
+
+  @Test
+  void rejectsTransactionReusingReferenceOfAnotherTransactionType() throws SQLException {
+    try (Connection connection = database.createConnection("")) {
+      setupJournalFixture(connection);
+      execute(connection, "INSERT INTO transaction_type VALUES (2, 'CAPTURE')");
+      connection.commit();
+
+      assertThatThrownBy(
+              () ->
+                  execute(
+                      connection,
+                      "INSERT INTO transaction (transaction_id, transaction_type_id, "
+                          + "parent_transaction_id, account_id, reference, quantity, "
+                          + "currency_id, created_ts) "
+                          + "VALUES (201, 2, 200, 100, 'ref', 100, 1, now())"))
+          .isInstanceOfSatisfying(
+              PSQLException.class,
+              exception -> {
+                assertThat(exception.getSQLState())
+                    .isEqualTo(PSQLState.UNIQUE_VIOLATION.getState());
+                assertThat(exception.getServerErrorMessage())
+                    .isNotNull()
+                    .extracting(ServerErrorMessage::getConstraint)
+                    .isEqualTo("uq_transaction_reference");
+              });
     }
   }
 

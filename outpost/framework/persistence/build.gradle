@@ -30,6 +30,7 @@ dependencies {
     testImplementation project(':common-iso:domain')
     testImplementation project(':accounting:domain')
     testImplementation project(':merchant-configuration:domain')
+    testImplementation project(':common-payment:domain')
     testImplementation 'org.testcontainers:testcontainers-postgresql'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 

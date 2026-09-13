@@ -1,12 +1,15 @@
 package com.outpost.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.common.iso.Currencies;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.fx.provider.FxRateProvider;
+import com.outpost.fx.provider.MissingFxRateException;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -30,6 +33,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 class LedgerApiIntegrationTest {
 
   private static final HmacKey GATEWAY_KEY = HmacKey.fromUtf8("test-gateway-secret");
+  private static final Currencies.Currency EUR = Currencies.EUR.getValue();
+  private static final Currencies.Currency USD = Currencies.USD.getValue();
   private static final PostgreSQLContainer<?> DATABASE =
       PostgresTestDatabase.startContainer(
           "outpost_ledger_api", "outpost_ledger_api", "outpost_ledger_api");
@@ -67,25 +72,32 @@ class LedgerApiIntegrationTest {
   }
 
   @Test
-  void resolvesSeededRateAfterStartup() {
-    assertThat(
-            fxRateProvider
-                .getRate(
-                    Currencies.EUR.getValue(), Currencies.USD.getValue(), LocalDate.of(2026, 9, 10))
-                .rate())
-        .isEqualByComparingTo("1.2500000000");
+  void resolvesRateStoredAfterStartup() {
+    LocalDate rateDate = LocalDate.of(2026, 9, 12);
+    jdbcTemplate.update(
+        "INSERT INTO fx_rate (base_currency_id, quote_currency_id, rate_date, rate, source)"
+            + " VALUES (?, ?, ?, ?, ?)",
+        EUR.getCurrencyId(),
+        USD.getCurrencyId(),
+        rateDate,
+        new BigDecimal("1.1734000000"),
+        "ECB");
+
+    assertThat(fxRateProvider.getRate(EUR, USD, rateDate).rate()).isEqualByComparingTo("1.1734");
   }
 
   @Test
-  void resolutionUsesTheStartupIndex() {
-    jdbcTemplate.update("DELETE FROM fx_rate");
+  void namesThePairAndDateOfMissingRate() {
+    LocalDate rateDate = LocalDate.of(2026, 9, 13);
 
-    assertThat(
-            fxRateProvider
-                .getRate(
-                    Currencies.EUR.getValue(), Currencies.USD.getValue(), LocalDate.of(2026, 9, 10))
-                .rate())
-        .isEqualByComparingTo("1.2500000000");
+    assertThatThrownBy(() -> fxRateProvider.getRate(USD, EUR, rateDate))
+        .isInstanceOfSatisfying(
+            MissingFxRateException.class,
+            missing -> {
+              assertThat(missing.getBaseCurrency()).isSameAs(USD);
+              assertThat(missing.getQuoteCurrency()).isSameAs(EUR);
+              assertThat(missing.getRateDate()).isEqualTo(rateDate);
+            });
   }
 
   @Test

@@ -7,7 +7,6 @@ import com.outpost.accounting.payment.PaymentFeeCalculator;
 import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.fx.FxFee;
-import com.outpost.fx.FxRate;
 import com.outpost.fx.provider.FxRateProvider;
 import com.outpost.fx.provider.cached.CachedFxRateProvider;
 import com.outpost.fx.repository.FxFeeRepository;
@@ -25,11 +24,8 @@ import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.ledger.report.service.BalanceReportService;
 import com.outpost.ledger.security.LedgerAuthenticationProperties;
 import java.time.Clock;
-import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -37,10 +33,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.transaction.PlatformTransactionManager;
 
-/** Wires FX persistence and validates all loaded data before exposing the provider. */
+/** Wires the Ledger's application services and FX persistence. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(LedgerAuthenticationProperties.class)
 public class ApplicationBeanConfiguration {
+
+  /** The in-memory FX rate bound is sized as ordered currency pairs times this many days. */
+  private static final int DAYS_OF_RATES_PER_PAIR = 31;
 
   @Bean
   Clock ledgerClock() {
@@ -102,19 +101,17 @@ public class ApplicationBeanConfiguration {
   }
 
   /**
-   * Loads and validates FX data before returning an in-memory provider.
+   * Validates the FX fees, then returns a provider that reads each requested rate from the
+   * database.
    *
-   * @throws IllegalStateException when the rates or fees do not cover the required currency pairs
+   * @throws IllegalStateException when the fees do not cover every ordered currency pair
    */
   @Bean
   @DependsOn("com.outpost.platform.staticdata.check.SystemSanityCheck")
   FxRateProvider fxRateProvider(FxRateRepository rateRepository, FxFeeRepository feeRepository) {
-    List<FxRate> rates = List.copyOf(rateRepository.findAll());
-    List<FxFee> fees = List.copyOf(feeRepository.findAll());
     Set<CurrencyPair> expectedPairs = expectedPairs();
-    validateRates(rates, expectedPairs);
-    validateFees(fees, expectedPairs);
-    return new CachedFxRateProvider(() -> rates);
+    validateFees(List.copyOf(feeRepository.findAll()), expectedPairs);
+    return new CachedFxRateProvider(rateRepository, expectedPairs.size() * DAYS_OF_RATES_PER_PAIR);
   }
 
   private static Set<CurrencyPair> expectedPairs() {
@@ -127,31 +124,6 @@ public class ApplicationBeanConfiguration {
       }
     }
     return Set.copyOf(pairs);
-  }
-
-  private static void validateRates(List<FxRate> rates, Set<CurrencyPair> expectedPairs) {
-    if (rates.isEmpty()) {
-      throw new IllegalStateException("FX rates must contain at least one date");
-    }
-    Map<LocalDate, Set<CurrencyPair>> pairsByDate = new HashMap<>();
-    Set<RateKey> keys = new HashSet<>();
-    for (FxRate rate : rates) {
-      RateKey key = new RateKey(rate.baseCurrency(), rate.quoteCurrency(), rate.rateDate());
-      if (!keys.add(key)) {
-        throw new IllegalStateException("duplicate FX rate key: " + key);
-      }
-      CurrencyPair pair = new CurrencyPair(rate.baseCurrency(), rate.quoteCurrency());
-      if (!expectedPairs.contains(pair)) {
-        throw new IllegalStateException("unexpected FX rate pair: " + pair);
-      }
-      pairsByDate.computeIfAbsent(rate.rateDate(), ignored -> new HashSet<>()).add(pair);
-    }
-    for (Map.Entry<LocalDate, Set<CurrencyPair>> entry : pairsByDate.entrySet()) {
-      if (!entry.getValue().equals(expectedPairs)) {
-        throw new IllegalStateException(
-            "FX rate date is missing a currency pair: " + entry.getKey());
-      }
-    }
   }
 
   private static void validateFees(List<FxFee> fees, Set<CurrencyPair> expectedPairs) {
@@ -168,6 +140,4 @@ public class ApplicationBeanConfiguration {
   }
 
   private record CurrencyPair(Currency baseCurrency, Currency quoteCurrency) {}
-
-  private record RateKey(Currency baseCurrency, Currency quoteCurrency, LocalDate rateDate) {}
 }

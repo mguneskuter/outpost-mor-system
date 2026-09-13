@@ -1,5 +1,6 @@
 package com.outpost.ledger;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.jdbc.DataSourceBuilder;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.env.MockEnvironment;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -52,17 +54,6 @@ class LedgerApiStartupFailureIntegrationTest {
   }
 
   @Test
-  void failsWhenRatesAreMissing() {
-    JdbcTemplate jdbcTemplate = jdbcTemplate();
-    LedgerStaticDataFixtures.materialize(jdbcTemplate);
-    LedgerStaticDataFixtures.insertFees(jdbcTemplate, true);
-
-    assertThatThrownBy(this::startAgainstDatabase)
-        .isInstanceOf(Exception.class)
-        .hasRootCauseInstanceOf(IllegalStateException.class);
-  }
-
-  @Test
   void failsWhenCurrencyIdentityIsUnknown() {
     JdbcTemplate jdbcTemplate = jdbcTemplate();
     LedgerStaticDataFixtures.materialize(jdbcTemplate);
@@ -91,16 +82,17 @@ class LedgerApiStartupFailureIntegrationTest {
   }
 
   @Test
-  void failsWhenRateDateLacksPair() {
+  void startsWhenStoredRateDateLacksPair() {
     JdbcTemplate jdbcTemplate = jdbcTemplate();
     LedgerStaticDataFixtures.materialize(jdbcTemplate);
     LedgerStaticDataFixtures.insertRates(jdbcTemplate, LocalDate.of(2026, 9, 10), true);
     LedgerStaticDataFixtures.insertRates(jdbcTemplate, LocalDate.of(2026, 9, 11), false);
     LedgerStaticDataFixtures.insertFees(jdbcTemplate, true);
 
-    assertThatThrownBy(this::startAgainstDatabase)
-        .isInstanceOf(Exception.class)
-        .hasRootCauseInstanceOf(IllegalStateException.class);
+    try (ConfigurableApplicationContext context =
+        startAgainstDatabase("gateway-secret", "worker-secret")) {
+      assertThat(context.isActive()).isTrue();
+    }
   }
 
   @Test
@@ -195,7 +187,7 @@ class LedgerApiStartupFailureIntegrationTest {
     startAgainstDatabase(/* gatewayHmacSecret= */ null, /* workerHmacSecret= */ null);
   }
 
-  private void startAgainstDatabase(
+  private ConfigurableApplicationContext startAgainstDatabase(
       @Nullable String gatewayHmacSecret, @Nullable String workerHmacSecret) {
     MockEnvironment environment = new MockEnvironment();
     environment.setProperty("spring.datasource.url", DATABASE.getJdbcUrl());
@@ -207,7 +199,7 @@ class LedgerApiStartupFailureIntegrationTest {
     if (workerHmacSecret != null) {
       environment.setProperty("outpost.ledger.worker-hmac-secret", workerHmacSecret);
     }
-    new SpringApplicationBuilder(LedgerApiApplication.class)
+    return new SpringApplicationBuilder(LedgerApiApplication.class)
         .web(WebApplicationType.NONE)
         .environment(environment)
         .run();

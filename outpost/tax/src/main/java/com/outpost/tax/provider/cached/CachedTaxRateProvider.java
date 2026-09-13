@@ -7,7 +7,6 @@ import com.outpost.payment.common.ProductTypes.ProductType;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
-import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -24,7 +23,7 @@ public final class CachedTaxRateProvider implements TaxRateProvider {
     Map<RateKey, TaxRate> indexed = new HashMap<>();
     for (TaxRate taxRate : repository.findAll()) {
       Objects.requireNonNull(taxRate, "taxRate");
-      RateKey key = new RateKey(taxRate.country(), taxRate.subdivision());
+      RateKey key = new RateKey(taxRate.country(), taxRate.subdivision(), taxRate.productType());
       if (indexed.putIfAbsent(key, taxRate) != null) {
         throw new IllegalArgumentException("duplicate tax-rate jurisdiction: " + key);
       }
@@ -34,14 +33,13 @@ public final class CachedTaxRateProvider implements TaxRateProvider {
 
   @Override
   public TaxRate getRate(
-      Country country,
-      @Nullable CountrySubdivision subdivision,
-      ProductType productType,
-      LocalDate asOf) {
+      Country country, @Nullable CountrySubdivision subdivision, ProductType productType) {
     Objects.requireNonNull(country, "country");
     Objects.requireNonNull(productType, "productType");
-    Objects.requireNonNull(asOf, "asOf");
-    TaxRate taxRate = rates.get(new RateKey(country, subdivision));
+    TaxRate taxRate = rates.get(new RateKey(country, subdivision, productType));
+    if (taxRate == null) {
+      taxRate = rates.get(new RateKey(country, subdivision, null));
+    }
     if (taxRate == null) {
       if (subdivision == null && Countries.UNITED_STATES.getValue().equals(country)) {
         throw new IllegalArgumentException("United States resolution requires a subdivision");
@@ -51,5 +49,8 @@ public final class CachedTaxRateProvider implements TaxRateProvider {
     return taxRate;
   }
 
-  private record RateKey(Country country, @Nullable CountrySubdivision subdivision) {}
+  private record RateKey(
+      Country country,
+      @Nullable CountrySubdivision subdivision,
+      @Nullable ProductType productType) {}
 }

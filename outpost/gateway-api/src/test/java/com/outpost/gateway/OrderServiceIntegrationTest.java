@@ -217,12 +217,12 @@ class OrderServiceIntegrationTest {
   }
 
   private static TaxRateProvider rate() {
-    return (country, subdivision, productType, asOf) ->
-        new TaxRate(country, subdivision, new BigDecimal("0.19"));
+    return (country, subdivision, productType) ->
+        new TaxRate(country, subdivision, productType, new BigDecimal("0.19"));
   }
 
   private static TaxRateProvider barrierRate(CyclicBarrier barrier) {
-    return (country, subdivision, productType, asOf) -> {
+    return (country, subdivision, productType) -> {
       try {
         barrier.await(10, TimeUnit.SECONDS);
       } catch (InterruptedException exception) {
@@ -231,7 +231,7 @@ class OrderServiceIntegrationTest {
       } catch (BrokenBarrierException | TimeoutException exception) {
         throw new AssertionError("both requests did not reach pricing together", exception);
       }
-      return new TaxRate(country, subdivision, new BigDecimal("0.19"));
+      return new TaxRate(country, subdivision, productType, new BigDecimal("0.19"));
     };
   }
 

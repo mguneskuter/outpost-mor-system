@@ -4,8 +4,9 @@ import com.outpost.common.iso.Currencies;
 import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.fx.FxRate;
 import com.outpost.fx.repository.FxRateRepository;
-import java.util.List;
+import java.time.LocalDate;
 import java.util.Objects;
+import java.util.Optional;
 
 /** Converts persisted rate rows and rejects currency metadata that differs from the domain. */
 public final class MyBatisFxRateRepository implements FxRateRepository {
@@ -22,16 +23,17 @@ public final class MyBatisFxRateRepository implements FxRateRepository {
   }
 
   /**
-   * Reads every persisted rate and converts it to a domain value.
+   * {@inheritDoc}
    *
-   * @return the loaded rates, never {@code null}
    * @throws IllegalStateException when persisted currency metadata is unknown or divergent
    */
   @Override
-  public List<FxRate> findAll() {
-    return Objects.requireNonNull(mapper.findAll(), "FX rate rows").stream()
-        .map(row -> toFxRate(Objects.requireNonNull(row, "FX rate row")))
-        .toList();
+  public Optional<FxRate> findFxRateByPairAndRateDate(
+      Currency baseCurrency, Currency quoteCurrency, LocalDate rateDate) {
+    return mapper
+        .findFxRateByPairAndRateDate(
+            baseCurrency.getCurrencyId(), quoteCurrency.getCurrencyId(), rateDate)
+        .map(MyBatisFxRateRepository::toFxRate);
   }
 
   private static FxRate toFxRate(FxRateRecord row) {

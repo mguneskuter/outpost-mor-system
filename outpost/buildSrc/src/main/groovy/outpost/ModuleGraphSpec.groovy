@@ -93,7 +93,8 @@ class ModuleGraphSpec {
             ':account:domain',
             ':common-iso:domain',
             ':accounting:domain',
-            ':merchant-configuration:domain'
+            ':merchant-configuration:domain',
+            ':common-payment:domain'
         ],
         ':framework:logging': [],
         ':framework:security': [],
