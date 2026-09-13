@@ -1,5 +1,6 @@
 plugins {
     id 'outpost.java-conventions'
+    id 'java-library'
 }
 
 group = 'com.outpost.accounting'
@@ -10,7 +11,7 @@ base {
 
 dependencies {
     implementation project(':accounting:api')
-    implementation project(':framework:security')
+    api project(':framework:security')
     implementation 'org.springframework:spring-context'
-    implementation 'org.springframework:spring-web'
+    api 'org.springframework:spring-web'
 }
