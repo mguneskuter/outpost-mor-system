@@ -408,15 +408,14 @@ public class PaymentsController {
       String goodsTypes,
       String createdAt) {
     static PaymentRow of(Payment payment) {
-      String status = status(payment);
       return new PaymentRow(
           payment.orderReference(),
           payment.pspReference() == null ? "" : payment.pspReference(),
           payment.merchantName(),
           payment.merchantCode(),
           payment.pspName(),
-          status,
-          status.equals("captured"),
+          status(payment),
+          payment.refundable(),
           payment.currency(),
           Money.format(payment.grossAmount()),
           Money.format(payment.netAmount()),
@@ -441,7 +440,7 @@ public class PaymentsController {
         case "REFUSED" -> "refused";
         case "CAPTURED" -> "captured";
         case "CAPTURE_FAILED" -> "capture failed";
-        case "REFUNDED" -> "refunded";
+        case "REFUNDED" -> payment.refundable() ? "partly refunded" : "refunded";
         default -> event.toLowerCase(Locale.ROOT).replace('_', ' ');
       };
     }

@@ -64,7 +64,27 @@ public final class JdbcPaymentRepository implements PaymentRepository {
                       JOIN register ON register.register_id = journal_entry_line.register_id
                      WHERE transaction.reference = merchant_order.order_reference
                        AND register.account_id = merchant_order.account_id
-                     LIMIT 1) AS platform_fee
+                     LIMIT 1) AS platform_fee,
+                   EXISTS (SELECT 1
+                             FROM transaction capture
+                             JOIN transaction payment
+                               ON payment.transaction_id = capture.parent_transaction_id
+                             JOIN transaction_event
+                               ON transaction_event.transaction_id = capture.transaction_id
+                             JOIN transaction_event_type
+                               ON transaction_event_type.transaction_event_type_id
+                                  = transaction_event.transaction_event_type_id
+                            WHERE payment.reference = merchant_order.order_reference
+                              AND transaction_event_type.code = 'CAPTURED')
+                   AND EXISTS (SELECT 1
+                                 FROM order_item
+                                WHERE order_item.order_id = merchant_order.order_id
+                                  AND NOT EXISTS (SELECT 1
+                                                    FROM refund_item
+                                                   WHERE refund_item.order_item_id
+                                                         = order_item.order_item_id
+                                                     AND NOT refund_item.refund_failed))
+                   AS refundable
               FROM merchant_order
               JOIN account merchant ON merchant.account_id = merchant_order.account_id
               JOIN account psp ON psp.account_id = merchant_order.psp_account_id
@@ -88,7 +108,8 @@ public final class JdbcPaymentRepository implements PaymentRepository {
                     row.getObject("platform_fee", Long.class),
                     row.getString("shopper_country"),
                     goodsTypes(row.getString("goods_types")),
-                    row.getObject("created_ts", OffsetDateTime.class).toInstant()))
+                    row.getObject("created_ts", OffsetDateTime.class).toInstant(),
+                    row.getBoolean("refundable")))
         .list();
   }
 

@@ -78,7 +78,8 @@ class PagesTest {
           220L,
           "NL",
           List.of("DIGITAL_GOODS", "PHYSICAL_GOODS"),
-          CREATED_AT);
+          CREATED_AT,
+          true);
   private static final Payment UNPAID =
       new Payment(
           "order-2",
@@ -94,7 +95,8 @@ class PagesTest {
           null,
           "DE",
           List.of("DIGITAL_GOODS"),
-          CREATED_AT);
+          CREATED_AT,
+          false);
 
   @Autowired private MockMvc mvc;
   @MockitoBean private MerchantRepository merchants;
@@ -216,6 +218,58 @@ class PagesTest {
         .contains(">MERCHANT_PAYABLE<")
         .contains(">46.20<")
         .contains(">2.20<");
+  }
+
+  @Test
+  void partlyRefundedPaymentKeepsItsRefundButtonUntilEveryLineIsRefunded() throws Exception {
+    Payment partlyRefunded =
+        new Payment(
+            "order-3",
+            "43",
+            "DEMO_MERCHANT",
+            "Demo Merchant",
+            "Demo PSP",
+            "REFUNDED",
+            "EUR",
+            5324,
+            4400,
+            924,
+            220L,
+            "NL",
+            List.of("DIGITAL_GOODS"),
+            CREATED_AT,
+            true);
+    Payment fullyRefunded =
+        new Payment(
+            "order-4",
+            "44",
+            "DEMO_MERCHANT",
+            "Demo Merchant",
+            "Demo PSP",
+            "REFUNDED",
+            "EUR",
+            5324,
+            4400,
+            924,
+            220L,
+            "NL",
+            List.of("DIGITAL_GOODS"),
+            CREATED_AT,
+            false);
+    when(payments.findPayments()).thenReturn(List.of(partlyRefunded, fullyRefunded));
+
+    String page =
+        mvc.perform(get("/payments"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+
+    assertThat(page)
+        .contains(">partly refunded<")
+        .contains("/payments/order-3/refund")
+        .contains(">refunded<")
+        .doesNotContain("/payments/order-4/refund");
   }
 
   @Test
