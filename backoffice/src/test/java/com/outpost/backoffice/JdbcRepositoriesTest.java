@@ -136,18 +136,22 @@ class JdbcRepositoriesTest {
     seed.update(
         "INSERT INTO refund_item (refund_id, order_item_id, refund_failed) VALUES "
             + "(1, 1, false), (2, 2, true)");
-    seed.update("INSERT INTO transaction_type (transaction_type_id, code) VALUES (1, 'PAYMENT')");
+    seed.update(
+        "INSERT INTO transaction_type (transaction_type_id, code) VALUES (1, 'PAYMENT'), "
+            + "(2, 'CAPTURE')");
     seed.update(
         "INSERT INTO transaction_event_type (transaction_event_type_id, code, "
             + "requires_journal_entry) VALUES (1, 'ORDER_CREATED', true), "
-            + "(2, 'AUTHORISED', false)");
+            + "(2, 'AUTHORISED', false), (5, 'CAPTURED', false)");
     seed.update(
         "INSERT INTO transaction (transaction_id, transaction_type_id, parent_transaction_id, "
             + "account_id, reference, quantity, currency_id, created_ts) VALUES "
-            + "(1, 1, NULL, 200, 'order-paid', 119, 3, now())");
+            + "(1, 1, NULL, 200, 'order-paid', 119, 3, now()), "
+            + "(2, 2, 1, 200, 'capture-1', 119, 3, now())");
     seed.update(
         "INSERT INTO transaction_event (transaction_event_id, transaction_id, "
-            + "transaction_event_type_id, event_ts) VALUES (1, 1, 1, now()), (2, 1, 2, now())");
+            + "transaction_event_type_id, event_ts) VALUES (1, 1, 1, now()), (2, 1, 2, now()), "
+            + "(3, 2, 5, now())");
     seed.update(
         "INSERT INTO journal_entry_type (journal_entry_type_id, code) VALUES (3, 'FEE_PENDING')");
     seed.update(
@@ -185,18 +189,29 @@ class JdbcRepositoriesTest {
             Payment::lastEvent,
             Payment::platformFee,
             Payment::shopperCountry,
-            Payment::goodsTypes)
+            Payment::goodsTypes,
+            Payment::refundable)
         .containsExactly(
-            tuple("order-failed", null, "Demo Merchant", "Demo PSP", null, null, "DE", List.of()),
+            tuple(
+                "order-failed",
+                null,
+                "Demo Merchant",
+                "Demo PSP",
+                null,
+                null,
+                "DE",
+                List.of(),
+                false),
             tuple(
                 "order-paid",
                 "41",
                 "Demo Merchant",
                 "Demo PSP",
-                "AUTHORISED",
+                "CAPTURED",
                 5L,
                 "DE",
-                java.util.List.of("PHYSICAL_GOODS", "DIGITAL_GOODS")));
+                java.util.List.of("PHYSICAL_GOODS", "DIGITAL_GOODS"),
+                true));
   }
 
   @Test
@@ -220,7 +235,9 @@ class JdbcRepositoriesTest {
     assertThat(payments.findPaymentEvents("order-paid"))
         .extracting(PaymentEvent::transactionType, PaymentEvent::eventType, PaymentEvent::quantity)
         .containsExactly(
-            tuple("PAYMENT", "ORDER_CREATED", 119L), tuple("PAYMENT", "AUTHORISED", 119L));
+            tuple("PAYMENT", "ORDER_CREATED", 119L),
+            tuple("PAYMENT", "AUTHORISED", 119L),
+            tuple("CAPTURE", "CAPTURED", 119L));
     assertThat(payments.findPaymentJournalLines("order-paid"))
         .extracting(
             PaymentJournalLine::entryType,
