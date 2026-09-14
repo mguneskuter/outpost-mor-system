@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.outpost.accounting.report.BalanceReport;
+import com.outpost.accounting.report.RegisterBalance;
 import com.outpost.accounting.report.ReportPeriod;
-import com.outpost.ledger.report.repository.BalanceReportRepository;
-import com.outpost.ledger.report.repository.RegisterBalance;
+import com.outpost.accounting.report.repository.BalanceReportRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;

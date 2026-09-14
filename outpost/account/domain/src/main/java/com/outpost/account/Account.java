@@ -54,7 +54,7 @@ public final class Account {
     this.createdAt = createdAt;
     this.parentAccount = parentAccount;
     if (parentAccount != null) {
-      parentAccount.addChild(this);
+      parentAccount.attachChild(this);
     }
   }
 
@@ -81,7 +81,7 @@ public final class Account {
       if (parentAccount == null) {
         throw new IllegalArgumentException("a non-root account must have a parent");
       }
-      if (!parentAccount.allowedChildAccountType(accountType)) {
+      if (!parentAccount.getAccountType().isAllowedChildType(accountType)) {
         throw new IllegalArgumentException(
             "account type "
                 + parentAccount.getAccountType().getCode()
@@ -139,11 +139,7 @@ public final class Account {
     return Collections.unmodifiableList(childAccounts);
   }
 
-  private boolean allowedChildAccountType(AccountTypes.AccountType childType) {
-    return accountType.isAllowedChildrenType(childType);
-  }
-
-  void addChild(Account childAccount) {
+  void attachChild(Account childAccount) {
     childAccounts.add(childAccount);
   }
 

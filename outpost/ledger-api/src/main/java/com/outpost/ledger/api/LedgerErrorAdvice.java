@@ -1,13 +1,13 @@
 package com.outpost.ledger.api;
 
+import com.outpost.accounting.api.AccountingQueueErrorTypes;
 import com.outpost.accounting.api.AccountingQueueResult;
-import com.outpost.accounting.api.AccountingRequestErrorTypes;
 import com.outpost.accounting.api.LedgerErrorResponse;
 import com.outpost.accounting.report.InvalidReportPeriodException;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
-import com.outpost.ledger.accountingrequest.service.AccountingRequestRefusedException;
+import com.outpost.ledger.accounting.queue.service.AccountingQueueRefusedException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -31,11 +31,11 @@ public final class LedgerErrorAdvice {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(LedgerErrorAdvice.class));
 
-  @ExceptionHandler(AccountingRequestRefusedException.class)
-  ResponseEntity<AccountingQueueResult> refused(AccountingRequestRefusedException exception) {
-    AccountingRequestErrorTypes error = exception.getError();
+  @ExceptionHandler(AccountingQueueRefusedException.class)
+  ResponseEntity<AccountingQueueResult> refused(AccountingQueueRefusedException exception) {
+    AccountingQueueErrorTypes error = exception.getError();
     List<StructuredLogField> fields = new ArrayList<>();
-    fields.add(new StructuredLogField(LogField.ERROR, error.name()));
+    fields.add(new StructuredLogField(LogFields.ERROR, error.name()));
     exception.getRequest().ifPresent(request -> fields.addAll(List.of(request.logFields())));
     LOGGER.info("Accounting request refused", fields.toArray(StructuredLogField[]::new));
     HttpStatus status =
@@ -78,24 +78,8 @@ public final class LedgerErrorAdvice {
     LOGGER.error(
         "Request failed",
         exception,
-        new StructuredLogField(LogField.CORRELATION_ID, correlationId));
+        new StructuredLogField(LogFields.CORRELATION_ID, correlationId));
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(new LedgerErrorResponse(LedgerErrorResponse.INTERNAL_ERROR, correlationId));
-  }
-
-  private enum LogField implements LogFields {
-    CORRELATION_ID("correlation_id"),
-    ERROR("error");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
-    }
   }
 }

@@ -183,10 +183,10 @@ class GatewayApiIntegrationTest {
     assertResult(postWebhook("UNKNOWN", valid, "bad"), 404, "UNKNOWN_PSP");
     String unknownOrder = payload(PSP_CODE, "unknown-order", PSP_REFERENCE);
     assertResult(
-        postWebhook(PSP_CODE, unknownOrder, signature(unknownOrder)), 200, "UNKNOWN_PAYMENT");
+        postWebhook(PSP_CODE, unknownOrder, signature(unknownOrder)), 200, "UNKNOWN_ORDER");
     String foreignOrder = payload(PSP_CODE, FOREIGN_ORDER_REFERENCE, FOREIGN_PSP_REFERENCE);
     assertResult(
-        postWebhook(PSP_CODE, foreignOrder, signature(foreignOrder)), 200, "FOREIGN_PAYMENT");
+        postWebhook(PSP_CODE, foreignOrder, signature(foreignOrder)), 200, "UNKNOWN_ORDER");
     String otherReference = payload(PSP_CODE, ORDER_REFERENCE, "other-psp-reference");
     assertResult(
         postWebhook(PSP_CODE, otherReference, signature(otherReference)),

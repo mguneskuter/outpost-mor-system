@@ -12,4 +12,23 @@
          AND currency.currency_code = #{currencyCode}
     )
   </select>
+
+  <resultMap id="merchantFeeConfiguration" type="com.outpost.account.configuration.repository.mybatis.MerchantFeeConfiguration">
+    <constructor>
+      <idArg column="merchant_fee_configuration_id" javaType="_long"/>
+      <arg column="fee_mode" javaType="string"/>
+      <arg column="fee_rate_bps" javaType="_int"/>
+      <arg column="fee_fixed" javaType="long"/>
+    </constructor>
+  </resultMap>
+
+  <select id="findMerchantFeeConfigurationByAccountAndCurrency" resultMap="merchantFeeConfiguration">
+    SELECT fee.merchant_fee_configuration_id, fee_mode.code AS fee_mode, fee.fee_rate_bps,
+           fee.fee_fixed
+      FROM merchant_fee_configuration fee
+      JOIN currency ON currency.currency_id = fee.currency_id
+      JOIN fee_mode ON fee_mode.fee_mode_id = fee.fee_mode_id
+     WHERE fee.account_id = #{merchantAccountId}
+       AND currency.currency_code = #{currencyCode}
+  </select>
 </mapper>

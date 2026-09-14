@@ -1,0 +1,16 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+group = 'com.outpost.fx'
+
+base {
+    archivesName = 'fx-repository'
+}
+
+dependencies {
+    implementation project(':fx:domain')
+    implementation project(':common-iso:domain')
+    implementation project(':framework:persistence')
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
+}

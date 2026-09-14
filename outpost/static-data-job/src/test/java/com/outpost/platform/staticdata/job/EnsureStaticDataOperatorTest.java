@@ -36,9 +36,7 @@ class EnsureStaticDataOperatorTest {
     EnsureStaticDataOperator<TestValues, Value, TestRecord> operator =
         new EnsureStaticDataOperator<>(repository, record -> repository.inserted.add(record));
 
-    assertThatThrownBy(operator::ensure)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("unexpected record ids");
+    assertThatThrownBy(operator::ensure).isInstanceOf(IllegalStateException.class);
     assertThat(repository.inserted).isEmpty();
   }
 

@@ -4,10 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.outpost.accounting.api.AccountingQueueApi;
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.AccountingQueueRequestTypes;
 import com.outpost.accounting.api.AccountingQueueResult;
-import com.outpost.accounting.api.AccountingRequestApi;
 import com.outpost.accounting.api.BalanceReportApi;
 import com.outpost.accounting.api.client.LedgerClientConfiguration;
 import com.outpost.accounting.api.client.LedgerHttpServiceGroupConfigurer;
@@ -172,7 +172,7 @@ class LedgerApiIntegrationTest {
   @Test
   void acceptsGatewaySignedAccountingRequestThroughTheLedgerClient() {
     try (AnnotationConfigApplicationContext gateway = ledgerClient(GATEWAY_KEY)) {
-      AccountingRequestApi accountingRequests = gateway.getBean(AccountingRequestApi.class);
+      AccountingQueueApi accountingRequests = gateway.getBean(AccountingQueueApi.class);
       AccountingQueueRequest capture =
           new AccountingQueueRequest(
               AccountingQueueRequestTypes.CAPTURE,

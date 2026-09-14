@@ -13,6 +13,11 @@ public record CreateOrderResult(
     long grossAmount,
     String paymentLink,
     List<OrderLineResult> lines) {
+  /** Copies the lines so the result cannot change after it is created. */
+  public CreateOrderResult {
+    lines = List.copyOf(lines);
+  }
+
   /** One persisted line and its tax calculation. */
   public record OrderLineResult(
       String orderLineReference,

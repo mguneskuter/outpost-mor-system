@@ -1,5 +1,6 @@
 package com.outpost.account.repository.mybatis;
 
+import java.util.List;
 import org.apache.ibatis.annotations.Param;
 import org.jspecify.annotations.Nullable;
 
@@ -17,4 +18,7 @@ interface AccountMapper {
 
   /** Finds the TAX_AUTHORITY account that collects tax for the country with this id. */
   @Nullable Account findTaxAuthorityAccountByCountryId(@Param("countryId") long countryId);
+
+  /** Finds the accounts of the account type with this code. */
+  List<Account> findAccountsByAccountType(@Param("accountType") String accountType);
 }

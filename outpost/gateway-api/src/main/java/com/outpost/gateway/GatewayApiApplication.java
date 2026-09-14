@@ -1,7 +1,7 @@
 package com.outpost.gateway;
 
 import com.outpost.account.configuration.repository.sanity.MerchantConfigurationStaticDataRepositories;
-import com.outpost.account.repository.sanity.AccountConfigurationStaticDataRepositories;
+import com.outpost.account.repository.sanity.AccountStaticDataRepositories;
 import com.outpost.common.iso.repository.sanity.CommonIsoStaticDataRepositories;
 import com.outpost.framework.persistence.EnableOutpostPersistence;
 import com.outpost.payment.common.repository.sanity.CommonPaymentStaticDataRepositories;
@@ -24,15 +24,14 @@ import org.springframework.context.annotation.Import;
       "com.outpost.account.repository.sanity",
       "com.outpost.account.configuration.repository.sanity",
       "com.outpost.account.configuration.repository.mybatis",
-      "com.outpost.integration.psp.simulator.repository.mybatis",
       "com.outpost.payment.repository.mybatis",
-      "com.outpost.gateway.report.repository.mybatis"
+      "com.outpost.tax.repository.mybatis"
     })
 @EnableSystemSanityCheck
 @Import({
   CommonIsoStaticDataRepositories.class,
   CommonPaymentStaticDataRepositories.class,
-  AccountConfigurationStaticDataRepositories.class,
+  AccountStaticDataRepositories.class,
   MerchantConfigurationStaticDataRepositories.class
 })
 public class GatewayApiApplication {

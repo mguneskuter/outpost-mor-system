@@ -1,17 +1,17 @@
 package com.outpost.accounting.templates;
 
 import com.outpost.account.AccountTypes;
-import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.JournalEntryLine;
 import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.JournalEntryTypes.JournalEntryType;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
-import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
 import com.outpost.accounting.TransactionTypes.TransactionType;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.JournalEntryLine;
+import com.outpost.accounting.transaction.TransactionEvent;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
 import java.util.Map;

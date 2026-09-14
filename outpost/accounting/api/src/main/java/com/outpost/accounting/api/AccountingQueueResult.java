@@ -7,7 +7,7 @@ import org.jspecify.annotations.Nullable;
  * What the Ledger did with one accounting request, with the identifying fields of the request it
  * answers. A refused request's fields are echoed as sent, so any of them may be absent.
  *
- * @param resultCode {@link #ACCEPTED}, or the name of the {@link AccountingRequestErrorTypes} that
+ * @param resultCode {@link #ACCEPTED}, or the name of the {@link AccountingQueueErrorTypes} that
  *     refused the request
  * @param reason why the request was refused; absent when it was accepted
  */
@@ -42,7 +42,7 @@ public record AccountingQueueResult(
 
   /** Answers {@code request}, refused for {@code error}. */
   public static AccountingQueueResult refused(
-      AccountingQueueRequest request, AccountingRequestErrorTypes error) {
+      AccountingQueueRequest request, AccountingQueueErrorTypes error) {
     return new AccountingQueueResult(
         false,
         error.name(),
@@ -57,7 +57,7 @@ public record AccountingQueueResult(
   }
 
   /** Answers a refusal for {@code error} when the body named no request. */
-  public static AccountingQueueResult refused(AccountingRequestErrorTypes error) {
+  public static AccountingQueueResult refused(AccountingQueueErrorTypes error) {
     return new AccountingQueueResult(
         false, error.name(), error.getReason(), null, null, null, null, null, null, null);
   }

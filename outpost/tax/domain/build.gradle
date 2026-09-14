@@ -1,0 +1,21 @@
+plugins {
+    id 'outpost.domain-conventions'
+}
+
+group = 'com.outpost.tax'
+
+base {
+    archivesName = 'tax-domain'
+}
+
+dependencies {
+    implementation project(':platform-sanity:static-data-model')
+    implementation project(':common-iso:domain')
+    implementation project(':payment:common:domain')
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

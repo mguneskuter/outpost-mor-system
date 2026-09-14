@@ -13,8 +13,8 @@ import com.outpost.accounting.report.BalanceReport;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.web.SizeBoundedRequestBody;
-import com.outpost.ledger.accountingrequest.api.AccountingRequestController;
-import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
+import com.outpost.ledger.accounting.queue.api.AccountingQueueController;
+import com.outpost.ledger.accounting.queue.service.AccountingQueueService;
 import com.outpost.ledger.report.api.BalanceReportController;
 import com.outpost.ledger.report.service.BalanceReportService;
 import jakarta.servlet.Filter;
@@ -50,7 +50,8 @@ import tools.jackson.databind.ObjectMapper;
 @SpringJUnitWebConfig(LedgerSecurityConfigurationTest.LedgerRoutes.class)
 @TestPropertySource(
     properties =
-        "outpost.ledger.gateway-hmac-secret=" + LedgerSecurityConfigurationTest.GATEWAY_SECRET)
+        "outpost.ledger.authentication.gateway-hmac-secret="
+            + LedgerSecurityConfigurationTest.GATEWAY_SECRET)
 class LedgerSecurityConfigurationTest {
 
   static final String GATEWAY_SECRET = "gateway-secret";
@@ -190,15 +191,15 @@ class LedgerSecurityConfigurationTest {
   @EnableConfigurationProperties(LedgerAuthenticationProperties.class)
   @Import({
     LedgerSecurityConfiguration.class,
-    AccountingRequestController.class,
+    AccountingQueueController.class,
     BalanceReportController.class,
     UnlistedController.class
   })
   static class LedgerRoutes {
 
     @Bean
-    AccountingRequestService accountingRequestService() {
-      return mock(AccountingRequestService.class);
+    AccountingQueueService accountingRequestService() {
+      return mock(AccountingQueueService.class);
     }
 
     @Bean

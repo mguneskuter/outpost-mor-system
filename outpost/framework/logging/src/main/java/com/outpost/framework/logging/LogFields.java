@@ -1,13 +1,44 @@
 package com.outpost.framework.logging;
 
-/**
- * A closed description of one structured-log field.
- *
- * <p>Business modules own implementations of this interface. The framework only uses the stable
- * JSON key and never accepts caller-supplied key names, maps, request bodies, or domain objects.
- */
-public interface LogFields {
+/** The structured log fields Outpost writes; one key has one meaning in every service. */
+public enum LogFields implements LogField {
+  ATTEMPTS("attempts"),
+  CAPTURE_REFERENCE("capture_reference"),
+  CODE("code"),
+  CORRELATION_ID("correlation_id"),
+  CURRENCY("currency"),
+  ERROR("error"),
+  EVENT("event"),
+  EVENT_CODE("event_code"),
+  FAILURE("authentication_failure"),
+  FEE_AMOUNT("fee_amount"),
+  GROSS_AMOUNT("gross_amount"),
+  MERCHANT_ACCOUNT_ID("merchant_account_id"),
+  MERCHANT_CODE("merchant_code"),
+  NET_AMOUNT("net_amount"),
+  ORDER_REFERENCE("order_reference"),
+  ORIGINAL_REFERENCE("original_reference"),
+  PSP_CODE("psp_code"),
+  PSP_REFERENCE("psp_reference"),
+  PSP_RESULT("psp_result"),
+  QUEUE("queue"),
+  REFUND_REFERENCE("refund_reference"),
+  REJECTION_REASON("rejection_reason"),
+  REQUEST_TYPE("request_type"),
+  RESULT_CODE("result_code"),
+  STATUS("status"),
+  SUCCESS("success"),
+  TAX_AMOUNT("tax_amount"),
+  WEBHOOK_RESULT("webhook_result");
 
-  /** Returns the stable JSON key owned by the implementing module. */
-  String getJsonKey();
+  private final String jsonKey;
+
+  LogFields(String jsonKey) {
+    this.jsonKey = jsonKey;
+  }
+
+  @Override
+  public String getJsonKey() {
+    return jsonKey;
+  }
 }

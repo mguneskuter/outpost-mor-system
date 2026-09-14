@@ -1,30 +1,20 @@
 package com.outpost.ledger.payment.service;
 
-import com.outpost.account.Account;
-import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.RefundDetail;
-import com.outpost.accounting.Register;
-import com.outpost.accounting.RegisterTypes;
-import com.outpost.accounting.Transaction;
-import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionTypes;
+import com.outpost.accounting.journalentry.CaptureRegisters;
+import com.outpost.accounting.journalentry.JournalEntry;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
 import com.outpost.accounting.templates.RefundJournalTemplates;
-import com.outpost.common.iso.Currencies;
-import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.accounting.transaction.PaymentDetail;
+import com.outpost.accounting.transaction.RefundDetail;
+import com.outpost.accounting.transaction.Transaction;
+import com.outpost.accounting.transaction.TransactionEvent;
+import com.outpost.accounting.transaction.repository.TransactionRepository;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
-import com.outpost.ledger.payment.repository.CapturePosting;
-import com.outpost.ledger.payment.repository.ExistingPayment;
-import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentRepository;
-import com.outpost.ledger.payment.repository.PaymentTransaction;
-import com.outpost.ledger.payment.repository.RefundChild;
-import com.outpost.ledger.payment.repository.StoredTransaction;
-import com.outpost.payment.common.Amount;
-import java.util.Arrays;
+import java.util.Optional;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,14 +22,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class RefundService {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(RefundService.class));
-  private final PaymentRepository repository;
-  private final JournalEntryRepository journalEntryRepository;
+  private final TransactionRepository transactions;
+  private final JournalEntryRepository journalEntries;
 
-  /** Creates a service using the persistence seams. */
-  public RefundService(
-      PaymentRepository repository, JournalEntryRepository journalEntryRepository) {
-    this.repository = repository;
-    this.journalEntryRepository = journalEntryRepository;
+  /** Creates a service over the repositories it books through. */
+  public RefundService(TransactionRepository transactions, JournalEntryRepository journalEntries) {
+    this.transactions = transactions;
+    this.journalEntries = journalEntries;
   }
 
   /**
@@ -47,172 +36,100 @@ public class RefundService {
    * transaction for the payment's gross, its refund detail for the payment's net and tax, the
    * REFUNDED event, and the REFUND entry. A repeat of a booked refund writes nothing.
    *
-   * @throws RefundException 404 PAYMENT_NOT_FOUND, 409 REFERENCE_CONFLICT, 422 NOT_CAPTURED, 422
-   *     ALREADY_REFUNDED
+   * @throws BookingException when the request is not booked; its code says why
    */
   @Transactional
-  public void refund(String originalReference, String refundReference) {
-    long refunded = TransactionEventTypes.REFUNDED.getValue().getTransactionEventTypeId();
-    PaymentTransaction payment = repository.findPaymentTransactionForUpdate(originalReference);
-    if (payment == null) {
-      throw new RefundException(404, "PAYMENT_NOT_FOUND");
-    }
-    RefundChild existing = repository.findRefundByReference(refundReference);
-    if (existing != null) {
-      if (existing.paymentTransactionId() == payment.transactionId()
-          && existing.eventTypeId() != null
-          && existing.eventTypeId() == refunded) {
+  public void bookRefund(String originalReference, String refundReference) {
+    PaymentDetail payment =
+        transactions
+            .findPaymentDetailByReferenceForUpdate(originalReference)
+            .orElseThrow(() -> refused(BookingErrorCodes.PAYMENT_NOT_FOUND));
+    Transaction paymentTransaction = payment.getPaymentTransaction();
+    Optional<RefundDetail> bookedRefund = transactions.findRefundDetailByReference(refundReference);
+    if (bookedRefund.isPresent()) {
+      if (isRefundOf(bookedRefund.get(), originalReference)) {
         LOGGER.info(
             "Refund already booked",
-            new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
-            new StructuredLogField(LogField.REFUND_REFERENCE, refundReference));
+            new StructuredLogField(LogFields.ORIGINAL_REFERENCE, originalReference),
+            new StructuredLogField(LogFields.REFUND_REFERENCE, refundReference));
         return;
       }
-      throw new RefundException(409, "REFERENCE_CONFLICT");
+      throw refused(BookingErrorCodes.REFERENCE_CONFLICT);
     }
-    if (!repository.hasExactlyOneSuccessfulFullCapture(
-        payment.transactionId(), payment.grossQuantity(), payment.currencyId())) {
-      throw new RefundException(422, "NOT_CAPTURED");
+    if (!isCapturedInFull(paymentTransaction)) {
+      throw refused(BookingErrorCodes.NOT_CAPTURED);
     }
-    for (RefundChild child : repository.findRefundChildren(payment.transactionId())) {
-      if (child.eventTypeId() != null && child.eventTypeId() == refunded) {
-        throw new RefundException(422, "ALREADY_REFUNDED");
-      }
+    if (!transactions.findRefundDetailsByPayment(paymentTransaction).isEmpty()) {
+      throw refused(BookingErrorCodes.ALREADY_REFUNDED);
     }
-    StoredTransaction refund =
-        repository.insertRefundTransaction(
-            payment.transactionId(),
-            payment.merchantAccountId(),
-            refundReference,
-            payment.grossQuantity(),
-            payment.currencyId());
-    if (refund == null) {
-      throw new RefundException(409, "REFERENCE_CONFLICT");
-    }
-    repository.insertRefundDetail(
-        refund.transactionId(), payment.netQuantity(), payment.taxQuantity());
-    PaymentEvent event = repository.insertPaymentEvent(refund.transactionId(), refunded);
-    if (event == null) {
-      throw new RefundException(500, "INTERNAL_ERROR");
-    }
-    RefundChild stored = repository.findRefundByReference(refundReference);
-    if (stored == null) {
-      throw new RefundException(500, "INTERNAL_ERROR");
-    }
-    appendRefundEntry(payment, originalReference, stored, event);
+    RefundDetail refund =
+        transactions
+            .insertRefundDetail(requestedRefund(payment, refundReference))
+            .orElseThrow(() -> refused(BookingErrorCodes.REFERENCE_CONFLICT));
+    TransactionEvent refunded =
+        transactions
+            .insertTransactionEvent(
+                refund.getRefundTransaction(), TransactionEventTypes.REFUNDED.getValue())
+            .orElseThrow(() -> refused(BookingErrorCodes.INCONSISTENT_BOOKING));
+    CaptureRegisters captureRegisters =
+        journalEntries
+            .findCaptureRegistersByPayment(paymentTransaction)
+            .orElseThrow(() -> refused(BookingErrorCodes.INCONSISTENT_BOOKING));
+    journalEntries.insertJournalEntry(refundEntry(refunded, refund, captureRegisters));
     LOGGER.info(
         "Refund booked: the capture's net and tax reversed",
-        new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
-        new StructuredLogField(LogField.REFUND_REFERENCE, refundReference));
+        new StructuredLogField(LogFields.ORIGINAL_REFERENCE, originalReference),
+        new StructuredLogField(LogFields.REFUND_REFERENCE, refundReference));
   }
 
-  private void appendRefundEntry(
-      PaymentTransaction payment,
-      String originalReference,
-      RefundChild refund,
-      PaymentEvent event) {
+  private boolean isCapturedInFull(Transaction payment) {
+    return transactions
+        .findCaptureTransactionEventByPayment(payment)
+        .filter(
+            event ->
+                event.getTransactionEventType().equals(TransactionEventTypes.CAPTURED.getValue())
+                    && event.getTransaction().getAmount().equals(payment.getAmount()))
+        .isPresent();
+  }
+
+  private static boolean isRefundOf(RefundDetail refund, String originalReference) {
+    return refund
+        .getRefundTransaction()
+        .getParentTransaction()
+        .filter(payment -> payment.getReference().equals(originalReference))
+        .isPresent();
+  }
+
+  private static RefundDetail requestedRefund(PaymentDetail payment, String refundReference) {
+    Transaction paymentTransaction = payment.getPaymentTransaction();
     try {
-      CapturePosting posting = repository.findCapturePosting(payment.transactionId());
-      Currency currency = currency(payment.currencyId());
-      if (posting == null
-          || posting.currencyId() != payment.currencyId()
-          || refund.currencyId() != payment.currencyId()
-          || refund.quantity() != Math.addExact(refund.netQuantity(), refund.taxQuantity())) {
-        throw new IllegalArgumentException("capture posting is not compatible with refund");
-      }
-      Register psp =
-          register(posting.pspAccountId(), RegisterTypes.PSP_RECEIVABLE, posting.pspRegisterId());
-      Register tax =
-          register(
-              posting.taxAuthorityAccountId(), RegisterTypes.TAX_PAYABLE, posting.taxRegisterId());
-      Register merchant =
-          register(
-              posting.merchantAccountId(),
-              RegisterTypes.MERCHANT_PAYABLE,
-              posting.merchantRegisterId());
-
-      Transaction parentTransaction = buildTransaction(payment, originalReference);
-      Transaction refundTransaction =
+      return new RefundDetail(
           Transaction.childOf(
-              parentTransaction,
-              refund.transactionId(),
+              paymentTransaction,
+              null,
               TransactionTypes.REFUND.getValue(),
-              parentTransaction.getMerchantAccount(),
-              refund.reference(),
-              new Amount(currency, refund.quantity()),
-              refund.createdTs());
-      new RefundDetail(
-          refundTransaction,
-          new Amount(currency, refund.netQuantity()),
-          new Amount(currency, refund.taxQuantity()));
-      TransactionEvent refundEvent =
-          new TransactionEvent(
-              event.transactionEventId(),
-              refundTransaction,
-              TransactionEventTypes.REFUNDED.getValue(),
-              event.occurredAt());
-      JournalEntry refundEntry =
-          RefundJournalTemplates.REFUND.build(
-              refundEvent,
-              psp,
-              tax,
-              merchant,
-              new Amount(currency, refund.quantity()),
-              new Amount(currency, refund.netQuantity()),
-              new Amount(currency, refund.taxQuantity()),
-              event.occurredAt());
-      journalEntryRepository.insertJournalEntry(refundEntry);
+              paymentTransaction.getMerchantAccount(),
+              refundReference,
+              paymentTransaction.getAmount(),
+              null),
+          payment.getNetAmount(),
+          payment.getTaxAmount());
+    } catch (IllegalArgumentException exception) {
+      throw new BookingException(BookingErrorCodes.INVALID_REQUEST, exception);
+    }
+  }
+
+  private static JournalEntry refundEntry(
+      TransactionEvent refunded, RefundDetail refund, CaptureRegisters captureRegisters) {
+    try {
+      return RefundJournalTemplates.REFUND.build(
+          refunded, refund, captureRegisters, refunded.getOccurredAt());
     } catch (IllegalArgumentException | ArithmeticException exception) {
-      throw new RefundException(500, "INTERNAL_ERROR");
+      throw new BookingException(BookingErrorCodes.INCONSISTENT_BOOKING, exception);
     }
   }
 
-  private Transaction buildTransaction(PaymentTransaction payment, String originalReference) {
-    Account merchant = repository.findAccountById(payment.merchantAccountId());
-    ExistingPayment created = repository.findByReference(originalReference);
-    if (merchant == null || created == null || created.transactionId() != payment.transactionId()) {
-      throw new IllegalArgumentException("payment transaction is missing");
-    }
-    return Transaction.of(
-        payment.transactionId(),
-        TransactionTypes.PAYMENT.getValue(),
-        merchant,
-        created.reference(),
-        new Amount(currency(payment.currencyId()), payment.grossQuantity()),
-        created.createdTs());
-  }
-
-  private Register register(long accountId, RegisterTypes type, long expectedRegisterId) {
-    Register register = repository.findRegister(accountId, type.getValue().getRegisterTypeId());
-    if (register == null
-        || register.getAccount().getAccountId() != accountId
-        || register.getRegisterId() != expectedRegisterId) {
-      throw new IllegalArgumentException("register is missing or differs from the posted one");
-    }
-    return register;
-  }
-
-  private static Currency currency(long currencyId) {
-    return Arrays.stream(Currencies.values())
-        .map(Currencies::getValue)
-        .filter(value -> value.getCurrencyId() == currencyId)
-        .findFirst()
-        .orElseThrow(IllegalArgumentException::new);
-  }
-
-  private enum LogField implements LogFields {
-    ORIGINAL_REFERENCE("original_reference"),
-    REFUND_REFERENCE("refund_reference");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
-    }
+  private static BookingException refused(BookingErrorCodes code) {
+    return new BookingException(code, null);
   }
 }

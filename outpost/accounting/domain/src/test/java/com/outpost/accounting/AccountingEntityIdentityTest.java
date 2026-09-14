@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.JournalEntryLine;
+import com.outpost.accounting.transaction.Transaction;
 import com.outpost.common.iso.Currencies;
 import com.outpost.payment.common.Amount;
 import org.junit.jupiter.api.Test;
@@ -40,7 +43,7 @@ class AccountingEntityIdentityTest {
     assertEquals(payment.hashCode(), AccountingFixtures.payment(3L).hashCode());
     assertNotEquals(
         payment,
-        new Transaction(
+        Transaction.of(
             4L,
             TransactionTypes.PAYMENT.getValue(),
             AccountingFixtures.merchant(),
@@ -49,7 +52,7 @@ class AccountingEntityIdentityTest {
             AccountingFixtures.CREATED));
     assertNotEquals(
         payment,
-        new Transaction(
+        Transaction.of(
             3L,
             TransactionTypes.CAPTURE.getValue(),
             AccountingFixtures.merchant(),
@@ -58,7 +61,7 @@ class AccountingEntityIdentityTest {
             AccountingFixtures.CREATED));
     assertNotEquals(
         payment,
-        new Transaction(
+        Transaction.of(
             3L,
             TransactionTypes.PAYMENT.getValue(),
             AccountingFixtures.psp(),
@@ -67,7 +70,7 @@ class AccountingEntityIdentityTest {
             AccountingFixtures.CREATED));
     assertNotEquals(
         payment,
-        new Transaction(
+        Transaction.of(
             3L,
             TransactionTypes.PAYMENT.getValue(),
             AccountingFixtures.merchant(),
@@ -76,7 +79,7 @@ class AccountingEntityIdentityTest {
             AccountingFixtures.CREATED));
     assertNotEquals(
         payment,
-        new Transaction(
+        Transaction.of(
             3L,
             TransactionTypes.PAYMENT.getValue(),
             AccountingFixtures.merchant(),
@@ -91,7 +94,7 @@ class AccountingEntityIdentityTest {
   void transactionsIgnoreCreatedAtBecauseItIsNotPartOfTheirIdentity() {
     Transaction payment = AccountingFixtures.payment(3L);
     Transaction withDifferentCreatedAt =
-        new Transaction(
+        Transaction.of(
             3L,
             TransactionTypes.PAYMENT.getValue(),
             AccountingFixtures.merchant(),
@@ -113,7 +116,7 @@ class AccountingEntityIdentityTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new Transaction(
+            Transaction.of(
                 0L,
                 TransactionTypes.PAYMENT.getValue(),
                 AccountingFixtures.merchant(),

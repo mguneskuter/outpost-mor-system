@@ -1,16 +1,16 @@
 package com.outpost.integration.psp.simulator;
 
-import static com.outpost.integration.psp.service.ResultCode.ACCEPTED;
-import static com.outpost.integration.psp.service.ResultCode.REJECTED;
-import static com.outpost.integration.psp.service.ResultCode.UNKNOWN;
+import static com.outpost.integration.psp.PspResultCodes.ACCEPTED;
+import static com.outpost.integration.psp.PspResultCodes.REJECTED;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.outpost.common.iso.Currencies;
-import com.outpost.integration.psp.service.CreateOrderRequest;
-import com.outpost.integration.psp.service.CreateOrderResult;
-import com.outpost.integration.psp.service.RefundRequest;
-import com.outpost.integration.psp.service.RefundResult;
-import com.outpost.integration.psp.simulator.repository.PspConfiguration;
+import com.outpost.integration.psp.CreatePspOrderRequest;
+import com.outpost.integration.psp.CreatePspOrderResult;
+import com.outpost.integration.psp.RefundPspOrderRequest;
+import com.outpost.integration.psp.RefundPspOrderResult;
+import com.outpost.integration.psp.UnknownPspResultException;
 import com.outpost.payment.common.Amount;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +37,7 @@ class SimulatorPspClientTest {
     server.createContext("/", this::handle);
     server.setExecutor(Executors.newSingleThreadExecutor());
     server.start();
-    client = new SimulatorPspClient(code -> Optional.of(configuration()));
+    client = new SimulatorPspClient(code -> Optional.of(configuration(1000)));
   }
 
   @AfterEach
@@ -46,11 +47,11 @@ class SimulatorPspClientTest {
 
   @Test
   void sendsCreateAndRefundRequestsAndMapsResponses() {
-    var create = client.createOrder(new CreateOrderRequest("DEMO_PSP", "pay-1", amount(10)));
-    var refund = client.refund(new RefundRequest("DEMO_PSP", "psp-1", "refund-1"));
+    var create = client.createOrder(new CreatePspOrderRequest("DEMO_PSP", "pay-1", amount(10)));
+    var refund = client.refund(new RefundPspOrderRequest("DEMO_PSP", "psp-1", "refund-1"));
 
-    assertThat(create).isEqualTo(new CreateOrderResult("psp-1", "https://pay", ACCEPTED));
-    assertThat(refund).isEqualTo(new RefundResult("psp-1", "refund-1", ACCEPTED));
+    assertThat(create).isEqualTo(new CreatePspOrderResult("psp-1", "https://pay", ACCEPTED));
+    assertThat(refund).isEqualTo(new RefundPspOrderResult("psp-1", "refund-1", ACCEPTED));
     assertThat(requests)
         .containsExactly(
             "/v1/DEMO_PSP/order|{\"payment_reference\":\"pay-1\",\"amount\":10,"
@@ -61,39 +62,59 @@ class SimulatorPspClientTest {
 
   @Test
   void mapsRejectedRefundResponse() {
-    server.removeContext("/");
-    server.createContext(
-        "/",
-        exchange ->
-            respond(exchange, 200, "{\"psp_refund_reference\":\"refund-1\",\"accepted\":false}"));
+    answerEveryCall(200, "{\"psp_refund_reference\":\"refund-1\",\"accepted\":false}");
 
-    var result = client.refund(new RefundRequest("DEMO_PSP", "psp-1", "refund-1"));
+    var result = client.refund(new RefundPspOrderRequest("DEMO_PSP", "psp-1", "refund-1"));
 
-    assertThat(result).isEqualTo(new RefundResult("psp-1", "refund-1", REJECTED));
+    assertThat(result).isEqualTo(new RefundPspOrderResult("psp-1", "refund-1", REJECTED));
   }
 
   @Test
-  void reportsTimeoutAsUnknownWithoutRetrying() throws IOException {
+  void mapsCallTheSimulatorRefusesToRejected() {
+    answerEveryCall(422, "{}");
+
+    var result = client.createOrder(new CreatePspOrderRequest("DEMO_PSP", "pay-1", amount(10)));
+
+    assertThat(result.resultCode()).isEqualTo(REJECTED);
+  }
+
+  @Test
+  void reportsServerErrorAsUnknownResult() {
+    answerEveryCall(500, "{}");
+
+    assertThatThrownBy(
+            () -> client.refund(new RefundPspOrderRequest("DEMO_PSP", "psp-1", "refund-1")))
+        .isInstanceOf(UnknownPspResultException.class);
+  }
+
+  @Test
+  void reportsTimeoutAsUnknownResultWithoutRetrying() {
+    CountDownLatch released = new CountDownLatch(1);
     server.removeContext("/");
     server.createContext(
         "/",
         exchange -> {
           try {
-            Thread.sleep(250);
-          } catch (InterruptedException e) {
+            released.await();
+          } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
           }
         });
-    client =
-        new SimulatorPspClient(
-            code ->
-                Optional.of(
-                    new PspConfiguration(300, "DEMO_PSP", baseUrl(), "secret", "hmac", 1000, 50)));
+    client = new SimulatorPspClient(code -> Optional.of(configuration(50)));
 
-    var result = client.createOrder(new CreateOrderRequest("DEMO_PSP", "pay-1", amount(10)));
-
-    assertThat(result.resultCode()).isEqualTo(UNKNOWN);
+    try {
+      assertThatThrownBy(
+              () -> client.createOrder(new CreatePspOrderRequest("DEMO_PSP", "pay-1", amount(10))))
+          .isInstanceOf(UnknownPspResultException.class);
+    } finally {
+      released.countDown();
+    }
     assertThat(requests).isEmpty();
+  }
+
+  private void answerEveryCall(int status, String body) {
+    server.removeContext("/");
+    server.createContext("/", exchange -> respond(exchange, status, body));
   }
 
   private void handle(HttpExchange exchange) throws IOException {
@@ -118,8 +139,9 @@ class SimulatorPspClientTest {
     exchange.close();
   }
 
-  private PspConfiguration configuration() {
-    return new PspConfiguration(300, "DEMO_PSP", baseUrl(), "secret", "hmac", 1000, 1000);
+  private PspConfiguration configuration(int readTimeoutMillis) {
+    return new PspConfiguration(
+        300, "DEMO_PSP", baseUrl(), "secret", "hmac", 1000, readTimeoutMillis);
   }
 
   private Amount amount(long quantity) {

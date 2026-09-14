@@ -5,7 +5,7 @@ base { archivesName = 'psp-integration-client' }
 
 dependencies {
     implementation project(':psp-integration:domain')
-    implementation project(':common-payment:domain')
+    implementation project(':payment:common:domain')
     implementation project(':common-iso:domain')
     implementation project(':framework:persistence')
     implementation 'org.springframework:spring-web'

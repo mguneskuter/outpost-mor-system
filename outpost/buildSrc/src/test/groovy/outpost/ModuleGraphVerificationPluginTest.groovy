@@ -34,7 +34,7 @@ class ModuleGraphVerificationPluginTest {
     @Test
     void unexpectedEdgeFailsAndNamesTheEdge() {
         Map<String, Set<String>> dependencies = fixtureDependencies()
-        dependencies[':common-iso:domain'] << ':tax'
+        dependencies[':common-iso:domain'] << ':tax:domain'
 
         BuildResult failure = buildAndFail(dependencies)
 

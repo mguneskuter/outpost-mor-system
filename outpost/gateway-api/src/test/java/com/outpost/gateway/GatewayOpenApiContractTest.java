@@ -3,7 +3,6 @@ package com.outpost.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.outpost.gateway.order.api.OrderController;
-import com.outpost.gateway.order.api.OrderModificationController;
 import com.outpost.gateway.psp.api.PspController;
 import com.outpost.gateway.psp.api.PspWebhookController;
 import com.outpost.gateway.report.api.ReportController;
@@ -26,7 +25,6 @@ class GatewayOpenApiContractTest {
   private static final List<Class<?>> CONTROLLERS =
       List.of(
           OrderController.class,
-          OrderModificationController.class,
           PspController.class,
           ReportController.class,
           PspWebhookController.class);

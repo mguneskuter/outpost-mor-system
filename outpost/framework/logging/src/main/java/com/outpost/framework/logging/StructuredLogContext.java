@@ -18,7 +18,7 @@ public final class StructuredLogContext {
    * @param value the already-safe application-authored value
    * @return a scope that restores the previous field value when closed
    */
-  public static Scope open(LogFields field, String value) {
+  public static Scope open(LogField field, String value) {
     Objects.requireNonNull(field, "field");
     Objects.requireNonNull(value, "value");
     String key = Objects.requireNonNull(field.getJsonKey(), "field.getJsonKey()");

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.accounting.transaction.repository.mybatis.TransactionMapper">
+  <resultMap id="transaction" type="com.outpost.accounting.transaction.repository.mybatis.Transaction">
+    <constructor>
+      <idArg column="transaction_id" javaType="long"/>
+      <arg column="transaction_type" javaType="string"/>
+      <arg column="parent_transaction_id" javaType="long"/>
+      <arg column="account_id" javaType="_long"/>
+      <arg column="reference" javaType="string"/>
+      <arg column="currency_code" javaType="string"/>
+      <arg column="quantity" javaType="_long"/>
+      <arg column="created_ts" javaType="java.time.Instant"/>
+    </constructor>
+  </resultMap>
+
+  <resultMap id="paymentDetail" type="com.outpost.accounting.transaction.repository.mybatis.PaymentDetail">
+    <constructor>
+      <idArg column="transaction_id" javaType="_long"/>
+      <arg column="account_id" javaType="_long"/>
+      <arg column="reference" javaType="string"/>
+      <arg column="currency_code" javaType="string"/>
+      <arg column="quantity" javaType="_long"/>
+      <arg column="created_ts" javaType="java.time.Instant"/>
+      <arg column="shopper_country" javaType="string"/>
+      <arg column="shopper_country_subdivision" javaType="string"/>
+      <arg column="psp_account_id" javaType="_long"/>
+      <arg column="net_quantity" javaType="_long"/>
+      <arg column="tax_quantity" javaType="_long"/>
+    </constructor>
+  </resultMap>
+
+  <resultMap id="transactionEvent" type="com.outpost.accounting.transaction.repository.mybatis.TransactionEvent">
+    <constructor>
+      <idArg column="transaction_event_id" javaType="_long"/>
+      <arg column="transaction_event_type" javaType="string"/>
+      <arg column="event_ts" javaType="java.time.Instant"/>
+    </constructor>
+  </resultMap>
+
+  <resultMap id="refundDetail" type="com.outpost.accounting.transaction.repository.mybatis.RefundDetail">
+    <constructor>
+      <idArg column="transaction_id" javaType="_long"/>
+      <arg column="parent_transaction_id" javaType="_long"/>
+      <arg column="account_id" javaType="_long"/>
+      <arg column="reference" javaType="string"/>
+      <arg column="currency_code" javaType="string"/>
+      <arg column="quantity" javaType="_long"/>
+      <arg column="created_ts" javaType="java.time.Instant"/>
+      <arg column="net_quantity" javaType="_long"/>
+      <arg column="tax_quantity" javaType="_long"/>
+    </constructor>
+  </resultMap>
+
+  <sql id="transactionColumns">
+    SELECT transaction.transaction_id, transaction_type.code AS transaction_type,
+           transaction.parent_transaction_id, transaction.account_id, transaction.reference,
+           currency.currency_code, transaction.quantity, transaction.created_ts
+      FROM transaction
+      JOIN transaction_type ON transaction_type.transaction_type_id = transaction.transaction_type_id
+      JOIN currency ON currency.currency_id = transaction.currency_id
+  </sql>
+
+  <!-- flushCache: a select is otherwise served from the session cache, so a repeated insert would
+       answer the first one's row instead of being executed. -->
+  <select id="insertTransaction" resultMap="transaction" flushCache="true" useCache="false">
+    WITH stored AS (
+      INSERT INTO transaction (transaction_type_id, parent_transaction_id, account_id, reference,
+                               quantity, currency_id, created_ts)
+      VALUES ((SELECT transaction_type_id FROM transaction_type WHERE code = #{transactionType}),
+              #{parentTransactionId,jdbcType=BIGINT}, #{accountId}, #{reference}, #{amount},
+              (SELECT currency_id FROM currency WHERE currency_code = #{currencyCode}),
+              now())
+      ON CONFLICT (reference) DO NOTHING
+      RETURNING transaction_id, transaction_type_id, parent_transaction_id, account_id, reference,
+                quantity, currency_id, created_ts
+    )
+    SELECT stored.transaction_id, transaction_type.code AS transaction_type,
+           stored.parent_transaction_id, stored.account_id, stored.reference,
+           currency.currency_code, stored.quantity, stored.created_ts
+      FROM stored
+      JOIN transaction_type ON transaction_type.transaction_type_id = stored.transaction_type_id
+      JOIN currency ON currency.currency_id = stored.currency_id
+  </select>
+
+  <insert id="insertPaymentDetail">
+    INSERT INTO payment_detail (transaction_id, transaction_type_id, shopper_country_id,
+                                shopper_country_subdivision_id, psp_account_id, net_quantity,
+                                tax_quantity)
+    VALUES (#{transactionId},
+            (SELECT transaction_type_id FROM transaction_type WHERE code = 'PAYMENT'),
+            (SELECT country_id FROM country WHERE iso_code = #{shopperCountry}),
+            (SELECT subdivision.country_subdivision_id
+               FROM country_subdivision subdivision
+               JOIN country ON country.country_id = subdivision.country_id
+              WHERE country.iso_code = #{shopperCountry}
+                AND subdivision.code = #{shopperCountrySubdivision,jdbcType=VARCHAR}),
+            #{pspAccountId}, #{netAmount}, #{taxAmount})
+  </insert>
+
+  <sql id="paymentDetailColumns">
+    SELECT payment.transaction_id, payment.account_id, payment.reference, currency.currency_code,
+           payment.quantity, payment.created_ts, country.iso_code AS shopper_country,
+           subdivision.code AS shopper_country_subdivision, detail.psp_account_id,
+           detail.net_quantity, detail.tax_quantity
+      FROM transaction payment
+      JOIN payment_detail detail ON detail.transaction_id = payment.transaction_id
+      JOIN currency ON currency.currency_id = payment.currency_id
+      JOIN country ON country.country_id = detail.shopper_country_id
+      LEFT JOIN country_subdivision subdivision
+        ON subdivision.country_subdivision_id = detail.shopper_country_subdivision_id
+     WHERE payment.reference = #{reference}
+  </sql>
+
+  <select id="findPaymentDetailByReference" resultMap="paymentDetail">
+    <include refid="paymentDetailColumns"/>
+  </select>
+
+  <select id="findPaymentDetailByReferenceForUpdate" resultMap="paymentDetail" flushCache="true" useCache="false">
+    <include refid="paymentDetailColumns"/>
+       FOR UPDATE OF payment
+  </select>
+
+  <select id="findTransactionById" resultMap="transaction">
+    <include refid="transactionColumns"/>
+     WHERE transaction.transaction_id = #{transactionId}
+  </select>
+
+  <select id="findChildTransactions" resultMap="transaction">
+    <include refid="transactionColumns"/>
+     WHERE transaction.parent_transaction_id = #{parentTransactionId}
+       AND transaction_type.code = #{transactionType}
+     ORDER BY transaction.transaction_id
+  </select>
+
+  <select id="findTransactionEvents" resultMap="transactionEvent">
+    SELECT event.transaction_event_id, event_type.code AS transaction_event_type, event.event_ts
+      FROM transaction_event event
+      JOIN transaction_event_type event_type
+        ON event_type.transaction_event_type_id = event.transaction_event_type_id
+     WHERE event.transaction_id = #{transactionId}
+     ORDER BY event.transaction_event_id
+  </select>
+
+  <select id="insertTransactionEvent" resultMap="transactionEvent" flushCache="true" useCache="false">
+    WITH stored AS (
+      INSERT INTO transaction_event (transaction_id, transaction_event_type_id, event_ts)
+      VALUES (#{transactionId},
+              (SELECT transaction_event_type_id FROM transaction_event_type
+                WHERE code = #{transactionEventType}),
+              now())
+      ON CONFLICT (transaction_id, transaction_event_type_id) DO NOTHING
+      RETURNING transaction_event_id, transaction_event_type_id, event_ts
+    )
+    SELECT stored.transaction_event_id, event_type.code AS transaction_event_type, stored.event_ts
+      FROM stored
+      JOIN transaction_event_type event_type
+        ON event_type.transaction_event_type_id = stored.transaction_event_type_id
+  </select>
+
+  <insert id="insertRefundDetail">
+    INSERT INTO refund_detail (transaction_id, transaction_type_id, net_quantity, tax_quantity)
+    VALUES (#{transactionId},
+            (SELECT transaction_type_id FROM transaction_type WHERE code = 'REFUND'),
+            #{netAmount}, #{taxAmount})
+  </insert>
+
+  <sql id="refundDetailColumns">
+    SELECT refund.transaction_id, refund.parent_transaction_id, refund.account_id, refund.reference,
+           currency.currency_code, refund.quantity, refund.created_ts, detail.net_quantity,
+           detail.tax_quantity
+      FROM transaction refund
+      JOIN refund_detail detail ON detail.transaction_id = refund.transaction_id
+      JOIN currency ON currency.currency_id = refund.currency_id
+  </sql>
+
+  <select id="findRefundDetailByReference" resultMap="refundDetail">
+    <include refid="refundDetailColumns"/>
+     WHERE refund.reference = #{reference}
+  </select>
+
+  <select id="findRefundDetails" resultMap="refundDetail">
+    <include refid="refundDetailColumns"/>
+     WHERE refund.parent_transaction_id = #{parentTransactionId}
+     ORDER BY refund.transaction_id
+  </select>
+</mapper>

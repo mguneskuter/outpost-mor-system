@@ -1,8 +1,12 @@
 package com.outpost.accounting.journalentry.repository;
 
-import com.outpost.accounting.JournalEntry;
+import com.outpost.accounting.journalentry.CaptureRegisters;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.PendingFee;
+import com.outpost.accounting.transaction.Transaction;
+import java.util.Optional;
 
-/** Stores journal entries. */
+/** Stores journal entries and reads what later bookings of a payment need from them. */
 public interface JournalEntryRepository {
 
   /**
@@ -12,4 +16,10 @@ public interface JournalEntryRepository {
    * @return the stored entry, carrying the entry identifier and one line identifier per line
    */
   JournalEntry insertJournalEntry(JournalEntry journalEntry);
+
+  /** Finds the pending fee the FEE_PENDING entry of a stored payment holds. */
+  Optional<PendingFee> findPendingFeeByPayment(Transaction payment);
+
+  /** Finds the registers the CAPTURE entry of a stored payment's capture posted to. */
+  Optional<CaptureRegisters> findCaptureRegistersByPayment(Transaction payment);
 }

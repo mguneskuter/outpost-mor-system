@@ -1,7 +1,9 @@
 package com.outpost.account.repository.mybatis;
 
 import com.outpost.account.AccountTypes;
+import com.outpost.account.AccountTypes.AccountType;
 import com.outpost.account.repository.AccountRepository;
+import java.util.List;
 import java.util.Optional;
 import org.apache.ibatis.session.SqlSession;
 
@@ -28,6 +30,15 @@ public final class MyBatisAccountRepository implements AccountRepository {
   public Optional<com.outpost.account.Account> findTaxAuthorityAccountByCountryId(long countryId) {
     return Optional.ofNullable(mapper.findTaxAuthorityAccountByCountryId(countryId))
         .map(this::toAccount);
+  }
+
+  @Override
+  public Optional<com.outpost.account.Account> findAccountByAccountType(AccountType accountType) {
+    List<Account> rows = mapper.findAccountsByAccountType(accountType.getCode());
+    if (rows.size() > 1) {
+      throw new IllegalStateException("More than one account has the requested account type");
+    }
+    return rows.stream().findFirst().map(this::toAccount);
   }
 
   private com.outpost.account.Account toAccount(Account row) {

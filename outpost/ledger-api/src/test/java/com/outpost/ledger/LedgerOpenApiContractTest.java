@@ -2,7 +2,7 @@ package com.outpost.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.outpost.ledger.accountingrequest.api.AccountingRequestController;
+import com.outpost.ledger.accounting.queue.api.AccountingQueueController;
 import com.outpost.ledger.report.api.BalanceReportController;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -23,7 +23,7 @@ import org.springframework.web.service.annotation.HttpExchange;
  */
 class LedgerOpenApiContractTest {
   private static final List<Class<?>> CONTROLLERS =
-      List.of(AccountingRequestController.class, BalanceReportController.class);
+      List.of(AccountingQueueController.class, BalanceReportController.class);
 
   @Test
   void documentsEveryContractRouteAndNothingElse() {

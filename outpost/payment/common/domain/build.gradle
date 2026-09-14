@@ -1,0 +1,20 @@
+plugins {
+    id 'outpost.domain-conventions'
+}
+
+group = 'com.outpost.payment.common'
+
+base {
+    archivesName = 'payment-common-domain'
+}
+
+dependencies {
+    implementation project(':platform-sanity:static-data-model')
+    implementation project(':common-iso:domain')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

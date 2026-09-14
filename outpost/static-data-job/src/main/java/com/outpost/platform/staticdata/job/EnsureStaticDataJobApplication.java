@@ -1,11 +1,10 @@
 package com.outpost.platform.staticdata.job;
 
 import com.outpost.framework.persistence.EnableOutpostPersistence;
-import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Bean;
 
 /** Boots the job that seeds enum-backed reference data. */
 @SpringBootApplication(scanBasePackages = "com.outpost")
@@ -27,18 +26,8 @@ public class EnsureStaticDataJobApplication {
   }
 
   /** Seeds missing reference-data records after application startup. */
-  @Component
-  static class EnsureStaticDataRunner implements ApplicationRunner {
-
-    private final EnsureStaticDataJob job;
-
-    EnsureStaticDataRunner(EnsureStaticDataJob job) {
-      this.job = job;
-    }
-
-    @Override
-    public void run(ApplicationArguments args) {
-      job.ensure();
-    }
+  @Bean
+  ApplicationRunner ensureStaticDataRunner(EnsureStaticDataJob job) {
+    return arguments -> job.ensure();
   }
 }

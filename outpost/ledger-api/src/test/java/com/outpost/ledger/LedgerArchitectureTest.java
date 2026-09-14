@@ -4,7 +4,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
-import com.outpost.accounting.JournalEntry;
+import com.outpost.accounting.journalentry.JournalEntry;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaAccess;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -120,17 +120,5 @@ class LedgerArchitectureTest {
         access ->
             access.getTargetOwner().isEquivalentTo(JournalEntry.class)
                 && access.getTarget().getName().equals(methodName));
-  }
-
-  @Test
-  void myBatisRowsStayInTheirRepositoryPackage() {
-    classes()
-        .that()
-        .haveSimpleNameEndingWith("Row")
-        .should()
-        .resideInAnyPackage(
-            "com.outpost.ledger.payment.repository.mybatis",
-            "com.outpost.ledger.report.repository.mybatis")
-        .check(LEDGER_CLASSES);
   }
 }

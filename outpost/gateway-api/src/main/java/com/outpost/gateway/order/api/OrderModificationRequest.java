@@ -1,8 +1,12 @@
 package com.outpost.gateway.order.api;
 
-import com.outpost.gateway.order.service.ModifyOrderCommand;
+import com.outpost.gateway.order.service.OrderModificationCommand;
+import com.outpost.gateway.order.service.OrderModificationErrorCodes;
+import com.outpost.gateway.order.service.OrderModificationException;
+import com.outpost.gateway.order.service.OrderModificationTypes;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.util.Arrays;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
@@ -27,8 +31,22 @@ public record OrderModificationRequest(
   public static final String INVALID_MERCHANT_REFERENCE = "INVALID_MERCHANT_REFERENCE";
   public static final String INVALID_TYPE = "INVALID_TYPE";
 
-  /** Converts the validated transport payload to an application command. */
-  public ModifyOrderCommand toCommand() {
-    return new ModifyOrderCommand(orderReference, idempotencyKey, merchantReference, type);
+  /**
+   * Converts the validated transport payload to an application command.
+   *
+   * @throws OrderModificationException with {@code UNSUPPORTED_MODIFICATION_TYPE} when {@code type}
+   *     names no modification Outpost supports
+   */
+  public OrderModificationCommand toCommand() {
+    OrderModificationTypes modificationType =
+        Arrays.stream(OrderModificationTypes.values())
+            .filter(value -> value.name().equals(type))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    new OrderModificationException(
+                        OrderModificationErrorCodes.UNSUPPORTED_MODIFICATION_TYPE));
+    return new OrderModificationCommand(
+        orderReference, idempotencyKey, merchantReference, modificationType);
   }
 }

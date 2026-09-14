@@ -116,7 +116,7 @@ class QueueProcessorTest {
     assertThat(queue.size()).isZero();
   }
 
-  private void start(QueueItemHandler<String> handler, int workerCount, int maxAttempts) {
+  private void start(QueueItemProcessor<String> handler, int workerCount, int maxAttempts) {
     processor =
         new QueueProcessor<>(
             "test-queue",

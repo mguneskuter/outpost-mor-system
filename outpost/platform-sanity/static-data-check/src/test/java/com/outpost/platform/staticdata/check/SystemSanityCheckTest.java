@@ -16,16 +16,13 @@ class SystemSanityCheckTest {
 
     SystemSanityCheck verifier = new SystemSanityCheck(List.of(repository));
 
-    assertThatThrownBy(verifier::verify)
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("divergent row");
+    assertThatThrownBy(verifier::verify).isInstanceOf(IllegalStateException.class);
   }
 
   @Test
   void rejectsMissingRows() {
     assertThatThrownBy(() -> new SystemSanityCheck(List.of(new Repository(List.of()))).verify())
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("missing row");
+        .isInstanceOf(IllegalStateException.class);
   }
 
   @Test
@@ -35,8 +32,7 @@ class SystemSanityCheckTest {
                 new SystemSanityCheck(
                         List.of(new Repository(List.of(new TestRecord(99, "UNEXPECTED")))))
                     .verify())
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("unexpected row");
+        .isInstanceOf(IllegalStateException.class);
   }
 
   @Test

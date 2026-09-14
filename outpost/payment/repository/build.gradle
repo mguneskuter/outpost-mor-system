@@ -4,7 +4,7 @@ base { archivesName = 'payment-repository' }
 dependencies {
   implementation project(':payment:domain')
   implementation project(':common-iso:domain')
-  implementation project(':common-payment:domain')
+  implementation project(':payment:common:domain')
   implementation project(':platform-sanity:static-data-repository')
   implementation project(':framework:persistence')
   implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'

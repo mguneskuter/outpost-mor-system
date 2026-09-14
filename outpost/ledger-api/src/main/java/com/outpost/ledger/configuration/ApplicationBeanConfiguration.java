@@ -1,10 +1,20 @@
 package com.outpost.ledger.configuration;
 
+import com.outpost.account.configuration.repository.MerchantFeeConfigurationRepository;
+import com.outpost.account.configuration.repository.mybatis.MyBatisMerchantFeeConfigurationRepository;
+import com.outpost.account.repository.AccountRepository;
+import com.outpost.account.repository.mybatis.MyBatisAccountRepository;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
-import com.outpost.accounting.journalentry.repository.mybatis.JournalEntryMapper;
 import com.outpost.accounting.journalentry.repository.mybatis.MyBatisJournalEntryRepository;
 import com.outpost.accounting.payment.PaymentFeeCalculator;
-import com.outpost.accounting.payment.PaymentProcessorStateMachine;
+import com.outpost.accounting.payment.PaymentStateMachine;
+import com.outpost.accounting.report.repository.BalanceReportRepository;
+import com.outpost.accounting.report.repository.mybatis.BalanceReportMapper;
+import com.outpost.accounting.report.repository.mybatis.MyBatisBalanceReportRepository;
+import com.outpost.accounting.repository.RegisterRepository;
+import com.outpost.accounting.repository.mybatis.MyBatisRegisterRepository;
+import com.outpost.accounting.transaction.repository.TransactionRepository;
+import com.outpost.accounting.transaction.repository.mybatis.MyBatisTransactionRepository;
 import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
 import com.outpost.accounting.transactionlock.repository.mybatis.MyBatisTransactionLockRepository;
 import com.outpost.accounting.transactionlock.repository.mybatis.TransactionLockMapper;
@@ -18,32 +28,31 @@ import com.outpost.fx.provider.FxRateProvider;
 import com.outpost.fx.provider.cached.CachedFxRateProvider;
 import com.outpost.fx.repository.FxFeeRepository;
 import com.outpost.fx.repository.FxRateRepository;
-import com.outpost.ledger.accountingrequest.service.AccountingQueueProcessor;
-import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
-import com.outpost.ledger.accountingrequest.service.LockedAccountingQueueRequest;
-import com.outpost.ledger.fx.repository.mybatis.FxFeeMapper;
-import com.outpost.ledger.fx.repository.mybatis.FxRateMapper;
-import com.outpost.ledger.fx.repository.mybatis.MyBatisFxFeeRepository;
-import com.outpost.ledger.fx.repository.mybatis.MyBatisFxRateRepository;
-import com.outpost.ledger.payment.repository.PaymentRepository;
+import com.outpost.fx.repository.mybatis.FxFeeMapper;
+import com.outpost.fx.repository.mybatis.FxRateMapper;
+import com.outpost.fx.repository.mybatis.MyBatisFxFeeRepository;
+import com.outpost.fx.repository.mybatis.MyBatisFxRateRepository;
+import com.outpost.ledger.accounting.queue.service.AccountingQueueProcessor;
+import com.outpost.ledger.accounting.queue.service.AccountingQueueService;
+import com.outpost.ledger.accounting.queue.service.LockedAccountingQueueRequest;
+import com.outpost.ledger.payment.service.AuthorisationService;
 import com.outpost.ledger.payment.service.CaptureService;
-import com.outpost.ledger.payment.service.PaymentCreationService;
-import com.outpost.ledger.payment.service.PaymentEventService;
+import com.outpost.ledger.payment.service.PaymentService;
 import com.outpost.ledger.payment.service.RefundService;
-import com.outpost.ledger.report.repository.BalanceReportRepository;
 import com.outpost.ledger.report.service.BalanceReportService;
 import com.outpost.ledger.security.LedgerAuthenticationProperties;
 import java.time.Clock;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.transaction.PlatformTransactionManager;
 
-/** Wires the Ledger's application services, accounting queue, and FX persistence. */
+/** Wires the Ledger's repositories, application services, and accounting queue. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({
   LedgerAuthenticationProperties.class,
@@ -60,44 +69,89 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  PaymentProcessorStateMachine paymentProcessorStateMachine() {
-    return new PaymentProcessorStateMachine();
+  PaymentStateMachine paymentStateMachine() {
+    return new PaymentStateMachine();
+  }
+
+  @Bean
+  AccountRepository accountRepository(SqlSessionTemplate sqlSessionTemplate) {
+    return new MyBatisAccountRepository(sqlSessionTemplate);
+  }
+
+  @Bean
+  RegisterRepository registerRepository(SqlSessionTemplate sqlSessionTemplate) {
+    return new MyBatisRegisterRepository(sqlSessionTemplate);
+  }
+
+  @Bean
+  MerchantFeeConfigurationRepository merchantFeeConfigurationRepository(
+      SqlSessionTemplate sqlSessionTemplate) {
+    return new MyBatisMerchantFeeConfigurationRepository(sqlSessionTemplate);
+  }
+
+  @Bean
+  TransactionRepository transactionRepository(
+      SqlSessionTemplate sqlSessionTemplate,
+      PlatformTransactionManager transactionManager,
+      AccountRepository accountRepository) {
+    return new MyBatisTransactionRepository(
+        sqlSessionTemplate, transactionManager, accountRepository);
   }
 
   @Bean
   JournalEntryRepository journalEntryRepository(
-      JournalEntryMapper mapper, PlatformTransactionManager transactionManager) {
-    return new MyBatisJournalEntryRepository(mapper, transactionManager);
+      SqlSessionTemplate sqlSessionTemplate,
+      PlatformTransactionManager transactionManager,
+      AccountRepository accountRepository) {
+    return new MyBatisJournalEntryRepository(
+        sqlSessionTemplate, transactionManager, accountRepository);
   }
 
   @Bean
-  PaymentCreationService paymentCreationService(
-      PaymentRepository repository,
+  PaymentService paymentService(
+      TransactionRepository transactionRepository,
       JournalEntryRepository journalEntryRepository,
-      PaymentFeeCalculator calculator) {
-    return new PaymentCreationService(repository, journalEntryRepository, calculator);
+      AccountRepository accountRepository,
+      RegisterRepository registerRepository,
+      MerchantFeeConfigurationRepository merchantFeeConfigurationRepository,
+      PaymentFeeCalculator paymentFeeCalculator) {
+    return new PaymentService(
+        transactionRepository,
+        journalEntryRepository,
+        accountRepository,
+        registerRepository,
+        merchantFeeConfigurationRepository,
+        paymentFeeCalculator);
   }
 
   @Bean
-  PaymentEventService paymentEventService(
-      PaymentRepository repository,
+  AuthorisationService authorisationService(
+      TransactionRepository transactionRepository,
       JournalEntryRepository journalEntryRepository,
-      PaymentProcessorStateMachine stateMachine) {
-    return new PaymentEventService(repository, journalEntryRepository, stateMachine);
+      PaymentStateMachine paymentStateMachine) {
+    return new AuthorisationService(
+        transactionRepository, journalEntryRepository, paymentStateMachine);
   }
 
   @Bean
   CaptureService captureService(
-      PaymentRepository repository,
+      TransactionRepository transactionRepository,
       JournalEntryRepository journalEntryRepository,
-      PaymentProcessorStateMachine stateMachine) {
-    return new CaptureService(repository, journalEntryRepository, stateMachine);
+      AccountRepository accountRepository,
+      RegisterRepository registerRepository,
+      PaymentStateMachine paymentStateMachine) {
+    return new CaptureService(
+        transactionRepository,
+        journalEntryRepository,
+        accountRepository,
+        registerRepository,
+        paymentStateMachine);
   }
 
   @Bean
   RefundService refundService(
-      PaymentRepository repository, JournalEntryRepository journalEntryRepository) {
-    return new RefundService(repository, journalEntryRepository);
+      TransactionRepository transactionRepository, JournalEntryRepository journalEntryRepository) {
+    return new RefundService(transactionRepository, journalEntryRepository);
   }
 
   @Bean
@@ -112,23 +166,23 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  AccountingRequestService accountingRequestService(
+  AccountingQueueService accountingRequestService(
       TransactionLockRepository transactionLocks,
       TimeOrderedQueue<LockedAccountingQueueRequest> accountingQueue,
       LedgerAccountingQueueProperties properties) {
-    return new AccountingRequestService(
+    return new AccountingQueueService(
         transactionLocks, accountingQueue, properties.transactionLockLease());
   }
 
   @Bean
   AccountingQueueProcessor accountingQueueProcessor(
-      PaymentCreationService paymentCreation,
-      PaymentEventService paymentEvents,
-      CaptureService captures,
-      RefundService refunds,
+      PaymentService paymentService,
+      AuthorisationService authorisationService,
+      CaptureService captureService,
+      RefundService refundService,
       TransactionLockRepository transactionLocks) {
     return new AccountingQueueProcessor(
-        paymentCreation, paymentEvents, captures, refunds, transactionLocks);
+        paymentService, authorisationService, captureService, refundService, transactionLocks);
   }
 
   /** The processor never retries a booking, so one attempt is the ceiling. */
@@ -143,6 +197,11 @@ public class ApplicationBeanConfiguration {
         processor,
         new QueueProcessorSettings(
             properties.workerCount(), properties.pollInterval(), properties.pollInterval(), 1));
+  }
+
+  @Bean
+  BalanceReportRepository balanceReportRepository(BalanceReportMapper mapper) {
+    return new MyBatisBalanceReportRepository(mapper);
   }
 
   @Bean
@@ -172,7 +231,7 @@ public class ApplicationBeanConfiguration {
   @DependsOn("com.outpost.platform.staticdata.check.SystemSanityCheck")
   FxRateProvider fxRateProvider(FxRateRepository rateRepository, FxFeeRepository feeRepository) {
     Set<CurrencyPair> expectedPairs = expectedPairs();
-    validateFees(List.copyOf(feeRepository.findAll()), expectedPairs);
+    validateFees(List.copyOf(feeRepository.findFxFees()), expectedPairs);
     return new CachedFxRateProvider(rateRepository, expectedPairs.size() * DAYS_OF_RATES_PER_PAIR);
   }
 

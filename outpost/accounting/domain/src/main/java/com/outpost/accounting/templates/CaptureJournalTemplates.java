@@ -1,14 +1,17 @@
 package com.outpost.accounting.templates;
 
 import com.outpost.account.AccountTypes;
-import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.JournalEntryLine;
 import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
-import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionTypes;
+import com.outpost.accounting.journalentry.CaptureRegisters;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.JournalEntryLine;
+import com.outpost.accounting.journalentry.PendingFee;
+import com.outpost.accounting.transaction.PaymentDetail;
+import com.outpost.accounting.transaction.TransactionEvent;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
 import java.util.Objects;
@@ -20,26 +23,38 @@ public enum CaptureJournalTemplates {
 
   private static final JournalTemplateValidator VALIDATOR = new JournalTemplateValidator();
 
-  /** Builds and validates a CAPTURE entry from explicit persisted snapshots. */
+  /**
+   * Builds and validates the CAPTURE entry of {@code sourceEvent}, the CAPTURED event of the
+   * payment's capture: the gross to the PSP, the payment's tax to the tax authority, its net less
+   * the pending fee to the merchant, and the pending fee released into fee revenue.
+   *
+   * @throws IllegalArgumentException if the event, the amounts, or a register does not fit the rule
+   */
   public JournalEntry build(
       TransactionEvent sourceEvent,
-      Register pspReceivableRegister,
-      Register taxPayableRegister,
-      Register merchantPayableRegister,
-      Register feeRevenueRegister,
-      Register merchantPendingFeeRegister,
-      Register platformPendingFeeRegister,
-      Amount gross,
-      Amount net,
-      Amount tax,
-      Amount fee,
+      PaymentDetail payment,
+      CaptureRegisters registers,
+      PendingFee pendingFee,
       Instant bookedAndPosted) {
+    Objects.requireNonNull(payment, "payment");
+    Objects.requireNonNull(registers, "registers");
+    Objects.requireNonNull(pendingFee, "pendingFee");
     Objects.requireNonNull(bookedAndPosted, "bookedAndPosted");
     VALIDATOR.requireSource(
         sourceEvent,
         TransactionEventTypes.CAPTURED.getValue(),
         TransactionTypes.CAPTURE.getValue());
+    Amount gross = sourceEvent.getTransaction().getAmount();
+    Amount net = payment.getNetAmount();
+    Amount tax = payment.getTaxAmount();
+    Amount fee = pendingFee.fee();
     requireAmounts(sourceEvent, gross, net, tax, fee);
+    Register pspReceivableRegister = registers.pspReceivableRegister();
+    Register taxPayableRegister = registers.taxPayableRegister();
+    Register merchantPayableRegister = registers.merchantPayableRegister();
+    Register feeRevenueRegister = registers.feeRevenueRegister();
+    Register merchantPendingFeeRegister = pendingFee.merchantPendingFeeRegister();
+    Register platformPendingFeeRegister = pendingFee.platformPendingFeeRegister();
     VALIDATOR.requireRegister(
         pspReceivableRegister,
         RegisterTypes.PSP_RECEIVABLE.getValue(),
