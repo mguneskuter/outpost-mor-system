@@ -13,8 +13,9 @@ import org.springframework.context.annotation.Import;
 @EnableOutpostPersistence(
     mapperPackages = {
       "com.outpost.accounting.repository.sanity",
-      "com.outpost.accounting.journalentry.repository.mybatis",
-      "com.outpost.accounting.transactionlock.repository.mybatis"
+      "com.outpost.accounting.transactionlock.repository.mybatis",
+      "com.outpost.fx.repository.mybatis",
+      "com.outpost.accounting.report.repository.mybatis"
     })
 @EnableSystemSanityCheck
 @Import(AccountingStaticDataRepositories.class)

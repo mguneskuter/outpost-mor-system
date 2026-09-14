@@ -1,24 +1,17 @@
 package com.outpost.gateway.report.service;
 
-/** Controlled failure returned by the balance report boundary. */
+/** A balance report request that is refused. */
 public final class BalanceReportException extends RuntimeException {
-  private final int status;
-  private final String code;
+  private final BalanceReportErrorCodes code;
 
-  /** Creates a controlled balance report failure. */
-  public BalanceReportException(int status, String code) {
-    super(code);
-    this.status = status;
+  /** Creates the refusal for {@code code}. */
+  public BalanceReportException(BalanceReportErrorCodes code) {
+    super(code.name());
     this.code = code;
   }
 
-  /** Returns the HTTP status. */
-  public int status() {
-    return status;
-  }
-
-  /** Returns the stable error code. */
-  public String code() {
+  /** Returns why the request was refused. */
+  public BalanceReportErrorCodes code() {
     return code;
   }
 }

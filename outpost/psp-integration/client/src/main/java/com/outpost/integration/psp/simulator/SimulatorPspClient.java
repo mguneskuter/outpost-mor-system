@@ -1,24 +1,26 @@
 package com.outpost.integration.psp.simulator;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.outpost.integration.psp.service.CreateOrderRequest;
-import com.outpost.integration.psp.service.CreateOrderResult;
-import com.outpost.integration.psp.service.PspClient;
-import com.outpost.integration.psp.service.RefundRequest;
-import com.outpost.integration.psp.service.RefundResult;
-import com.outpost.integration.psp.service.ResultCode;
-import com.outpost.integration.psp.simulator.repository.PspConfiguration;
+import com.outpost.integration.psp.CreatePspOrderRequest;
+import com.outpost.integration.psp.CreatePspOrderResult;
+import com.outpost.integration.psp.PspClient;
+import com.outpost.integration.psp.PspResultCodes;
+import com.outpost.integration.psp.RefundPspOrderRequest;
+import com.outpost.integration.psp.RefundPspOrderResult;
+import com.outpost.integration.psp.UnknownPspResultException;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
-import org.jspecify.annotations.Nullable;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
-/** Calls the simulator protocol and translates transport failures into outcomes. */
+/** Calls the PSP simulator's HTTP protocol with the configuration stored for each PSP code. */
 public final class SimulatorPspClient implements PspClient {
   private static final Logger LOGGER = LoggerFactory.getLogger(SimulatorPspClient.class);
   private final PspConfigurationRepository configurations;
@@ -28,95 +30,114 @@ public final class SimulatorPspClient implements PspClient {
     this.configurations = configurations;
   }
 
-  /** Sends an order request. */
+  /** A PSP code with no stored configuration is rejected without a call. */
   @Override
-  public CreateOrderResult createOrder(CreateOrderRequest request) {
+  public CreatePspOrderResult createOrder(CreatePspOrderRequest request) {
     return configurations
-        .findByCode(request.pspCode())
-        .map(c -> createOrderCall(c, request))
-        .orElse(new CreateOrderResult("", "", ResultCode.REJECTED));
+        .findPspConfigurationByPspCode(request.pspCode())
+        .map(configuration -> createOrderAt(configuration, request))
+        .orElseGet(() -> new CreatePspOrderResult(null, null, PspResultCodes.REJECTED));
   }
 
-  /** Sends a refund request. */
+  /** A PSP code with no stored configuration is rejected without a call. */
   @Override
-  public RefundResult refund(RefundRequest request) {
+  public RefundPspOrderResult refund(RefundPspOrderRequest request) {
     return configurations
-        .findByCode(request.pspCode())
-        .map(c -> refundCall(c, request))
-        .orElse(new RefundResult("", "", ResultCode.REJECTED));
+        .findPspConfigurationByPspCode(request.pspCode())
+        .map(configuration -> refundAt(configuration, request))
+        .orElseGet(
+            () -> new RefundPspOrderResult(request.pspReference(), null, PspResultCodes.REJECTED));
   }
 
-  private CreateOrderResult createOrderCall(
-      PspConfiguration configuration, CreateOrderRequest request) {
-    try {
-      SimulatorOrderResponse response =
-          post(configuration, "/order", OrderRequest.from(request), SimulatorOrderResponse.class);
-      return response == null
-          ? new CreateOrderResult("", "", ResultCode.REJECTED)
-          : new CreateOrderResult(
-              response.pspReference(), response.paymentUrl(), ResultCode.ACCEPTED);
-    } catch (SimulatorTimeoutException ex) {
-      return new CreateOrderResult("", "", ResultCode.UNKNOWN);
-    }
+  private CreatePspOrderResult createOrderAt(
+      PspConfiguration configuration, CreatePspOrderRequest request) {
+    return post(
+            configuration,
+            "/order",
+            SimulatorOrderRequest.from(request),
+            SimulatorOrderResponse.class)
+        .map(
+            response ->
+                new CreatePspOrderResult(
+                    response.pspReference(), response.paymentUrl(), PspResultCodes.ACCEPTED))
+        .orElseGet(() -> new CreatePspOrderResult(null, null, PspResultCodes.REJECTED));
   }
 
-  private RefundResult refundCall(PspConfiguration configuration, RefundRequest request) {
-    try {
-      SimulatorRefundResponse response =
-          post(
-              configuration,
-              "/refund",
-              SimulatorRefundRequest.from(request),
-              SimulatorRefundResponse.class);
-      return response == null
-          ? new RefundResult("", "", ResultCode.REJECTED)
-          : new RefundResult(
-              request.pspReference(),
-              response.pspRefundReference(),
-              response.accepted() ? ResultCode.ACCEPTED : ResultCode.REJECTED);
-    } catch (SimulatorTimeoutException ex) {
-      return new RefundResult(request.pspReference(), "", ResultCode.UNKNOWN);
-    }
+  private RefundPspOrderResult refundAt(
+      PspConfiguration configuration, RefundPspOrderRequest request) {
+    return post(
+            configuration,
+            "/refund",
+            SimulatorRefundRequest.from(request),
+            SimulatorRefundResponse.class)
+        .map(
+            response ->
+                new RefundPspOrderResult(
+                    request.pspReference(),
+                    response.pspRefundReference(),
+                    response.accepted() ? PspResultCodes.ACCEPTED : PspResultCodes.REJECTED))
+        .orElseGet(
+            () -> new RefundPspOrderResult(request.pspReference(), null, PspResultCodes.REJECTED));
   }
 
-  @Nullable
-  private <T> T post(PspConfiguration configuration, String route, Object body, Class<T> type) {
+  /**
+   * Returns the simulator's answer, or empty when it refused the call with a 4xx status.
+   *
+   * @throws UnknownPspResultException when the call timed out, failed in transport, answered with a
+   *     5xx status, or answered with an empty body
+   */
+  private <T> Optional<T> post(
+      PspConfiguration configuration, String route, Object body, Class<T> type) {
+    T response;
     try {
-      return java.util.Objects.requireNonNull(
+      response =
           client(configuration)
               .post()
               .uri(URI.create("/v1/" + configuration.code() + route))
               .header("X-Outpost-Api-Key", configuration.apiKey())
               .body(body)
               .retrieve()
-              .body(type));
-    } catch (RuntimeException ex) {
-      if (isTimeout(ex)) {
-        LOGGER.warn("PSP call timed out pspCode={} route={}", configuration.code(), route, ex);
-        throw new SimulatorTimeoutException();
-      }
-      LOGGER.warn("PSP call failed pspCode={} route={}", configuration.code(), route, ex);
-      return null;
+              .body(type);
+    } catch (HttpClientErrorException refused) {
+      LOGGER.warn(
+          "PSP refused the call pspCode={} route={} status={}",
+          configuration.code(),
+          route,
+          refused.getStatusCode().value());
+      return Optional.empty();
+    } catch (RestClientException failure) {
+      LOGGER.warn(
+          "PSP call result unknown pspCode={} route={}", configuration.code(), route, failure);
+      throw new UnknownPspResultException(failure);
     }
+    if (response == null) {
+      LOGGER.warn("PSP answered without a body pspCode={} route={}", configuration.code(), route);
+      throw new UnknownPspResultException(null);
+    }
+    return Optional.of(response);
   }
 
-  private RestClient client(PspConfiguration configuration) {
+  private static RestClient client(PspConfiguration configuration) {
     return RestClient.builder()
-        .requestFactory(newRequestFactory(configuration))
+        .requestFactory(requestFactory(configuration))
         .baseUrl(configuration.baseUrl())
         .build();
   }
 
-  private static boolean isTimeout(RuntimeException exception) {
-    return exception.getCause() instanceof java.io.IOException;
+  private static JdkClientHttpRequestFactory requestFactory(PspConfiguration configuration) {
+    HttpClient http =
+        HttpClient.newBuilder()
+            .connectTimeout(Duration.ofMillis(configuration.connectTimeoutMillis()))
+            .build();
+    JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
+    factory.setReadTimeout(Duration.ofMillis(configuration.readTimeoutMillis()));
+    return factory;
   }
 
-  private static final class SimulatorTimeoutException extends RuntimeException {}
-
-  private record OrderRequest(
+  private record SimulatorOrderRequest(
       @JsonProperty("payment_reference") String paymentReference, long amount, String currency) {
-    static OrderRequest from(CreateOrderRequest request) {
-      return new OrderRequest(
+    static SimulatorOrderRequest from(CreatePspOrderRequest request) {
+      return new SimulatorOrderRequest(
           request.paymentReference(),
           request.amount().quantity(),
           request.amount().currency().getCurrencyCode());
@@ -126,7 +147,7 @@ public final class SimulatorPspClient implements PspClient {
   private record SimulatorRefundRequest(
       @JsonProperty("psp_reference") String pspReference,
       @JsonProperty("refund_reference") String refundReference) {
-    static SimulatorRefundRequest from(RefundRequest request) {
+    static SimulatorRefundRequest from(RefundPspOrderRequest request) {
       return new SimulatorRefundRequest(request.pspReference(), request.refundReference());
     }
   }
@@ -137,12 +158,4 @@ public final class SimulatorPspClient implements PspClient {
 
   private record SimulatorRefundResponse(
       @JsonProperty("psp_refund_reference") String pspRefundReference, boolean accepted) {}
-
-  private static JdkClientHttpRequestFactory newRequestFactory(PspConfiguration c) {
-    HttpClient http =
-        HttpClient.newBuilder().connectTimeout(Duration.ofMillis(c.connectTimeoutMillis())).build();
-    JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
-    factory.setReadTimeout(Duration.ofMillis(c.readTimeoutMillis()));
-    return factory;
-  }
 }

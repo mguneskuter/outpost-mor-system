@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.accounting.repository.mybatis.RegisterMapper">
+  <select id="findRegisterIdByAccountAndRegisterType" resultType="long">
+    SELECT register.register_id
+      FROM register
+      JOIN register_type ON register_type.register_type_id = register.register_type_id
+     WHERE register.account_id = #{accountId}
+       AND register_type.register_type_code = #{registerType}
+  </select>
+</mapper>

@@ -24,6 +24,7 @@ class FrameworkFreeDomainModelsTest {
           "com.outpost.account.configuration",
           "com.outpost.accounting",
           "com.outpost.tax",
+          "com.outpost.fx",
           "com.outpost.payment",
           "com.outpost.integration.psp");
 
@@ -41,7 +42,6 @@ class FrameworkFreeDomainModelsTest {
           "com.outpost.tax",
           "com.outpost.fx",
           "com.outpost.payment",
-          "com.outpost.psp",
           "com.outpost.integration.psp");
 
   @Test

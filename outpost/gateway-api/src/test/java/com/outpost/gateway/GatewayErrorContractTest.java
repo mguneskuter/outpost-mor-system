@@ -11,16 +11,20 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.outpost.account.Account;
+import com.outpost.account.AccountTypes.AccountType;
 import com.outpost.account.configuration.repository.MerchantPspRepository;
+import com.outpost.account.repository.AccountRepository;
 import com.outpost.accounting.report.BalanceReport;
 import com.outpost.accounting.report.ReportPeriod;
 import com.outpost.gateway.api.ErrorResponse;
 import com.outpost.gateway.api.GatewayErrorAdvice;
 import com.outpost.gateway.order.api.OrderController;
-import com.outpost.gateway.order.api.OrderModificationController;
-import com.outpost.gateway.order.service.ModifyOrderException;
-import com.outpost.gateway.order.service.OrderCreationException;
+import com.outpost.gateway.order.service.CreateOrderErrorCodes;
+import com.outpost.gateway.order.service.CreateOrderException;
+import com.outpost.gateway.order.service.OrderModificationErrorCodes;
+import com.outpost.gateway.order.service.OrderModificationException;
 import com.outpost.gateway.order.service.OrderModificationService;
+import com.outpost.gateway.order.service.OrderServiceFakes;
 import com.outpost.gateway.psp.api.PspController;
 import com.outpost.gateway.report.api.ReportController;
 import com.outpost.gateway.report.client.LedgerReportClient;
@@ -30,6 +34,7 @@ import com.outpost.gateway.security.GatewayPrincipal;
 import com.outpost.gateway.security.GatewayPrincipalArgumentResolver;
 import com.outpost.gateway.security.MerchantAuthenticationFilter;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -67,8 +72,8 @@ class GatewayErrorContractTest {
   private final OrderServiceFakes orderFakes = new OrderServiceFakes();
   private final MockMvc mockMvc =
       MockMvcBuilders.standaloneSetup(
-              new OrderController(orderFakes.service),
-              new OrderModificationController(
+              new OrderController(
+                  orderFakes.service,
                   new OrderModificationService(
                       orderFakes.repository,
                       orderFakes.psp,
@@ -77,7 +82,7 @@ class GatewayErrorContractTest {
                       })),
               new ReportController(
                   new ReportService(
-                      new FailingLedger(), new FailingMerchants(), new GeneratedReports(1))),
+                      new FailingLedger(), new NoAccounts(), new GeneratedReports(1))),
               new PspController(new FailingMerchantPsps()))
           .setControllerAdvice(new GatewayErrorAdvice())
           .setCustomArgumentResolvers(new GatewayPrincipalArgumentResolver())
@@ -105,13 +110,13 @@ class GatewayErrorContractTest {
         Arguments.of(
             "POST /v1/order",
             order(VALID_ORDER),
-            new OrderCreationException(422, "PSP_UNAVAILABLE"),
+            new CreateOrderException(CreateOrderErrorCodes.PSP_UNAVAILABLE),
             422,
             "PSP_UNAVAILABLE"),
         Arguments.of(
             "POST /v1/order/modification",
             modification(VALID_MODIFICATION),
-            new ModifyOrderException(409, "ORDER_NOT_PAID"),
+            new OrderModificationException(OrderModificationErrorCodes.ORDER_NOT_PAID),
             409,
             "ORDER_NOT_PAID"),
         Arguments.of(
@@ -255,11 +260,25 @@ class GatewayErrorContractTest {
     }
   }
 
-  private static final class FailingMerchants
-      implements com.outpost.gateway.report.repository.ReportRepository {
+  private static final class NoAccounts implements AccountRepository {
     @Override
-    public java.util.Optional<String> findMerchantCode(long accountId) {
-      return java.util.Optional.empty();
+    public Optional<Account> findAccountById(long accountId) {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<Account> findAccountByCode(String code) {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<Account> findTaxAuthorityAccountByCountryId(long countryId) {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<Account> findAccountByAccountType(AccountType accountType) {
+      throw new UnsupportedOperationException();
     }
   }
 

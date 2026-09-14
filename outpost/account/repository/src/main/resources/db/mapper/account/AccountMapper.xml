@@ -38,4 +38,10 @@
      WHERE tax_authority_account.country_id = #{countryId}
        AND account_type.code = 'TAX_AUTHORITY'
   </select>
+
+  <select id="findAccountsByAccountType" resultMap="account">
+    <include refid="accountSelect"/>
+     WHERE account_type.code = #{accountType}
+     ORDER BY account.account_id
+  </select>
 </mapper>

@@ -1,14 +1,16 @@
 package com.outpost.accounting.templates;
 
 import com.outpost.account.AccountTypes;
-import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.JournalEntryLine;
 import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
-import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionTypes;
+import com.outpost.accounting.journalentry.CaptureRegisters;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.JournalEntryLine;
+import com.outpost.accounting.transaction.RefundDetail;
+import com.outpost.accounting.transaction.TransactionEvent;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
 import java.util.Objects;
@@ -20,20 +22,30 @@ public enum RefundJournalTemplates {
 
   private static final JournalTemplateValidator VALIDATOR = new JournalTemplateValidator();
 
-  /** Builds and validates a REFUND entry from persisted transaction snapshots. */
+  /**
+   * Builds and validates the REFUND entry of {@code sourceEvent}, the REFUNDED event of the refund:
+   * it reverses the gross, tax, and net lines the payment's CAPTURE entry posted to {@code
+   * registers}.
+   *
+   * @throws IllegalArgumentException if the event, the amounts, or a register does not fit the rule
+   */
   public JournalEntry build(
       TransactionEvent sourceEvent,
-      Register pspReceivableRegister,
-      Register taxPayableRegister,
-      Register merchantPayableRegister,
-      Amount gross,
-      Amount net,
-      Amount tax,
+      RefundDetail refund,
+      CaptureRegisters registers,
       Instant bookedAndPosted) {
+    Objects.requireNonNull(refund, "refund");
+    Objects.requireNonNull(registers, "registers");
     Objects.requireNonNull(bookedAndPosted, "bookedAndPosted");
     VALIDATOR.requireSource(
         sourceEvent, TransactionEventTypes.REFUNDED.getValue(), TransactionTypes.REFUND.getValue());
+    Amount gross = sourceEvent.getTransaction().getAmount();
+    Amount net = refund.getNetAmount();
+    Amount tax = refund.getTaxAmount();
     requireAmounts(sourceEvent, gross, net, tax);
+    Register pspReceivableRegister = registers.pspReceivableRegister();
+    Register taxPayableRegister = registers.taxPayableRegister();
+    Register merchantPayableRegister = registers.merchantPayableRegister();
     VALIDATOR.requireRegister(
         pspReceivableRegister,
         RegisterTypes.PSP_RECEIVABLE.getValue(),

@@ -11,6 +11,11 @@ public record CreateOrderResponse(
     @JsonProperty("created_at") Instant createdAt,
     @JsonProperty("payment_details") PaymentDetails paymentDetails,
     @JsonProperty("order_lines") List<OrderLine> orderLines) {
+  /** Copies the lines so the response cannot change after it is created. */
+  public CreateOrderResponse {
+    orderLines = List.copyOf(orderLines);
+  }
+
   /** Converts an application result to the transport response. */
   public static CreateOrderResponse from(CreateOrderResult result) {
     return new CreateOrderResponse(

@@ -1,13 +1,13 @@
 package com.outpost.accounting.templates;
 
 import com.outpost.account.AccountTypes.AccountType;
-import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.JournalEntryLine;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes.RegisterType;
-import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes.TransactionType;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.JournalEntryLine;
+import com.outpost.accounting.transaction.TransactionEvent;
 import com.outpost.common.iso.Currencies.Currency;
 import java.util.LinkedHashMap;
 import java.util.Map;

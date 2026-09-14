@@ -14,7 +14,7 @@ public record PspOrderEvent(
     String pspCode,
     String pspReference,
     String orderReference,
-    PspWebhookEventCodes eventCode,
+    PspEventCodes eventCode,
     boolean success,
     String resultCode,
     @Nullable String refundReference) {}

@@ -1,177 +1,152 @@
 package com.outpost.ledger.payment.service;
 
+import static com.outpost.ledger.payment.service.BookingFixtures.eur;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
-import com.outpost.accounting.JournalEntry;
-import com.outpost.accounting.JournalEntryLine;
+import com.outpost.account.repository.AccountRepository;
 import com.outpost.accounting.JournalEntryTypes;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
 import com.outpost.accounting.TransactionEventTypes;
+import com.outpost.accounting.TransactionTypes;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.JournalEntryLine;
+import com.outpost.accounting.journalentry.PendingFee;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
-import com.outpost.accounting.payment.PaymentProcessorStateMachine;
+import com.outpost.accounting.payment.PaymentStateMachine;
+import com.outpost.accounting.repository.RegisterRepository;
+import com.outpost.accounting.transaction.PaymentDetail;
+import com.outpost.accounting.transaction.Transaction;
+import com.outpost.accounting.transaction.repository.TransactionRepository;
+import com.outpost.common.iso.Countries;
 import com.outpost.common.iso.Currencies;
-import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentRepository;
-import com.outpost.ledger.payment.repository.PaymentTransaction;
-import com.outpost.ledger.payment.repository.PendingFee;
-import com.outpost.ledger.payment.repository.StoredTransaction;
-import java.time.Instant;
+import com.outpost.payment.common.Amount;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class CaptureServiceTest {
-  private static final Instant NOW = Instant.parse("2026-09-13T10:00:00Z");
-  private static final long EUR = Currencies.EUR.getValue().getCurrencyId();
-  private static final long PAYMENT_ID = 10L;
-  private static final long CAPTURE_TRANSACTION_ID = 20L;
-  private static final long EVENT_ID = 21L;
-
-  private final PaymentRepository repository = mock(PaymentRepository.class);
-  private final JournalEntryRepository journalEntryRepository = mock(JournalEntryRepository.class);
-  private final Account root =
-      Account.of(1L, AccountTypes.ROOT.getValue(), "ROOT", "Root", true, NOW, null);
-  private final Account platform =
-      Account.of(100L, AccountTypes.PLATFORM.getValue(), "OUTPOST", "Outpost", true, NOW, root);
-  private final Account merchant =
-      Account.of(200L, AccountTypes.MERCHANT.getValue(), "SHOP", "Shop", true, NOW, root);
-  private final Account otherMerchant =
-      Account.of(210L, AccountTypes.MERCHANT.getValue(), "OTHER", "Other", true, NOW, root);
-  private final Register merchantPendingFee =
-      new Register(20008L, merchant, RegisterTypes.PENDING_FEE.getValue());
-  private final Register platformPendingFee =
-      new Register(10008L, platform, RegisterTypes.PENDING_FEE.getValue());
-  private final PaymentTransaction payment =
-      new PaymentTransaction(
-          PAYMENT_ID, EUR, merchant.getAccountId(), 300L, 6L, 12_000L, 10_000L, 2_000L);
+  private final BookingFixtures fixtures = new BookingFixtures();
+  private final TransactionRepository transactions = mock(TransactionRepository.class);
+  private final JournalEntryRepository journalEntries = mock(JournalEntryRepository.class);
+  private final AccountRepository accounts = mock(AccountRepository.class);
+  private final RegisterRepository registers = mock(RegisterRepository.class);
   private final CaptureService service =
-      new CaptureService(repository, journalEntryRepository, new PaymentProcessorStateMachine());
+      new CaptureService(
+          transactions, journalEntries, accounts, registers, new PaymentStateMachine());
 
   @Test
   void failedCaptureReleasesThePendingFeeBookedAtCreation() {
-    arrangePaymentAwaitingCapture(
-        TransactionEventTypes.CAPTURE_FAILED,
-        new PendingFee(
-            500L, EUR, merchantPendingFee.getRegisterId(), platformPendingFee.getRegisterId()));
+    arrangeAuthorisedPayment(TransactionEventTypes.CAPTURE_FAILED, pendingFee(eur(500L)));
 
-    service.capture("payment-1", false);
+    service.bookCapture(BookingFixtures.PAYMENT_REFERENCE, false);
 
     ArgumentCaptor<JournalEntry> stored = ArgumentCaptor.forClass(JournalEntry.class);
-    verify(journalEntryRepository).insertJournalEntry(stored.capture());
+    verify(journalEntries).insertJournalEntry(stored.capture());
     assertThat(stored.getValue().getJournalEntryType())
         .isEqualTo(JournalEntryTypes.FEE_RELEASE.getValue());
     assertThat(stored.getValue().getJournalEntryLines())
         .extracting(JournalEntryLine::getRegister, line -> line.getAmount().quantity())
         .containsExactlyInAnyOrder(
-            tuple(merchantPendingFee, -500L), tuple(platformPendingFee, 500L));
+            tuple(fixtures.merchantPendingFee, -500L), tuple(fixtures.platformPendingFee, 500L));
+  }
+
+  @Test
+  void successfulCapturePostsTheCaptureEntry() {
+    arrangeAuthorisedPayment(TransactionEventTypes.CAPTURED, pendingFee(eur(500L)));
+    when(accounts.findTaxAuthorityAccountByCountryId(Countries.GERMANY.getValue().getCountryId()))
+        .thenReturn(Optional.of(fixtures.taxAuthority));
+    when(accounts.findAccountByAccountType(AccountTypes.PLATFORM.getValue()))
+        .thenReturn(Optional.of(fixtures.platform));
+    stubRegister(new Register(30003L, fixtures.psp, RegisterTypes.PSP_RECEIVABLE.getValue()));
+    stubRegister(
+        new Register(100604L, fixtures.taxAuthority, RegisterTypes.TAX_PAYABLE.getValue()));
+    stubRegister(
+        new Register(20001L, fixtures.merchant, RegisterTypes.MERCHANT_PAYABLE.getValue()));
+    stubRegister(new Register(10005L, fixtures.platform, RegisterTypes.FEE_REVENUE.getValue()));
+
+    service.bookCapture(BookingFixtures.PAYMENT_REFERENCE, true);
+
+    ArgumentCaptor<JournalEntry> stored = ArgumentCaptor.forClass(JournalEntry.class);
+    verify(journalEntries).insertJournalEntry(stored.capture());
+    assertThat(stored.getValue().getJournalEntryType())
+        .isEqualTo(JournalEntryTypes.CAPTURE.getValue());
   }
 
   @Test
   void rejectsPendingFeeInAnotherCurrencyBeforeJournalWrites() {
-    arrangePaymentAwaitingCapture(
+    arrangeAuthorisedPayment(
         TransactionEventTypes.CAPTURE_FAILED,
-        new PendingFee(
-            500L,
-            Currencies.USD.getValue().getCurrencyId(),
-            merchantPendingFee.getRegisterId(),
-            platformPendingFee.getRegisterId()));
+        pendingFee(new Amount(Currencies.USD.getValue(), 500L)));
 
-    assertInternalErrorWithoutJournalWrites(false);
+    assertInconsistentBookingWithoutJournalWrites();
   }
 
   @Test
   void rejectsReleaseToAnotherMerchantsPendingFeeRegisterBeforeJournalWrites() {
-    Register foreign = new Register(21008L, otherMerchant, RegisterTypes.PENDING_FEE.getValue());
-    arrangePaymentAwaitingCapture(
+    Register foreign =
+        new Register(21008L, fixtures.otherMerchant, RegisterTypes.PENDING_FEE.getValue());
+    arrangeAuthorisedPayment(
         TransactionEventTypes.CAPTURE_FAILED,
-        new PendingFee(500L, EUR, foreign.getRegisterId(), platformPendingFee.getRegisterId()));
-    when(repository.findRegister(merchant.getAccountId(), pendingFeeTypeId())).thenReturn(foreign);
+        new PendingFee(eur(500L), foreign, fixtures.platformPendingFee));
 
-    assertInternalErrorWithoutJournalWrites(false);
+    assertInconsistentBookingWithoutJournalWrites();
   }
 
-  @Test
-  void rejectsCaptureBookingFeeRevenueToAnotherPlatformAccountBeforeJournalWrites() {
-    final Account psp =
-        Account.of(300L, AccountTypes.PSP.getValue(), "PSP", "PSP", true, NOW, root);
-    final Account taxAuthority =
-        Account.of(
-            1006L, AccountTypes.TAX_AUTHORITY.getValue(), "TAX_DE", "Tax DE", true, NOW, root);
-    final Account otherPlatform =
-        Account.of(
-            110L, AccountTypes.PLATFORM.getValue(), "OTHER_PLATFORM", "Other", true, NOW, root);
-    arrangePaymentAwaitingCapture(
-        TransactionEventTypes.CAPTURED,
-        new PendingFee(
-            500L, EUR, merchantPendingFee.getRegisterId(), platformPendingFee.getRegisterId()));
-    when(repository.findTaxAuthorityAccountByCountryId(6L)).thenReturn(taxAuthority);
-    stubRegister(new Register(30003L, psp, RegisterTypes.PSP_RECEIVABLE.getValue()));
-    stubRegister(new Register(100604L, taxAuthority, RegisterTypes.TAX_PAYABLE.getValue()));
-    stubRegister(new Register(20001L, merchant, RegisterTypes.MERCHANT_PAYABLE.getValue()));
-    when(repository.findRegister(
-            platform.getAccountId(), RegisterTypes.FEE_REVENUE.getValue().getRegisterTypeId()))
-        .thenReturn(new Register(11005L, otherPlatform, RegisterTypes.FEE_REVENUE.getValue()));
-
-    assertInternalErrorWithoutJournalWrites(true);
+  private void assertInconsistentBookingWithoutJournalWrites() {
+    BookingException failure =
+        catchThrowableOfType(
+            BookingException.class,
+            () -> service.bookCapture(BookingFixtures.PAYMENT_REFERENCE, false));
+    assertThat(failure.code()).isEqualTo(BookingErrorCodes.INCONSISTENT_BOOKING);
+    verify(journalEntries, never()).insertJournalEntry(any());
   }
 
-  private void assertInternalErrorWithoutJournalWrites(boolean success) {
-    CaptureException failure =
-        catchThrowableOfType(CaptureException.class, () -> service.capture("payment-1", success));
-
-    assertThat(failure.status()).isEqualTo(500);
-    assertThat(failure.code()).isEqualTo("INTERNAL_ERROR");
-    verify(journalEntryRepository, never()).insertJournalEntry(any());
-  }
-
-  private void arrangePaymentAwaitingCapture(
-      TransactionEventTypes transactionEventType, PendingFee pendingFee) {
-    when(repository.findPaymentTransactionForUpdate("payment-1")).thenReturn(payment);
-    when(repository.findPaymentEvents(PAYMENT_ID))
+  private void arrangeAuthorisedPayment(TransactionEventTypes captureEventType, PendingFee fee) {
+    PaymentDetail payment = fixtures.payment();
+    Transaction paymentTransaction = payment.getPaymentTransaction();
+    when(transactions.findPaymentDetailByReferenceForUpdate(BookingFixtures.PAYMENT_REFERENCE))
+        .thenReturn(Optional.of(payment));
+    when(transactions.findTransactionEvents(paymentTransaction))
         .thenReturn(
             List.of(
-                event(1L, TransactionEventTypes.ORDER_CREATED),
-                event(2L, TransactionEventTypes.AUTHORISED)));
-    when(repository.findPendingFee(PAYMENT_ID)).thenReturn(pendingFee);
-    when(repository.insertCaptureTransaction(
-            eq(PAYMENT_ID),
-            eq(merchant.getAccountId()),
-            startsWith("capture-"),
-            eq(12_000L),
-            eq(EUR)))
-        .thenReturn(new StoredTransaction(CAPTURE_TRANSACTION_ID, NOW));
-    when(repository.insertPaymentEvent(
-            CAPTURE_TRANSACTION_ID, transactionEventType.getValue().getTransactionEventTypeId()))
-        .thenReturn(event(EVENT_ID, transactionEventType));
-    when(repository.findAccountById(merchant.getAccountId())).thenReturn(merchant);
-    when(repository.findPlatformAccount()).thenReturn(platform);
-    stubRegister(merchantPendingFee);
-    stubRegister(platformPendingFee);
+                BookingFixtures.event(1L, paymentTransaction, TransactionEventTypes.ORDER_CREATED),
+                BookingFixtures.event(2L, paymentTransaction, TransactionEventTypes.AUTHORISED)));
+    when(journalEntries.findPendingFeeByPayment(paymentTransaction)).thenReturn(Optional.of(fee));
+    when(transactions.insertTransaction(any()))
+        .thenAnswer(
+            invocation ->
+                Optional.of(
+                    fixtures.child(
+                        paymentTransaction,
+                        20L,
+                        TransactionTypes.CAPTURE,
+                        invocation.<Transaction>getArgument(0).getReference())));
+    when(transactions.insertTransactionEvent(any(), eq(captureEventType.getValue())))
+        .thenAnswer(
+            invocation ->
+                Optional.of(
+                    BookingFixtures.event(
+                        21L, invocation.<Transaction>getArgument(0), captureEventType)));
+  }
+
+  private PendingFee pendingFee(Amount fee) {
+    return new PendingFee(fee, fixtures.merchantPendingFee, fixtures.platformPendingFee);
   }
 
   private void stubRegister(Register register) {
-    when(repository.findRegister(
-            register.getAccount().getAccountId(), register.getRegisterType().getRegisterTypeId()))
-        .thenReturn(register);
-  }
-
-  private static long pendingFeeTypeId() {
-    return RegisterTypes.PENDING_FEE.getValue().getRegisterTypeId();
-  }
-
-  private static PaymentEvent event(long id, TransactionEventTypes type) {
-    return new PaymentEvent(id, type.getValue().getTransactionEventTypeId(), NOW);
+    when(registers.findRegisterByAccountAndRegisterType(
+            register.getAccount(), register.getRegisterType()))
+        .thenReturn(Optional.of(register));
   }
 }

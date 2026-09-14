@@ -6,6 +6,6 @@ import org.springframework.validation.annotation.Validated;
 
 /** HMAC secret with which Gateway signs its Ledger requests. */
 @Validated
-@ConfigurationProperties("outpost.ledger")
+@ConfigurationProperties("outpost.ledger.authentication")
 public record LedgerAuthenticationProperties(
     @NotBlank(message = "must be set") String gatewayHmacSecret) {}

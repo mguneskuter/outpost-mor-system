@@ -2,6 +2,7 @@ package com.outpost.payment.repository.mybatis;
 
 import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
+import com.outpost.account.AccountTypes.AccountType;
 import com.outpost.account.repository.AccountRepository;
 import java.time.Instant;
 import java.util.List;
@@ -36,6 +37,11 @@ final class KnownAccounts implements AccountRepository {
 
   @Override
   public Optional<Account> findTaxAuthorityAccountByCountryId(long countryId) {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public Optional<Account> findAccountByAccountType(AccountType accountType) {
     throw new UnsupportedOperationException();
   }
 }

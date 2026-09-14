@@ -186,7 +186,7 @@ class AccountTest {
   void everyAllowedParentChildPairIsAccepted() {
     for (AccountType parentType : allAccountTypes()) {
       Account parent = parentOf(parentType);
-      for (AccountType childType : AccountTypes.getAllowedChildrenTypesForParent(parentType)) {
+      for (AccountType childType : AccountTypes.allowedChildTypes(parentType)) {
         Account child = Account.of(2L, childType, "CODE", "Name", true, CREATED_AT, parent);
         assertTrue(parent.getChildAccounts().contains(child));
         assertEquals(parent, child.getParentAccount().orElse(null));
@@ -198,7 +198,7 @@ class AccountTest {
   void everyDisallowedParentChildPairIsRejected() {
     for (AccountType parentType : allAccountTypes()) {
       for (AccountType childType : allAccountTypes()) {
-        if (parentType.isAllowedChildrenType(childType)) {
+        if (parentType.isAllowedChildType(childType)) {
           continue;
         }
         Account parent = parentOf(parentType);

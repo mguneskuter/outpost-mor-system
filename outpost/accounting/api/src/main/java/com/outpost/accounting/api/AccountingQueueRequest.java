@@ -2,12 +2,12 @@ package com.outpost.accounting.api;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.outpost.accounting.api.serializer.AmountDeserializer;
-import com.outpost.accounting.api.serializer.AmountSerializer;
-import com.outpost.accounting.api.serializer.CountryIsoCodeDeserializer;
-import com.outpost.accounting.api.serializer.CountryIsoCodeSerializer;
-import com.outpost.accounting.api.serializer.CountrySubdivisionCodeDeserializer;
-import com.outpost.accounting.api.serializer.CountrySubdivisionCodeSerializer;
+import com.outpost.accounting.api.json.AmountDeserializer;
+import com.outpost.accounting.api.json.AmountSerializer;
+import com.outpost.accounting.api.json.CountryIsoCodeDeserializer;
+import com.outpost.accounting.api.json.CountryIsoCodeSerializer;
+import com.outpost.accounting.api.json.CountrySubdivisionCodeDeserializer;
+import com.outpost.accounting.api.json.CountrySubdivisionCodeSerializer;
 import com.outpost.common.iso.Countries.Country;
 import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.framework.logging.LogFields;
@@ -53,36 +53,18 @@ public record AccountingQueueRequest(
 
   /**
    * Returns the fields that identify this request on a log line: its type and reference, and the
-   * PSP outcome and refund reference when the request carries them.
+   * PSP's success flag and refund reference when the request carries them.
    */
   public StructuredLogField[] logFields() {
     List<StructuredLogField> fields = new ArrayList<>();
-    fields.add(new StructuredLogField(LogField.REQUEST_TYPE, type.name()));
-    fields.add(new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference));
+    fields.add(new StructuredLogField(LogFields.REQUEST_TYPE, type.name()));
+    fields.add(new StructuredLogField(LogFields.ORIGINAL_REFERENCE, originalReference));
     if (success != null) {
-      fields.add(new StructuredLogField(LogField.SUCCESS, success.toString()));
+      fields.add(new StructuredLogField(LogFields.SUCCESS, success.toString()));
     }
     if (refundReference != null) {
-      fields.add(new StructuredLogField(LogField.REFUND_REFERENCE, refundReference));
+      fields.add(new StructuredLogField(LogFields.REFUND_REFERENCE, refundReference));
     }
     return fields.toArray(StructuredLogField[]::new);
-  }
-
-  private enum LogField implements LogFields {
-    REQUEST_TYPE("request_type"),
-    ORIGINAL_REFERENCE("original_reference"),
-    SUCCESS("success"),
-    REFUND_REFERENCE("refund_reference");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
-    }
   }
 }

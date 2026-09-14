@@ -9,13 +9,13 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'org.junit-pioneer:junit-pioneer:2.3.0'
     testImplementation project(':common-iso:repository')
-    testImplementation project(':common-payment:repository')
+    testImplementation project(':payment:common:repository')
     testImplementation project(':account:repository')
     testImplementation project(':merchant-configuration:repository')
-    testImplementation project(':accounting:persistence')
+    testImplementation project(':accounting:repository')
     testImplementation project(':payment:repository')
     testImplementation project(':common-iso:domain')
-    testImplementation project(':common-payment:domain')
+    testImplementation project(':payment:common:domain')
     testImplementation project(':account:domain')
     testImplementation project(':merchant-configuration:domain')
     implementation project(':platform-sanity:static-data-repository')

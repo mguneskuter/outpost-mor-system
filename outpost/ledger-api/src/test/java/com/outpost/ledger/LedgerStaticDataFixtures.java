@@ -64,7 +64,7 @@ public final class LedgerStaticDataFixtures {
               + "(transaction_event_type_id, code, requires_journal_entry) VALUES (?, ?, ?)",
           value.getTransactionEventTypeId(),
           value.getCode(),
-          value.isRequiresJournalEntry());
+          value.requiresJournalEntry());
     }
     for (JournalEntryTypes type : JournalEntryTypes.values()) {
       var value = type.getValue();

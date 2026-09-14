@@ -64,7 +64,7 @@ class StructuredLoggingContractTest {
         .isTrue();
   }
 
-  private enum TestFields implements LogFields {
+  private enum TestFields implements LogField {
     APPLICATION("application"),
     REQUEST_ID("request_id");
 

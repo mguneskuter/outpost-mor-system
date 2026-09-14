@@ -1,8 +1,8 @@
 package com.outpost.gateway.psp.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.outpost.gateway.psp.service.PspEventCodes;
 import com.outpost.gateway.psp.service.PspOrderEvent;
-import com.outpost.gateway.psp.service.PspWebhookEventCodes;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -12,7 +12,7 @@ public record PspWebhookEvent(
     @JsonProperty("psp_reference") String pspReference,
     @JsonProperty("psp_refund_reference") @Nullable String pspRefundReference,
     @JsonProperty("payment_reference") String paymentReference,
-    @JsonProperty("event_code") PspWebhookEventCodes eventCode,
+    @JsonProperty("event_code") PspEventCodes eventCode,
     long timestamp,
     boolean success,
     @JsonProperty("result_code") String resultCode,

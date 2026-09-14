@@ -76,8 +76,24 @@ public enum TransactionEventTypes {
     }
 
     /** Returns whether this event requires a journal entry. */
-    public boolean isRequiresJournalEntry() {
+    public boolean requiresJournalEntry() {
       return requiresJournalEntry;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (!(other instanceof TransactionEventType that)) {
+        return false;
+      }
+      return transactionEventTypeId == that.transactionEventTypeId && code.equals(that.code);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(transactionEventTypeId, code);
     }
   }
 }

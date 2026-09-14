@@ -45,6 +45,7 @@ import com.outpost.platform.staticdata.job.repository.CountryWriteMapper;
 import com.outpost.platform.staticdata.job.repository.CurrencyWriteMapper;
 import com.outpost.platform.staticdata.job.repository.FeeModeWriteMapper;
 import com.outpost.platform.staticdata.job.repository.ProductTypeWriteMapper;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -52,7 +53,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class EnsureStaticDataOperators {
   @Bean
-  EnsureStaticDataOperator<Countries, Country, CountryRecord> countryEnsureOperator(
+  EnsureStaticDataJob ensureStaticDataJob(List<EnsureStaticDataOperator<?, ?, ?>> operators) {
+    return new EnsureStaticDataJob(operators);
+  }
+
+  @Bean
+  EnsureStaticDataOperator<Countries, Country, CountryRecord> countryOperator(
       StaticDataRepository<Countries, Country, CountryRecord> repository,
       CountryWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
@@ -60,7 +66,7 @@ public class EnsureStaticDataOperators {
 
   @Bean
   EnsureStaticDataOperator<CountrySubdivisions, CountrySubdivision, CountrySubdivisionRecord>
-      countrySubdivisionEnsureOperator(
+      countrySubdivisionOperator(
           StaticDataRepository<CountrySubdivisions, CountrySubdivision, CountrySubdivisionRecord>
               repository,
           CountrySubdivisionWriteMapper mapper) {
@@ -68,45 +74,44 @@ public class EnsureStaticDataOperators {
   }
 
   @Bean
-  EnsureStaticDataOperator<Currencies, Currency, CurrencyRecord> currencyEnsureOperator(
+  EnsureStaticDataOperator<Currencies, Currency, CurrencyRecord> currencyOperator(
       StaticDataRepository<Currencies, Currency, CurrencyRecord> repository,
       CurrencyWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
   }
 
   @Bean
-  EnsureStaticDataOperator<ProductTypes, ProductType, ProductTypeRecord> productTypeEnsureOperator(
+  EnsureStaticDataOperator<ProductTypes, ProductType, ProductTypeRecord> productTypeOperator(
       StaticDataRepository<ProductTypes, ProductType, ProductTypeRecord> repository,
       ProductTypeWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
   }
 
   @Bean
-  EnsureStaticDataOperator<AccountTypes, AccountType, AccountTypeRecord> accountTypeEnsureOperator(
+  EnsureStaticDataOperator<AccountTypes, AccountType, AccountTypeRecord> accountTypeOperator(
       StaticDataRepository<AccountTypes, AccountType, AccountTypeRecord> repository,
       AccountTypeWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
   }
 
   @Bean
-  EnsureStaticDataOperator<FeeModes, FeeMode, FeeModeRecord> feeModeEnsureOperator(
+  EnsureStaticDataOperator<FeeModes, FeeMode, FeeModeRecord> feeModeOperator(
       StaticDataRepository<FeeModes, FeeMode, FeeModeRecord> repository,
       FeeModeWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
   }
 
   @Bean
-  EnsureStaticDataOperator<RegisterTypes, RegisterType, RegisterTypeRecord>
-      registerTypeEnsureOperator(
-          StaticDataRepository<RegisterTypes, RegisterType, RegisterTypeRecord> repository,
-          RegisterTypeWriteMapper mapper) {
+  EnsureStaticDataOperator<RegisterTypes, RegisterType, RegisterTypeRecord> registerTypeOperator(
+      StaticDataRepository<RegisterTypes, RegisterType, RegisterTypeRecord> repository,
+      RegisterTypeWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
   }
 
   @Bean
   EnsureStaticDataOperator<
           AccountTypeRegisterTypes, AccountTypeRegisterType, AccountTypeRegisterTypeRecord>
-      accountTypeRegisterTypeEnsureOperator(
+      accountTypeRegisterTypeOperator(
           StaticDataRepository<
                   AccountTypeRegisterTypes, AccountTypeRegisterType, AccountTypeRegisterTypeRecord>
               repository,
@@ -116,7 +121,7 @@ public class EnsureStaticDataOperators {
 
   @Bean
   EnsureStaticDataOperator<TransactionTypes, TransactionType, TransactionTypeRecord>
-      transactionTypeEnsureOperator(
+      transactionTypeOperator(
           StaticDataRepository<TransactionTypes, TransactionType, TransactionTypeRecord> repository,
           TransactionTypeWriteMapper mapper) {
     return new EnsureStaticDataOperator<>(repository, mapper::insert);
@@ -124,7 +129,7 @@ public class EnsureStaticDataOperators {
 
   @Bean
   EnsureStaticDataOperator<TransactionEventTypes, TransactionEventType, TransactionEventTypeRecord>
-      transactionEventTypeEnsureOperator(
+      transactionEventTypeOperator(
           StaticDataRepository<
                   TransactionEventTypes, TransactionEventType, TransactionEventTypeRecord>
               repository,
@@ -134,7 +139,7 @@ public class EnsureStaticDataOperators {
 
   @Bean
   EnsureStaticDataOperator<JournalEntryTypes, JournalEntryType, JournalEntryTypeRecord>
-      journalEntryTypeEnsureOperator(
+      journalEntryTypeOperator(
           StaticDataRepository<JournalEntryTypes, JournalEntryType, JournalEntryTypeRecord>
               repository,
           JournalEntryTypeWriteMapper mapper) {

@@ -5,8 +5,8 @@ import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.web.CachedBodyRequest;
 import com.outpost.framework.security.web.SignatureAuthenticationFilter;
 import com.outpost.framework.security.web.SizeBoundedRequestBody;
-import com.outpost.gateway.psp.service.PspWebhookProcessResultCodes;
-import com.outpost.integration.psp.simulator.repository.PspConfiguration;
+import com.outpost.gateway.psp.service.PspWebhookResults;
+import com.outpost.integration.psp.simulator.PspConfiguration;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -59,9 +59,10 @@ public final class PspWebhookSignatureFilter extends OncePerRequestFilter {
       return;
     }
     byte[] body = boundedBody.orElseThrow();
-    Optional<PspConfiguration> configuration = configurations.findByCode(path.group(1));
+    Optional<PspConfiguration> configuration =
+        configurations.findPspConfigurationByPspCode(path.group(1));
     if (configuration.isEmpty()) {
-      reject(response, PspWebhookProcessResultCodes.UNKNOWN_PSP);
+      reject(response, PspWebhookResults.UNKNOWN_PSP);
       return;
     }
     PspConfiguration psp = configuration.orElseThrow();
@@ -69,7 +70,7 @@ public final class PspWebhookSignatureFilter extends OncePerRequestFilter {
         HmacKey.fromUtf8(psp.hmacSecret()),
         body,
         request.getHeader(SignatureAuthenticationFilter.SIGNATURE_HEADER))) {
-      reject(response, PspWebhookProcessResultCodes.INVALID_SIGNATURE);
+      reject(response, PspWebhookResults.INVALID_SIGNATURE);
       return;
     }
     HttpServletRequest signed = new CachedBodyRequest(request, body);
@@ -77,9 +78,8 @@ public final class PspWebhookSignatureFilter extends OncePerRequestFilter {
     chain.doFilter(signed, response);
   }
 
-  private void reject(HttpServletResponse response, PspWebhookProcessResultCodes code)
-      throws IOException {
-    ResponseEntity<PspWebhookEventResponse> rejection = PspWebhookResponseCodes.respond(code);
+  private void reject(HttpServletResponse response, PspWebhookResults code) throws IOException {
+    ResponseEntity<PspWebhookEventResponse> rejection = PspWebhookResponder.respond(code);
     response.setStatus(rejection.getStatusCode().value());
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     objectMapper.writeValue(response.getOutputStream(), rejection.getBody());

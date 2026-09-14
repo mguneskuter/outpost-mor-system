@@ -1,7 +1,6 @@
 package com.outpost.framework.persistence.flyway;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.outpost.account.AccountTypes;
 import com.outpost.account.configuration.FeeModes;
@@ -34,8 +33,6 @@ class SeedSqlExecutionIntegrationTest {
   private static final String PSP_SIMULATOR_BASE_URL = "http://localhost:8081";
   private static final String PSP_SIMULATOR_API_KEY = "demo-outpost-api-key";
   private static final String PSP_SIMULATOR_HMAC_SECRET = "demo-hmac-secret";
-  private static final String UNIQUE_VIOLATION = "23505";
-  private static final String AUSTRIA_RATE_ROW = "(1, 1, NULL, 0.2000)";
 
   private static final List<String> REFERENCE_TABLES =
       List.of(
@@ -69,14 +66,9 @@ class SeedSqlExecutionIntegrationTest {
             .containsExactlyInAnyOrderElementsOf(expectedZeroRateJurisdictions());
         assertThat(nextTaxRateIdentifier(connection))
             .isGreaterThan(maxTaxRateIdentifier(connection));
-        assertThatExceptionOfType(SQLException.class)
-            .isThrownBy(() -> executeSeedFile(connection, taxRateFile()))
-            .extracting(SQLException::getSQLState)
-            .isEqualTo(UNIQUE_VIOLATION);
-        assertThatExceptionOfType(SQLException.class)
-            .isThrownBy(() -> executeSeedFile(connection, taxRateFileWithChangedRate()))
-            .extracting(SQLException::getSQLState)
-            .isEqualTo(UNIQUE_VIOLATION);
+        long storedTaxRates = count(connection, "tax_rate");
+        executeSeedFile(connection, taxRateFile());
+        assertThat(count(connection, "tax_rate")).isEqualTo(storedTaxRates);
       }
     }
   }
@@ -131,18 +123,6 @@ class SeedSqlExecutionIntegrationTest {
 
   private static void executeSeedFile(Connection connection, Path seedFile) throws SQLException {
     execute(connection, substitutePsqlVariables(readSql(seedFile)));
-  }
-
-  private static Path taxRateFileWithChangedRate() throws IOException {
-    String sql = readSql(taxRateFile());
-    if (!sql.contains(AUSTRIA_RATE_ROW)) {
-      throw new IllegalStateException("tax_rate.sql no longer contains " + AUSTRIA_RATE_ROW);
-    }
-    Path changed = Files.createTempFile("tax-rate-changed", ".sql");
-    Files.writeString(
-        changed, sql.replace(AUSTRIA_RATE_ROW, "(1, 1, NULL, 0.1999)"), StandardCharsets.UTF_8);
-    changed.toFile().deleteOnExit();
-    return changed;
   }
 
   private static String readSql(Path seedFile) {

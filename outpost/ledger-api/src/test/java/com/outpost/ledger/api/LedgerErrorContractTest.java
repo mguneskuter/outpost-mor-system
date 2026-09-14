@@ -12,15 +12,15 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.outpost.accounting.api.AccountingQueueRequest;
 import com.outpost.accounting.api.LedgerErrorResponse;
+import com.outpost.accounting.report.RegisterBalance;
+import com.outpost.accounting.report.repository.BalanceReportRepository;
 import com.outpost.accounting.transactionlock.TransactionLock;
 import com.outpost.accounting.transactionlock.repository.TransactionLockRepository;
 import com.outpost.framework.queue.TimeOrderedQueue;
-import com.outpost.ledger.accountingrequest.api.AccountingRequestController;
-import com.outpost.ledger.accountingrequest.service.AccountingRequestService;
-import com.outpost.ledger.accountingrequest.service.LockedAccountingQueueRequest;
+import com.outpost.ledger.accounting.queue.api.AccountingQueueController;
+import com.outpost.ledger.accounting.queue.service.AccountingQueueService;
+import com.outpost.ledger.accounting.queue.service.LockedAccountingQueueRequest;
 import com.outpost.ledger.report.api.BalanceReportController;
-import com.outpost.ledger.report.repository.BalanceReportRepository;
-import com.outpost.ledger.report.repository.RegisterBalance;
 import com.outpost.ledger.report.service.BalanceReportService;
 import java.time.Clock;
 import java.time.Duration;
@@ -62,8 +62,8 @@ class LedgerErrorContractTest {
       new TimeOrderedQueue<>(Clock.systemUTC(), 1);
   private final MockMvc mockMvc =
       MockMvcBuilders.standaloneSetup(
-              new AccountingRequestController(
-                  new AccountingRequestService(
+              new AccountingQueueController(
+                  new AccountingQueueService(
                       transactionLocks, accountingQueue, Duration.ofMinutes(5))),
               new BalanceReportController(new BalanceReportService(balances)))
           .setControllerAdvice(new LedgerErrorAdvice())

@@ -34,6 +34,13 @@ public final class StructuredLogger {
     }
   }
 
+  /** Emits an error event with safe typed application fields. */
+  public void error(String message, StructuredLogField... fields) {
+    try (StructuredLogContext.Scope scope = StructuredLogContext.open(fields)) {
+      logger.error(message);
+    }
+  }
+
   /** Emits an error event with safe typed application fields and its cause. */
   public void error(String message, Throwable exception, StructuredLogField... fields) {
     Objects.requireNonNull(exception, "exception");

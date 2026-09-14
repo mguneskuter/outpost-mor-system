@@ -1,6 +1,6 @@
 package com.outpost.gateway.psp.api;
 
-import com.outpost.gateway.psp.service.PspWebhookProcessResultCodes;
+import com.outpost.gateway.psp.service.PspWebhookResults;
 import com.outpost.gateway.psp.service.PspWebhookService;
 import java.util.regex.Pattern;
 import org.springframework.http.ResponseEntity;
@@ -29,16 +29,16 @@ public final class PspWebhookController {
 
   /** Queues a PSP event notification for the Ledger. */
   @PostMapping(WEBHOOK_PATH)
-  ResponseEntity<PspWebhookEventResponse> process(
+  ResponseEntity<PspWebhookEventResponse> receive(
       @RequestAttribute(PspWebhookSignatureFilter.SIGNED_REQUEST_ATTRIBUTE)
           SignedPspWebhookRequest signedRequest,
       @RequestBody PspWebhookEvent event) {
-    return PspWebhookResponseCodes.respond(
-        service.process(signedRequest.psp(), event.toOrderEvent()));
+    return PspWebhookResponder.respond(
+        service.queueEvent(signedRequest.psp(), event.toOrderEvent()));
   }
 
   @ExceptionHandler(HttpMessageNotReadableException.class)
   ResponseEntity<PspWebhookEventResponse> unreadable(HttpMessageNotReadableException exception) {
-    return PspWebhookResponseCodes.respond(PspWebhookProcessResultCodes.INVALID_PAYLOAD);
+    return PspWebhookResponder.respond(PspWebhookResults.INVALID_PAYLOAD);
   }
 }

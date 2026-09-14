@@ -2,14 +2,17 @@ package com.outpost.accounting;
 
 import com.outpost.account.Account;
 import com.outpost.account.AccountTypes;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.transaction.Transaction;
+import com.outpost.accounting.transaction.TransactionEvent;
 import com.outpost.common.iso.Currencies;
 import com.outpost.payment.common.Amount;
 import java.time.Instant;
 
 /** Accounts, transactions, and journal entries shared by accounting domain tests. */
 public final class AccountingFixtures {
-  static final Instant CREATED = Instant.parse("2026-02-01T00:00:00Z");
-  static final Amount EUR_100 = new Amount(Currencies.EUR.getValue(), 100L);
+  public static final Instant CREATED = Instant.parse("2026-02-01T00:00:00Z");
+  public static final Amount EUR_100 = new Amount(Currencies.EUR.getValue(), 100L);
 
   private AccountingFixtures() {}
 
@@ -35,7 +38,8 @@ public final class AccountingFixtures {
         301L, AccountTypes.PLATFORM.getValue(), "PLATFORM", "Platform", true, CREATED, root);
   }
 
-  static JournalEntry journalEntry(long sourceId) {
+  /** Returns a CAPTURE entry without lines for a CAPTURED event of a fixture payment. */
+  public static JournalEntry journalEntry(long sourceId) {
     TransactionEvent event =
         new TransactionEvent(
             sourceId, payment(sourceId), TransactionEventTypes.CAPTURED.getValue(), CREATED);
@@ -44,7 +48,7 @@ public final class AccountingFixtures {
 
   /** Returns a PAYMENT transaction owned by the fixture merchant account. */
   public static Transaction payment(long transactionId) {
-    return new Transaction(
+    return Transaction.of(
         transactionId,
         TransactionTypes.PAYMENT.getValue(),
         merchant(),
@@ -55,7 +59,7 @@ public final class AccountingFixtures {
 
   /** Returns a CAPTURE transaction owned by the fixture merchant account. */
   public static Transaction capture(long transactionId) {
-    return new Transaction(
+    return Transaction.of(
         transactionId,
         TransactionTypes.CAPTURE.getValue(),
         merchant(),
@@ -64,8 +68,9 @@ public final class AccountingFixtures {
         CREATED);
   }
 
-  static Transaction refund(long transactionId) {
-    return new Transaction(
+  /** Returns a REFUND transaction owned by the fixture merchant account. */
+  public static Transaction refund(long transactionId) {
+    return Transaction.of(
         transactionId,
         TransactionTypes.REFUND.getValue(),
         merchant(),

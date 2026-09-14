@@ -13,12 +13,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * com.outpost.platform.staticdata.check.SystemSanityCheck} verifies for Gateway, matching the
  * code-defined id, code, and name exactly.
  */
-final class GatewayStaticDataFixtures {
+public final class GatewayStaticDataFixtures {
 
   private GatewayStaticDataFixtures() {}
 
   /** Materialises every enum table Gateway's static-data check reads. */
-  static void materializeAll(JdbcTemplate jdbcTemplate) {
+  public static void materializeAll(JdbcTemplate jdbcTemplate) {
     for (Countries country : Countries.values()) {
       var value = country.getValue();
       jdbcTemplate.update(

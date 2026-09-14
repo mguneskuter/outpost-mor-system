@@ -25,9 +25,7 @@ class MyBatisMerchantFeeConfigurationRepositoryIntegrationTest {
         new MerchantConfigurationDatabase(
             "outpost_merchant_fee", "db/mapper/configuration/MerchantFeeConfigurationMapper.xml");
     database = migrated;
-    feeConfigurations =
-        new MyBatisMerchantFeeConfigurationRepository(
-            migrated.sqlSession().getMapper(MerchantFeeConfigurationMapper.class));
+    feeConfigurations = new MyBatisMerchantFeeConfigurationRepository(migrated.sqlSession());
     JdbcTemplate jdbc = migrated.jdbc();
     for (Currencies currency : List.of(Currencies.EUR, Currencies.USD)) {
       jdbc.update(

@@ -7,11 +7,12 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation project(':platform-sanity:static-data-model')
     testImplementation project(':common-iso:domain')
-    testImplementation project(':common-payment:domain')
+    testImplementation project(':payment:common:domain')
     testImplementation project(':account:domain')
     testImplementation project(':merchant-configuration:domain')
     testImplementation project(':accounting:domain')
-    testImplementation project(':tax')
+    testImplementation project(':tax:domain')
+    testImplementation project(':fx:domain')
     testImplementation project(':payment:domain')
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

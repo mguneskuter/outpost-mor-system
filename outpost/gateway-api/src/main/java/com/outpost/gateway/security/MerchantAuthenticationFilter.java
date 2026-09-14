@@ -1,15 +1,16 @@
 package com.outpost.gateway.security;
 
+import com.outpost.account.configuration.MerchantApiKey;
+import com.outpost.account.configuration.repository.MerchantApiKeyRepository;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
+import com.outpost.framework.security.encryption.AesGcmSecret;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
 import com.outpost.framework.security.hmac.HmacSignature;
 import com.outpost.framework.security.web.SizeBoundedRequestBody;
 import com.outpost.gateway.api.ErrorResponse;
-import com.outpost.gateway.security.repository.MerchantApiKeyCredentials;
-import com.outpost.gateway.security.repository.MerchantApiKeyRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;
@@ -40,14 +41,14 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       MerchantAuthenticationFilter.class.getName() + ".principal";
   private final MerchantApiKeyRepository merchantApiKeys;
   private final String operatorKey;
-  private final AesGcmSecretAdapter secrets;
+  private final AesGcmSecret secrets;
   private final ObjectMapper objectMapper;
 
   /** Creates a filter backed by merchant key storage that answers rejections as JSON. */
   public MerchantAuthenticationFilter(
       MerchantApiKeyRepository merchantApiKeys,
       String operatorKey,
-      AesGcmSecretAdapter secrets,
+      AesGcmSecret secrets,
       ObjectMapper objectMapper) {
     this.merchantApiKeys = merchantApiKeys;
     this.operatorKey = operatorKey;
@@ -91,16 +92,16 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
     byte[] body = boundedBody.orElseThrow();
     // Credential failures are answered here rather than rethrown: the servlet container logs an
     // escaping exception as a second ERROR event.
-    Optional<MerchantApiKeyCredentials> credentials;
+    Optional<MerchantApiKey> credentials;
     try {
-      credentials = merchantApiKeys.findActiveByHash(sha256Hex(presented));
+      credentials = merchantApiKeys.findActiveMerchantApiKeyByApiKeyHash(sha256Hex(presented));
     } catch (RuntimeException exception) {
       String correlationId = UUID.randomUUID().toString();
       LOGGER.error(
           "Merchant credential lookup failed",
           exception,
-          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_STORE"),
-          new StructuredLogField(LogField.CORRELATION_ID, correlationId));
+          new StructuredLogField(LogFields.FAILURE, "CREDENTIAL_STORE"),
+          new StructuredLogField(LogFields.CORRELATION_ID, correlationId));
       internalError(response, correlationId);
       return;
     }
@@ -115,7 +116,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       unauthenticated(response);
       return;
     }
-    MerchantApiKeyCredentials key = credentials.orElseThrow();
+    MerchantApiKey key = credentials.orElseThrow();
     HmacKey hmacKey;
     try {
       hmacKey = HmacKey.fromUtf8(secrets.decrypt(key.encryptedHmacSecret()));
@@ -124,9 +125,9 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       LOGGER.error(
           "Merchant credential decryption failed",
           exception,
-          new StructuredLogField(LogField.FAILURE, "CREDENTIAL_DECRYPTION"),
-          new StructuredLogField(LogField.MERCHANT_ACCOUNT_ID, Long.toString(key.accountId())),
-          new StructuredLogField(LogField.CORRELATION_ID, correlationId));
+          new StructuredLogField(LogFields.FAILURE, "CREDENTIAL_DECRYPTION"),
+          new StructuredLogField(LogFields.MERCHANT_ACCOUNT_ID, Long.toString(key.accountId())),
+          new StructuredLogField(LogFields.CORRELATION_ID, correlationId));
       internalError(response, correlationId);
       return;
     }
@@ -137,14 +138,14 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
       LOGGER.warn(
           "Merchant signature rejected",
           exception,
-          new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
+          new StructuredLogField(LogFields.FAILURE, "INVALID_SIGNATURE"));
       unauthenticated(response);
       return;
     }
     if (!validSignature) {
       LOGGER.warn(
           "Merchant signature rejected",
-          new StructuredLogField(LogField.FAILURE, "INVALID_SIGNATURE"));
+          new StructuredLogField(LogFields.FAILURE, "INVALID_SIGNATURE"));
       unauthenticated(response);
       return;
     }
@@ -155,7 +156,7 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
 
   private static void rejected(String failure) {
     LOGGER.warn(
-        "Merchant authentication rejected", new StructuredLogField(LogField.FAILURE, failure));
+        "Merchant authentication rejected", new StructuredLogField(LogFields.FAILURE, failure));
   }
 
   private void unauthenticated(HttpServletResponse response) throws IOException {
@@ -225,23 +226,6 @@ public final class MerchantAuthenticationFilter extends OncePerRequestFilter {
         @Override
         public void setReadListener(ReadListener listener) {}
       };
-    }
-  }
-
-  private enum LogField implements LogFields {
-    FAILURE("authentication_failure"),
-    MERCHANT_ACCOUNT_ID("merchant_account_id"),
-    CORRELATION_ID("correlation_id");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
     }
   }
 }

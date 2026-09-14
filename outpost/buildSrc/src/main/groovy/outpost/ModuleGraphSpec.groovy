@@ -8,8 +8,8 @@ class ModuleGraphSpec {
         ':platform-sanity:static-data-repository',
         ':common-iso:repository',
         ':common-iso:domain',
-        ':common-payment:repository',
-        ':common-payment:domain',
+        ':payment:common:repository',
+        ':payment:common:domain',
         ':framework:persistence',
         ':framework:logging',
         ':framework:security',
@@ -20,12 +20,14 @@ class ModuleGraphSpec {
         ':merchant-configuration:repository',
         ':merchant-configuration:domain',
         ':accounting:domain',
-        ':accounting:persistence',
+        ':accounting:repository',
         ':accounting:report',
         ':accounting:api',
         ':accounting:api-client',
-        ':tax',
-        ':fx',
+        ':tax:domain',
+        ':tax:repository',
+        ':fx:domain',
+        ':fx:repository',
         ':payment:domain',
         ':payment:repository',
         ':psp-integration:domain',
@@ -40,24 +42,25 @@ class ModuleGraphSpec {
         ':platform-sanity:domain-architecture': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':account:domain',
             ':merchant-configuration:domain',
             ':accounting:domain',
-            ':tax',
+            ':tax:domain',
+            ':fx:domain',
             ':payment:domain'
         ],
         ':platform-sanity:static-data-check': [
             ':platform-sanity:static-data-repository',
             ':platform-sanity:static-data-model',
             ':common-iso:repository',
-            ':common-payment:repository',
+            ':payment:common:repository',
             ':account:repository',
             ':merchant-configuration:repository',
-            ':accounting:persistence',
+            ':accounting:repository',
             ':payment:repository',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':account:domain',
             ':merchant-configuration:domain'
         ],
@@ -67,8 +70,8 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
-        ':common-payment:repository': [
-            ':common-payment:domain',
+        ':payment:common:repository': [
+            ':payment:common:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
@@ -80,6 +83,7 @@ class ModuleGraphSpec {
         ':merchant-configuration:repository': [
             ':merchant-configuration:domain',
             ':common-iso:domain',
+            ':payment:common:domain',
             ':account:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
@@ -87,7 +91,7 @@ class ModuleGraphSpec {
         ':common-iso:domain': [
             ':platform-sanity:static-data-model'
         ],
-        ':common-payment:domain': [
+        ':payment:common:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain'
         ],
@@ -96,7 +100,7 @@ class ModuleGraphSpec {
             ':common-iso:domain',
             ':accounting:domain',
             ':merchant-configuration:domain',
-            ':common-payment:domain'
+            ':payment:common:domain'
         ],
         ':framework:logging': [],
         ':framework:security': [],
@@ -109,23 +113,23 @@ class ModuleGraphSpec {
         ':merchant-configuration:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':account:domain'
         ],
         ':accounting:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':account:domain',
             ':merchant-configuration:domain',
-            ':tax',
-            ':fx'
+            ':tax:domain',
+            ':fx:domain'
         ],
-        ':accounting:persistence': [
+        ':accounting:repository': [
             ':accounting:domain',
             ':account:domain',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
@@ -133,56 +137,67 @@ class ModuleGraphSpec {
         ':accounting:api': [
             ':accounting:report',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':framework:logging'
         ],
         ':accounting:api-client': [
             ':accounting:api',
             ':framework:security'
         ],
-        ':tax': [
+        ':tax:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
-            ':common-payment:domain'
+            ':payment:common:domain'
         ],
-        ':fx': [
+        ':fx:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain'
+        ],
+        ':tax:repository': [
+            ':tax:domain',
+            ':common-iso:domain',
+            ':payment:common:domain',
+            ':framework:persistence'
+        ],
+        ':fx:repository': [
+            ':fx:domain',
+            ':common-iso:domain',
+            ':framework:persistence'
         ],
         ':payment:domain': [
             ':platform-sanity:static-data-model',
             ':account:domain',
             ':common-iso:domain',
-            ':common-payment:domain',
-            ':tax',
+            ':payment:common:domain',
+            ':tax:domain',
             ':psp-integration:domain'
         ],
         ':payment:repository': [
             ':payment:domain',
             ':account:domain',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':platform-sanity:static-data-repository',
             ':framework:persistence'
         ],
         ':psp-integration:domain': [
             ':platform-sanity:static-data-model',
             ':common-iso:domain',
-            ':common-payment:domain'
+            ':payment:common:domain'
         ],
         ':psp-integration:client': [
             ':psp-integration:domain',
             ':framework:persistence',
             ':account:domain',
             ':common-iso:domain',
-            ':common-payment:domain'
+            ':payment:common:domain'
         ],
         ':gateway-api': [
             ':platform-sanity:static-data-check',
             ':common-iso:domain',
             ':common-iso:repository',
-            ':common-payment:domain',
-            ':common-payment:repository',
+            ':payment:common:domain',
+            ':payment:common:repository',
             ':framework:logging',
             ':framework:persistence',
             ':framework:security',
@@ -192,7 +207,8 @@ class ModuleGraphSpec {
             ':account:repository',
             ':merchant-configuration:domain',
             ':merchant-configuration:repository',
-            ':tax',
+            ':tax:domain',
+            ':tax:repository',
             ':payment:domain',
             ':payment:repository',
             ':psp-integration:domain',
@@ -203,9 +219,11 @@ class ModuleGraphSpec {
         ],
         ':ledger-api': [
             ':platform-sanity:static-data-check',
-            ':accounting:persistence',
+            ':account:repository',
+            ':merchant-configuration:repository',
+            ':accounting:repository',
             ':common-iso:domain',
-            ':common-payment:domain',
+            ':payment:common:domain',
             ':framework:logging',
             ':framework:persistence',
             ':framework:security',
@@ -214,8 +232,9 @@ class ModuleGraphSpec {
             ':account:domain',
             ':merchant-configuration:domain',
             ':accounting:domain',
-            ':tax',
-            ':fx',
+            ':tax:domain',
+            ':fx:domain',
+            ':fx:repository',
             ':accounting:report',
             ':accounting:api',
             ':accounting:api-client'
@@ -225,17 +244,17 @@ class ModuleGraphSpec {
             ':platform-sanity:static-data-repository',
             ':common-iso:repository',
             ':common-iso:domain',
-            ':common-payment:repository',
-            ':common-payment:domain',
+            ':payment:common:repository',
+            ':payment:common:domain',
             ':framework:persistence',
             ':account:repository',
             ':account:domain',
             ':merchant-configuration:repository',
             ':merchant-configuration:domain',
             ':accounting:domain',
-            ':accounting:persistence',
-            ':tax',
-            ':fx',
+            ':accounting:repository',
+            ':tax:domain',
+            ':fx:domain',
             ':payment:domain',
             ':payment:repository',
             ':psp-integration:domain'
@@ -246,12 +265,12 @@ class ModuleGraphSpec {
 
     static final Set<String> DOMAIN_PROJECT_PATHS = [
         ':common-iso:domain',
-        ':common-payment:domain',
+        ':payment:common:domain',
         ':account:domain',
         ':merchant-configuration:domain',
         ':accounting:domain',
-        ':tax',
-        ':fx',
+        ':tax:domain',
+        ':fx:domain',
         ':payment:domain',
         ':psp-integration:domain'
     ] as Set

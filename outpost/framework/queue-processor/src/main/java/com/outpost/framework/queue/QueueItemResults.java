@@ -1,6 +1,6 @@
 package com.outpost.framework.queue;
 
-/** What a {@link QueueItemHandler} asks the queue to do with an item after handling it. */
+/** What a {@link QueueItemProcessor} asks the queue to do with an item after handling it. */
 public enum QueueItemResults {
   /** The item is removed. */
   DONE,

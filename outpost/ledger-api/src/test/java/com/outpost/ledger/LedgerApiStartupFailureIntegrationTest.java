@@ -160,7 +160,8 @@ class LedgerApiStartupFailureIntegrationTest {
     environment.setProperty("outpost.ledger.accounting-queue.poll-interval", "PT1M");
     environment.setProperty("outpost.ledger.accounting-queue.transaction-lock-lease", "PT5M");
     if (gatewayHmacSecret != null) {
-      environment.setProperty("outpost.ledger.gateway-hmac-secret", gatewayHmacSecret);
+      environment.setProperty(
+          "outpost.ledger.authentication.gateway-hmac-secret", gatewayHmacSecret);
     }
     return new SpringApplicationBuilder(LedgerApiApplication.class)
         .web(WebApplicationType.NONE)

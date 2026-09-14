@@ -18,14 +18,14 @@ import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
-import com.outpost.integration.psp.service.CreateOrderRequest;
-import com.outpost.integration.psp.service.PspClient;
-import com.outpost.integration.psp.service.ResultCode;
+import com.outpost.integration.psp.CreatePspOrderRequest;
+import com.outpost.integration.psp.PspClient;
+import com.outpost.integration.psp.PspResultCodes;
+import com.outpost.integration.psp.UnknownPspResultException;
 import com.outpost.payment.ShopperDetail;
 import com.outpost.payment.common.Amount;
 import com.outpost.payment.common.ProductTypes;
 import com.outpost.payment.common.ProductTypes.ProductType;
-import com.outpost.payment.order.LineTaxCalculator;
 import com.outpost.payment.order.Order;
 import com.outpost.payment.order.OrderItem;
 import com.outpost.payment.order.repository.OrderRepository;
@@ -42,7 +42,6 @@ import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 
 /** Creates merchant orders and the payment that collects each of them. */
 public final class OrderService {
@@ -54,9 +53,8 @@ public final class OrderService {
   private final MerchantPspRepository merchantPsps;
   private final MerchantFeeConfigurationRepository feeConfigurations;
   private final TimeOrderedQueue<AccountingQueueRequest> accountingQueue;
-  private final PspClient psp;
+  private final PspClient pspClient;
   private final TaxRateProvider taxRates;
-  private final LineTaxCalculator lineTaxCalculator;
 
   /** Creates an order service from its persistence and external boundaries. */
   public OrderService(
@@ -65,17 +63,15 @@ public final class OrderService {
       MerchantPspRepository merchantPsps,
       MerchantFeeConfigurationRepository feeConfigurations,
       TimeOrderedQueue<AccountingQueueRequest> accountingQueue,
-      PspClient psp,
-      TaxRateProvider taxRates,
-      LineTaxCalculator lineTaxCalculator) {
+      PspClient pspClient,
+      TaxRateProvider taxRates) {
     this.orders = orders;
     this.accounts = accounts;
     this.merchantPsps = merchantPsps;
     this.feeConfigurations = feeConfigurations;
     this.accountingQueue = accountingQueue;
-    this.psp = psp;
+    this.pspClient = pspClient;
     this.taxRates = taxRates;
-    this.lineTaxCalculator = lineTaxCalculator;
   }
 
   /**
@@ -89,7 +85,7 @@ public final class OrderService {
    * logged at error. A repeated request whose order has no PSP reference calls the PSP again with
    * the order's reference.
    *
-   * @throws OrderCreationException for a request the platform cannot price or book, a different
+   * @throws CreateOrderException for a request the platform cannot price or book, a different
    *     request under a used idempotency key, or a failed PSP call
    */
   public CreateOrderResult create(long merchantAccountId, CreateOrderCommand command) {
@@ -97,9 +93,9 @@ public final class OrderService {
     String idempotencyKey = command.idempotencyKey();
     Optional<Order> existing = orders.findOrderByIdempotencyKey(merchantAccountId, idempotencyKey);
     if (existing.isPresent()) {
-      return repeat(merchantAccountId, existing.orElseThrow(), command, fingerprint);
+      return answerRepeatedRequest(merchantAccountId, existing.orElseThrow(), command, fingerprint);
     }
-    Checkout checkout = checkout(merchantAccountId, command);
+    Checkout checkout = price(merchantAccountId, command);
     Optional<Order> created =
         orders.insertOrder(checkout.shopper(), unsavedOrder(idempotencyKey, fingerprint, checkout));
     created.ifPresent(order -> LOGGER.info("Order created", orderFields(order, checkout)));
@@ -109,23 +105,23 @@ public final class OrderService {
               .findOrderByIdempotencyKey(merchantAccountId, idempotencyKey)
               .orElseThrow(
                   () -> new IllegalStateException("Idempotency key is used by no stored order"));
-      return repeat(merchantAccountId, winner, command, fingerprint);
+      return answerRepeatedRequest(merchantAccountId, winner, command, fingerprint);
     }
-    return pay(merchantAccountId, created.orElseThrow(), checkout);
+    return requestPayment(merchantAccountId, created.orElseThrow(), checkout);
   }
 
-  private CreateOrderResult repeat(
+  private CreateOrderResult answerRepeatedRequest(
       long merchantAccountId, Order order, CreateOrderCommand command, String fingerprint) {
     if (!order.getRequestFingerprint().equals(fingerprint)) {
-      throw failure(HttpStatus.CONFLICT.value(), "IDEMPOTENCY_CONFLICT");
+      throw failure(CreateOrderErrorCodes.IDEMPOTENCY_CONFLICT);
     }
     LOGGER.info(
         "Order creation repeated",
-        new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()));
+        new StructuredLogField(LogFields.ORDER_REFERENCE, order.getOrderReference()));
     if (order.getPspReference().isPresent()) {
       return result(order);
     }
-    return pay(merchantAccountId, order, checkout(merchantAccountId, command));
+    return requestPayment(merchantAccountId, order, price(merchantAccountId, command));
   }
 
   private Order unsavedOrder(String idempotencyKey, String fingerprint, Checkout checkout) {
@@ -143,22 +139,22 @@ public final class OrderService {
         checkout.grossAmount(),
         idempotencyKey,
         fingerprint,
-        checkout.psp(),
+        checkout.pspAccount(),
         null,
         null,
         null,
         checkout.items());
   }
 
-  private CreateOrderResult pay(long merchantAccountId, Order order, Checkout checkout) {
-    PspOrder pspOrder = createPspOrder(order, checkout.psp().getCode());
+  private CreateOrderResult requestPayment(long merchantAccountId, Order order, Checkout checkout) {
+    PspOrder pspOrder = createPspOrder(order, checkout.pspAccount().getCode());
     orders.updateOrderPspReferenceAndPaymentLink(
         order.getOrderReference(), pspOrder.pspReference(), pspOrder.paymentLink());
     LOGGER.info(
         "Payment created at the PSP",
-        new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
-        new StructuredLogField(LogField.PSP_CODE, checkout.psp().getCode()),
-        new StructuredLogField(LogField.PSP_REFERENCE, pspOrder.pspReference()));
+        new StructuredLogField(LogFields.ORDER_REFERENCE, order.getOrderReference()),
+        new StructuredLogField(LogFields.PSP_CODE, checkout.pspAccount().getCode()),
+        new StructuredLogField(LogFields.PSP_REFERENCE, pspOrder.pspReference()));
     AccountingQueueRequest orderCreated = orderCreated(order, checkout, pspOrder);
     try {
       accountingQueue.add(orderCreated);
@@ -180,7 +176,7 @@ public final class OrderService {
         AccountingQueueRequestTypes.ORDER_CREATED,
         order.getOrderReference(),
         order.getMerchantReference(),
-        checkout.psp().getCode(),
+        checkout.pspAccount().getCode(),
         pspOrder.pspReference(),
         null,
         null,
@@ -193,32 +189,33 @@ public final class OrderService {
   }
 
   private PspOrder createPspOrder(Order order, String pspCode) {
-    com.outpost.integration.psp.service.CreateOrderResult pspResult;
+    com.outpost.integration.psp.CreatePspOrderResult pspResult;
     try {
       pspResult =
-          psp.createOrder(
-              new CreateOrderRequest(pspCode, order.getOrderReference(), order.getGrossAmount()));
-    } catch (RuntimeException exception) {
+          pspClient.createOrder(
+              new CreatePspOrderRequest(
+                  pspCode, order.getOrderReference(), order.getGrossAmount()));
+    } catch (UnknownPspResultException exception) {
       LOGGER.warn(
           "PSP order creation failed",
           exception,
-          new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
-          new StructuredLogField(LogField.PSP_CODE, pspCode));
-      throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
+          new StructuredLogField(LogFields.ORDER_REFERENCE, order.getOrderReference()),
+          new StructuredLogField(LogFields.PSP_CODE, pspCode));
+      throw failure(CreateOrderErrorCodes.PSP_RETRYABLE);
     }
     String pspReference = pspResult.pspReference();
     String paymentLink = pspResult.paymentUrl();
-    if (pspResult.resultCode() != ResultCode.ACCEPTED
+    if (pspResult.resultCode() != PspResultCodes.ACCEPTED
         || pspReference == null
         || pspReference.isBlank()
         || paymentLink == null
         || paymentLink.isBlank()) {
       LOGGER.warn(
           "PSP did not accept the order",
-          new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
-          new StructuredLogField(LogField.PSP_CODE, pspCode),
-          new StructuredLogField(LogField.PSP_RESULT, pspResult.resultCode().name()));
-      throw failure(HttpStatus.SERVICE_UNAVAILABLE.value(), "PSP_RETRYABLE");
+          new StructuredLogField(LogFields.ORDER_REFERENCE, order.getOrderReference()),
+          new StructuredLogField(LogFields.PSP_CODE, pspCode),
+          new StructuredLogField(LogFields.PSP_RESULT, pspResult.resultCode().name()));
+      throw failure(CreateOrderErrorCodes.PSP_RETRYABLE);
     }
     return new PspOrder(pspReference, paymentLink);
   }
@@ -227,44 +224,44 @@ public final class OrderService {
    * Prices the order and resolves the accounts that serve it, refusing anything the platform cannot
    * book, before any row is stored or the PSP is called.
    */
-  private Checkout checkout(long merchantAccountId, CreateOrderCommand command) {
+  private Checkout price(long merchantAccountId, CreateOrderCommand command) {
     CreateOrderCommand.ShopperDetailsCommand shopper = command.shopperDetails();
     Country country =
         Countries.fromIsoCode(shopper.country())
-            .orElseThrow(() -> failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "INVALID_COUNTRY"));
+            .orElseThrow(() -> failure(CreateOrderErrorCodes.INVALID_COUNTRY));
     CountrySubdivision subdivision = subdivision(country, shopper.state());
     CreateOrderCommand.OrderDetailsCommand details = command.orderDetails();
     Currency currency =
         Currencies.fromCurrencyCode(details.currency())
-            .orElseThrow(() -> failure(HttpStatus.BAD_REQUEST.value(), "UNSUPPORTED_CURRENCY"));
+            .orElseThrow(() -> failure(CreateOrderErrorCodes.UNSUPPORTED_CURRENCY));
     Set<String> merchantLineReferences = new HashSet<>();
     List<OrderItem> items = new ArrayList<>();
     Amount netAmount = new Amount(currency, 0);
     Amount taxAmount = new Amount(currency, 0);
     for (CreateOrderCommand.OrderLineCommand input : details.orderLines()) {
       if (!merchantLineReferences.add(input.merchantLineReference())) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "DUPLICATE_MERCHANT_LINE_REFERENCE");
+        throw failure(CreateOrderErrorCodes.DUPLICATE_MERCHANT_LINE_REFERENCE);
       }
       if (!currency.getCurrencyCode().equals(input.currency())) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "MIXED_CURRENCIES");
+        throw failure(CreateOrderErrorCodes.MIXED_CURRENCIES);
       }
       ProductType productType =
           ProductTypes.fromCode(input.type())
-              .orElseThrow(() -> failure(HttpStatus.BAD_REQUEST.value(), "INVALID_PRODUCT_TYPE"));
+              .orElseThrow(() -> failure(CreateOrderErrorCodes.INVALID_PRODUCT_TYPE));
       TaxRate rate;
       try {
         rate = taxRates.getRate(country, subdivision, productType);
       } catch (RuntimeException exception) {
-        throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "TAX_RATE_UNAVAILABLE");
+        throw failure(CreateOrderErrorCodes.TAX_RATE_UNAVAILABLE);
       }
       Amount lineNet = new Amount(currency, input.amount());
       Amount lineTax;
       try {
-        lineTax = lineTaxCalculator.calculateTax(lineNet, rate.rate());
+        lineTax = lineNet.multipliedBy(rate.rate());
         netAmount = netAmount.plus(lineNet);
         taxAmount = taxAmount.plus(lineTax);
       } catch (ArithmeticException exception) {
-        throw failure(HttpStatus.BAD_REQUEST.value(), "AMOUNT_OVERFLOW");
+        throw failure(CreateOrderErrorCodes.AMOUNT_OVERFLOW);
       }
       items.add(
           new OrderItem(
@@ -277,33 +274,33 @@ public final class OrderService {
               rate.rate()));
     }
     if (details.totalAmount() != netAmount.quantity()) {
-      throw failure(HttpStatus.BAD_REQUEST.value(), "TOTAL_AMOUNT_MISMATCH");
+      throw failure(CreateOrderErrorCodes.TOTAL_AMOUNT_MISMATCH);
     }
     Amount grossAmount;
     try {
       // Net and tax amounts are never negative, so no line's gross exceeds the order's gross.
       grossAmount = netAmount.plus(taxAmount);
     } catch (ArithmeticException exception) {
-      throw failure(HttpStatus.BAD_REQUEST.value(), "AMOUNT_OVERFLOW");
+      throw failure(CreateOrderErrorCodes.AMOUNT_OVERFLOW);
     }
     Account merchant =
         accounts
             .findAccountById(merchantAccountId)
-            .filter(account -> isActive(account, AccountTypes.MERCHANT))
-            .orElseThrow(() -> failure(HttpStatus.UNAUTHORIZED.value(), "MERCHANT_NOT_FOUND"));
+            .filter(account -> isActiveAccountOfType(account, AccountTypes.MERCHANT))
+            .orElseThrow(() -> failure(CreateOrderErrorCodes.MERCHANT_NOT_FOUND));
     Account pspAccount =
         accounts
             .findAccountByCode(command.pspCode())
-            .filter(account -> isActive(account, AccountTypes.PSP))
+            .filter(account -> isActiveAccountOfType(account, AccountTypes.PSP))
             .filter(account -> merchantPsps.isPspEnabled(merchantAccountId, account.getAccountId()))
-            .orElseThrow(() -> failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "PSP_UNAVAILABLE"));
+            .orElseThrow(() -> failure(CreateOrderErrorCodes.PSP_UNAVAILABLE));
     if (!feeConfigurations.hasFeeConfiguration(merchantAccountId, currency)) {
-      throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "MISSING_FEE_CONFIGURATION");
+      throw failure(CreateOrderErrorCodes.MISSING_FEE_CONFIGURATION);
     }
     // The Ledger books the captured tax against the shopper country's tax authority; an order it
     // could never book is refused before the shopper pays.
     if (accounts.findTaxAuthorityAccountByCountryId(country.getCountryId()).isEmpty()) {
-      throw failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "MISSING_TAX_AUTHORITY");
+      throw failure(CreateOrderErrorCodes.MISSING_TAX_AUTHORITY);
     }
     return new Checkout(
         merchant,
@@ -322,7 +319,7 @@ public final class OrderService {
         grossAmount);
   }
 
-  private static boolean isActive(Account account, AccountTypes type) {
+  private static boolean isActiveAccountOfType(Account account, AccountTypes type) {
     return account.isActive() && account.getAccountType().equals(type.getValue());
   }
 
@@ -331,7 +328,7 @@ public final class OrderService {
       return null;
     }
     return CountrySubdivisions.fromCode(country, state)
-        .orElseThrow(() -> failure(HttpStatus.UNPROCESSABLE_ENTITY.value(), "INVALID_STATE"));
+        .orElseThrow(() -> failure(CreateOrderErrorCodes.INVALID_STATE));
   }
 
   private static String fingerprint(CreateOrderCommand command) {
@@ -375,20 +372,20 @@ public final class OrderService {
     return value == null || value.isBlank() ? null : value;
   }
 
-  private static OrderCreationException failure(int status, String code) {
-    return new OrderCreationException(status, code);
+  private static CreateOrderException failure(CreateOrderErrorCodes code) {
+    return new CreateOrderException(code);
   }
 
   private static StructuredLogField[] orderFields(Order order, Checkout checkout) {
     return new StructuredLogField[] {
-      new StructuredLogField(LogField.ORDER_REFERENCE, order.getOrderReference()),
-      new StructuredLogField(LogField.MERCHANT_CODE, checkout.merchant().getCode()),
-      new StructuredLogField(LogField.PSP_CODE, checkout.psp().getCode()),
-      new StructuredLogField(LogField.CURRENCY, order.getNetAmount().currency().getCurrencyCode()),
-      new StructuredLogField(LogField.NET_AMOUNT, Long.toString(order.getNetAmount().quantity())),
-      new StructuredLogField(LogField.TAX_AMOUNT, Long.toString(order.getTaxAmount().quantity())),
+      new StructuredLogField(LogFields.ORDER_REFERENCE, order.getOrderReference()),
+      new StructuredLogField(LogFields.MERCHANT_CODE, checkout.merchant().getCode()),
+      new StructuredLogField(LogFields.PSP_CODE, checkout.pspAccount().getCode()),
+      new StructuredLogField(LogFields.CURRENCY, order.getNetAmount().currency().getCurrencyCode()),
+      new StructuredLogField(LogFields.NET_AMOUNT, Long.toString(order.getNetAmount().quantity())),
+      new StructuredLogField(LogFields.TAX_AMOUNT, Long.toString(order.getTaxAmount().quantity())),
       new StructuredLogField(
-          LogField.GROSS_AMOUNT, Long.toString(order.getGrossAmount().quantity()))
+          LogFields.GROSS_AMOUNT, Long.toString(order.getGrossAmount().quantity()))
     };
   }
 
@@ -421,7 +418,7 @@ public final class OrderService {
   /** The validated, priced request, its shopper, and the accounts that serve it. */
   private record Checkout(
       Account merchant,
-      Account psp,
+      Account pspAccount,
       String merchantReference,
       ShopperDetail shopper,
       List<OrderItem> items,
@@ -431,27 +428,4 @@ public final class OrderService {
 
   /** The order a PSP created for a payment reference. */
   private record PspOrder(String pspReference, String paymentLink) {}
-
-  private enum LogField implements LogFields {
-    ORDER_REFERENCE("order_reference"),
-    MERCHANT_CODE("merchant_code"),
-    PSP_CODE("psp_code"),
-    PSP_REFERENCE("psp_reference"),
-    PSP_RESULT("psp_result"),
-    CURRENCY("currency"),
-    NET_AMOUNT("net_amount"),
-    TAX_AMOUNT("tax_amount"),
-    GROSS_AMOUNT("gross_amount");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
-    }
-  }
 }

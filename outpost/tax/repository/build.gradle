@@ -1,0 +1,28 @@
+plugins {
+    id 'outpost.java-conventions'
+}
+
+group = 'com.outpost.tax'
+
+base {
+    archivesName = 'tax-repository'
+}
+
+dependencies {
+    implementation project(':tax:domain')
+    implementation project(':common-iso:domain')
+    implementation project(':payment:common:domain')
+    implementation project(':framework:persistence')
+    implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
+    testImplementation testFixtures(project(':framework:persistence'))
+    testImplementation 'org.flywaydb:flyway-core'
+    testImplementation 'org.flywaydb:flyway-database-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    systemProperty 'outpost.migration.location', rootProject.file('db/migration').absolutePath
+}

@@ -1,2 +1,4 @@
-@org.jspecify.annotations.NullUnmarked
+@NullMarked
 package com.outpost.accounting.api;
+
+import org.jspecify.annotations.NullMarked;

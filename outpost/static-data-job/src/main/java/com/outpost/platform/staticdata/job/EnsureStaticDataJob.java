@@ -1,10 +1,8 @@
 package com.outpost.platform.staticdata.job;
 
 import java.util.List;
-import org.springframework.stereotype.Component;
 
 /** Inserts missing reference-data records and fails closed on divergence. */
-@Component
 public final class EnsureStaticDataJob {
   private final List<EnsureStaticDataOperator<?, ?, ?>> operators;
 

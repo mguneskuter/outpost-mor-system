@@ -6,27 +6,26 @@ startup; a value outside it stops the service before it serves a request.
 
 ## Gateway API (`outpost/gateway-api/src/main/resources/application.properties`)
 
-| Key                                              | Required | Default                                            | Sensitive | Validation                                 |
-| ------------------------------------------------ | -------- | -------------------------------------------------- | --------- | ------------------------------------------ |
-| `outpost.gateway.ledger.base-url`                | yes      | `${OUTPOST_LEDGER_BASE_URL:http://localhost:8081}` | no        | not blank, a well-formed URL               |
-| `outpost.gateway.ledger.hmac-secret`             | yes      | `${OUTPOST_LEDGER_GATEWAY_HMAC_SECRET:}`           | yes       | not blank                                  |
-| `outpost.gateway.ledger.connect-timeout`         | yes      | `${OUTPOST_LEDGER_CONNECT_TIMEOUT:PT1S}`           | no        | 100 ms to 30 s, not above the read timeout |
-| `outpost.gateway.ledger.read-timeout`            | yes      | `${OUTPOST_LEDGER_READ_TIMEOUT:PT5S}`              | no        | 100 ms to 5 min                            |
-| `outpost.gateway.psp-client.connect-timeout`     | yes      | `PT10S`                                            | no        | 100 ms to 30 s, not above the read timeout |
-| `outpost.gateway.psp-client.read-timeout`        | yes      | `PT30S`                                            | no        | 100 ms to 5 min                            |
-| `outpost.gateway.accounting-queue.worker-count`  | yes      | `1`                                                | no        | 1 to 16                                    |
-| `outpost.gateway.accounting-queue.poll-interval` | yes      | `PT1S`                                             | no        | 10 ms to 1 min                             |
-| `outpost.gateway.accounting-queue.retry-delay`   | yes      | `PT5S`                                             | no        | 10 ms to 10 min                            |
-| `outpost.gateway.accounting-queue.max-attempts`  | yes      | `20`                                               | no        | 1 to 1000                                  |
-
-The Gateway also reads two variables that have no `outpost.*` key: `OUTPOST_HMAC_ENCRYPTION_KEY`
-and `OUTPOST_OPERATOR_API_KEY` (below).
+| Key                                               | Required | Default                                            | Sensitive | Validation                                 |
+| ------------------------------------------------- | -------- | -------------------------------------------------- | --------- | ------------------------------------------ |
+| `outpost.gateway.authentication.encryption-key`   | yes      | `${OUTPOST_HMAC_ENCRYPTION_KEY:}`                  | yes       | not blank                                  |
+| `outpost.gateway.authentication.operator-api-key` | yes      | `${OUTPOST_OPERATOR_API_KEY:}`                     | yes       | blank disables operator access             |
+| `outpost.gateway.ledger.base-url`                 | yes      | `${OUTPOST_LEDGER_BASE_URL:http://localhost:8081}` | no        | not blank, a well-formed URL               |
+| `outpost.gateway.ledger.hmac-secret`              | yes      | `${OUTPOST_LEDGER_GATEWAY_HMAC_SECRET:}`           | yes       | not blank                                  |
+| `outpost.gateway.ledger.connect-timeout`          | yes      | `${OUTPOST_LEDGER_CONNECT_TIMEOUT:PT1S}`           | no        | 100 ms to 30 s, not above the read timeout |
+| `outpost.gateway.ledger.read-timeout`             | yes      | `${OUTPOST_LEDGER_READ_TIMEOUT:PT5S}`              | no        | 100 ms to 5 min                            |
+| `outpost.gateway.psp-client.connect-timeout`      | yes      | `PT10S`                                            | no        | 100 ms to 30 s, not above the read timeout |
+| `outpost.gateway.psp-client.read-timeout`         | yes      | `PT30S`                                            | no        | 100 ms to 5 min                            |
+| `outpost.gateway.accounting-queue.worker-count`   | yes      | `1`                                                | no        | 1 to 16                                    |
+| `outpost.gateway.accounting-queue.poll-interval`  | yes      | `PT1S`                                             | no        | 10 ms to 1 min                             |
+| `outpost.gateway.accounting-queue.retry-delay`    | yes      | `PT5S`                                             | no        | 10 ms to 10 min                            |
+| `outpost.gateway.accounting-queue.max-attempts`   | yes      | `20`                                               | no        | 1 to 1000                                  |
 
 ## Ledger API (`outpost/ledger-api/src/main/resources/application.properties`)
 
 | Key                                                      | Required | Default                                  | Sensitive | Validation     |
 | -------------------------------------------------------- | -------- | ---------------------------------------- | --------- | -------------- |
-| `outpost.ledger.gateway-hmac-secret`                     | yes      | `${OUTPOST_LEDGER_GATEWAY_HMAC_SECRET:}` | yes       | not blank      |
+| `outpost.ledger.authentication.gateway-hmac-secret`      | yes      | `${OUTPOST_LEDGER_GATEWAY_HMAC_SECRET:}` | yes       | not blank      |
 | `outpost.ledger.accounting-queue.worker-count`           | yes      | `4`                                      | no        | 1 to 64        |
 | `outpost.ledger.accounting-queue.poll-interval`          | yes      | `PT0.1S`                                 | no        | 10 ms to 1 min |
 | `outpost.ledger.accounting-queue.transaction-lock-lease` | yes      | `PT5M`                                   | no        | 1 s to 1 h     |

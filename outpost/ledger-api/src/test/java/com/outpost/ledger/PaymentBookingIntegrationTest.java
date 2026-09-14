@@ -25,13 +25,11 @@ import com.outpost.common.iso.Currencies.Currency;
 import com.outpost.framework.persistence.testfixtures.PostgresTestDatabase;
 import com.outpost.framework.security.hmac.HmacKey;
 import com.outpost.framework.security.hmac.HmacSha256;
-import com.outpost.ledger.payment.service.CaptureException;
+import com.outpost.ledger.payment.service.AuthorisationService;
+import com.outpost.ledger.payment.service.BookingErrorCodes;
+import com.outpost.ledger.payment.service.BookingException;
 import com.outpost.ledger.payment.service.CaptureService;
-import com.outpost.ledger.payment.service.PaymentCreationException;
-import com.outpost.ledger.payment.service.PaymentCreationService;
-import com.outpost.ledger.payment.service.PaymentEventException;
-import com.outpost.ledger.payment.service.PaymentEventService;
-import com.outpost.ledger.payment.service.RefundException;
+import com.outpost.ledger.payment.service.PaymentService;
 import com.outpost.ledger.payment.service.RefundService;
 import com.outpost.payment.common.Amount;
 import jakarta.servlet.Filter;
@@ -81,10 +79,10 @@ class PaymentBookingIntegrationTest {
   private Filter securityFilterChain;
 
   @Autowired private JdbcTemplate jdbcTemplate;
-  @Autowired private PaymentCreationService paymentCreation;
-  @Autowired private PaymentEventService paymentEvents;
-  @Autowired private CaptureService captures;
-  @Autowired private RefundService refunds;
+  @Autowired private PaymentService paymentService;
+  @Autowired private AuthorisationService authorisationService;
+  @Autowired private CaptureService captureService;
+  @Autowired private RefundService refundService;
   private MockMvc mockMvc;
 
   @BeforeEach
@@ -129,7 +127,7 @@ class PaymentBookingIntegrationTest {
     int payments = count("transaction", "transaction_type_id = 1");
     int lines = count("journal_entry_line", "true");
 
-    paymentCreation.create(orderCreated(reference));
+    paymentService.bookPayment(orderCreated(reference));
 
     assertThat(count("transaction", "transaction_type_id = 1")).isEqualTo(payments + 1);
     assertThat(count("journal_entry_line", "true")).isEqualTo(lines + 2);
@@ -152,31 +150,30 @@ class PaymentBookingIntegrationTest {
   @Test
   void repeatsAnIdenticalCreationWithoutWritingAndRejectsDifferentOne() {
     String reference = "retryable";
-    paymentCreation.create(orderCreated(reference));
+    paymentService.bookPayment(orderCreated(reference));
     Writes writes = writes();
 
-    paymentCreation.create(orderCreated(reference));
+    paymentService.bookPayment(orderCreated(reference));
 
     assertThat(writes()).isEqualTo(writes);
-    PaymentCreationException conflict =
+    BookingException conflict =
         catchThrowableOfType(
-            PaymentCreationException.class,
+            BookingException.class,
             () ->
-                paymentCreation.create(
+                paymentService.bookPayment(
                     orderCreated(
                         reference, "DEMO_MERCHANT", Countries.UNITED_STATES.getValue(), 11_000L)));
-    assertThat(conflict.status()).isEqualTo(409);
-    assertThat(conflict.code()).isEqualTo("REFERENCE_CONFLICT");
+    assertThat(conflict.code()).isEqualTo(BookingErrorCodes.REFERENCE_CONFLICT);
     assertThat(writes()).isEqualTo(writes);
   }
 
   @Test
   void recordsRefusalOnceAndReleasesThePendingFee() {
     String reference = "event-refused";
-    paymentCreation.create(orderCreated(reference));
+    paymentService.bookPayment(orderCreated(reference));
     long paymentId = transactionId(reference);
 
-    paymentEvents.recordAuthorisation(reference, false);
+    authorisationService.bookAuthorisation(reference, false);
 
     assertThat(countForTransaction("transaction_event", paymentId)).isEqualTo(2);
     assertThat(countForTransaction("journal_entry", paymentId)).isEqualTo(2);
@@ -186,43 +183,41 @@ class PaymentBookingIntegrationTest {
         paymentId, TransactionEventTypes.REFUSED.getValue().getTransactionEventTypeId());
 
     Writes writes = writes();
-    paymentEvents.recordAuthorisation(reference, false);
+    authorisationService.bookAuthorisation(reference, false);
     assertThat(writes()).isEqualTo(writes);
   }
 
   @Test
   void authorisationRecordsNoFeeReleaseAndAnInvalidTransitionDoesNotWrite() {
     String reference = "event-authorised";
-    paymentCreation.create(orderCreated(reference));
+    paymentService.bookPayment(orderCreated(reference));
     long paymentId = transactionId(reference);
 
-    paymentEvents.recordAuthorisation(reference, true);
+    authorisationService.bookAuthorisation(reference, true);
 
     assertThat(countForTransaction("transaction_event", paymentId)).isEqualTo(2);
     assertThat(countForTransaction("journal_entry", paymentId)).isEqualTo(1);
     Writes writes = writes();
-    PaymentEventException invalidTransition =
+    BookingException invalidTransition =
         catchThrowableOfType(
-            PaymentEventException.class, () -> paymentEvents.recordAuthorisation(reference, false));
-    assertThat(invalidTransition.status()).isEqualTo(409);
-    assertThat(invalidTransition.code()).isEqualTo("INVALID_TRANSITION");
-    PaymentEventException unknown =
+            BookingException.class, () -> authorisationService.bookAuthorisation(reference, false));
+    assertThat(invalidTransition.code()).isEqualTo(BookingErrorCodes.INVALID_TRANSITION);
+    BookingException unknown =
         catchThrowableOfType(
-            PaymentEventException.class,
-            () -> paymentEvents.recordAuthorisation("event-unknown", true));
-    assertThat(unknown.status()).isEqualTo(404);
-    assertThat(unknown.code()).isEqualTo("PAYMENT_NOT_FOUND");
+            BookingException.class,
+            () -> authorisationService.bookAuthorisation("event-unknown", true));
+    assertThat(unknown.code()).isEqualTo(BookingErrorCodes.PAYMENT_NOT_FOUND);
     assertThat(writes()).isEqualTo(writes);
   }
 
   @Test
   void repeatedSuccessfulAuthorisationWritesNothing() {
     String reference = "event-authorised-again";
-    paymentCreation.create(orderCreated(reference));
-    paymentEvents.recordAuthorisation(reference, true);
+    paymentService.bookPayment(orderCreated(reference));
+    authorisationService.bookAuthorisation(reference, true);
     Writes writes = writes();
 
-    paymentEvents.recordAuthorisation(reference, true);
+    authorisationService.bookAuthorisation(reference, true);
 
     assertThat(writes()).isEqualTo(writes);
   }
@@ -231,11 +226,10 @@ class PaymentBookingIntegrationTest {
   void captureOfAnUnknownPaymentIsRejectedWithoutWrites() {
     Writes writes = writes();
 
-    CaptureException rejected =
+    BookingException rejected =
         catchThrowableOfType(
-            CaptureException.class, () -> captures.capture("capture-unknown-payment", true));
-
-    assertThat(rejected.status()).isEqualTo(404);
+            BookingException.class,
+            () -> captureService.bookCapture("capture-unknown-payment", true));
     assertThat(writes()).isEqualTo(writes);
   }
 
@@ -243,22 +237,20 @@ class PaymentBookingIntegrationTest {
   void refundOfAnUnknownPaymentIsRejectedWithoutWrites() {
     Writes writes = writes();
 
-    RefundException rejected =
+    BookingException rejected =
         catchThrowableOfType(
-            RefundException.class,
-            () -> refunds.refund("refund-unknown-payment", "refund-unknown-payment-ref"));
-
-    assertThat(rejected.status()).isEqualTo(404);
+            BookingException.class,
+            () -> refundService.bookRefund("refund-unknown-payment", "refund-unknown-payment-ref"));
     assertThat(writes()).isEqualTo(writes);
   }
 
   @Test
   void capturesSuccessfullyWithSixBalancedLinesAndClearsPendingFee() {
     String reference = "capture-success";
-    paymentCreation.create(orderCreated(reference));
-    paymentEvents.recordAuthorisation(reference, true);
+    paymentService.bookPayment(orderCreated(reference));
+    authorisationService.bookAuthorisation(reference, true);
 
-    captures.capture(reference, true);
+    captureService.bookCapture(reference, true);
 
     long paymentId = transactionId(reference);
     Map<String, Object> capture = captureChild(paymentId);
@@ -276,10 +268,10 @@ class PaymentBookingIntegrationTest {
   @Test
   void failedCaptureCreatesChildAndReleasesPendingFee() {
     String reference = "capture-failed";
-    paymentCreation.create(orderCreated(reference));
-    paymentEvents.recordAuthorisation(reference, true);
+    paymentService.bookPayment(orderCreated(reference));
+    authorisationService.bookAuthorisation(reference, true);
 
-    captures.capture(reference, false);
+    captureService.bookCapture(reference, false);
 
     long paymentId = transactionId(reference);
     long captureId =
@@ -301,34 +293,33 @@ class PaymentBookingIntegrationTest {
   }
 
   @Test
-  void repeatedCaptureOutcomeWritesNothingAndDifferentOutcomeConflicts() {
+  void repeatedCaptureWritesNothingAndDifferentCaptureConflicts() {
     String reference = "capture-replay";
-    paymentCreation.create(orderCreated(reference));
-    paymentEvents.recordAuthorisation(reference, true);
-    captures.capture(reference, true);
+    paymentService.bookPayment(orderCreated(reference));
+    authorisationService.bookAuthorisation(reference, true);
+    captureService.bookCapture(reference, true);
     Writes writes = writes();
 
-    captures.capture(reference, true);
+    captureService.bookCapture(reference, true);
 
     assertThat(writes()).isEqualTo(writes);
-    CaptureException conflict =
-        catchThrowableOfType(CaptureException.class, () -> captures.capture(reference, false));
-    assertThat(conflict.status()).isEqualTo(409);
-    assertThat(conflict.code()).isEqualTo("CAPTURE_CONFLICT");
+    BookingException conflict =
+        catchThrowableOfType(
+            BookingException.class, () -> captureService.bookCapture(reference, false));
+    assertThat(conflict.code()).isEqualTo(BookingErrorCodes.CAPTURE_CONFLICT);
     assertThat(writes()).isEqualTo(writes);
   }
 
   @Test
   void captureBeforeAuthorisationIsRejectedWithoutWrites() {
     String reference = "capture-before-authorisation";
-    paymentCreation.create(orderCreated(reference));
+    paymentService.bookPayment(orderCreated(reference));
     Writes writes = writes();
 
-    CaptureException rejected =
-        catchThrowableOfType(CaptureException.class, () -> captures.capture(reference, true));
-
-    assertThat(rejected.status()).isEqualTo(422);
-    assertThat(rejected.code()).isEqualTo("INVALID_CAPTURE");
+    BookingException rejected =
+        catchThrowableOfType(
+            BookingException.class, () -> captureService.bookCapture(reference, true));
+    assertThat(rejected.code()).isEqualTo(BookingErrorCodes.INVALID_CAPTURE);
     assertThat(writes()).isEqualTo(writes);
   }
 
@@ -338,7 +329,7 @@ class PaymentBookingIntegrationTest {
     createCapturedPayment(reference);
     long paymentId = transactionId(reference);
 
-    refunds.refund(reference, "refund-booking-ref");
+    refundService.bookRefund(reference, "refund-booking-ref");
 
     long refundId = transactionId("refund-booking-ref");
     assertThat(
@@ -372,10 +363,10 @@ class PaymentBookingIntegrationTest {
   void repeatedRefundWritesNothing() {
     String reference = "refund-repeat";
     createCapturedPayment(reference);
-    refunds.refund(reference, "refund-repeat-ref");
+    refundService.bookRefund(reference, "refund-repeat-ref");
     Writes writes = writes();
 
-    refunds.refund(reference, "refund-repeat-ref");
+    refundService.bookRefund(reference, "refund-repeat-ref");
 
     assertThat(writes()).isEqualTo(writes);
   }
@@ -383,16 +374,15 @@ class PaymentBookingIntegrationTest {
   @Test
   void refundOfAnUncapturedPaymentIsRejectedWithoutWrites() {
     String reference = "refund-uncaptured";
-    paymentCreation.create(orderCreated(reference));
-    paymentEvents.recordAuthorisation(reference, true);
+    paymentService.bookPayment(orderCreated(reference));
+    authorisationService.bookAuthorisation(reference, true);
     Writes writes = writes();
 
-    RefundException rejected =
+    BookingException rejected =
         catchThrowableOfType(
-            RefundException.class, () -> refunds.refund(reference, "refund-uncaptured-ref"));
-
-    assertThat(rejected.status()).isEqualTo(422);
-    assertThat(rejected.code()).isEqualTo("NOT_CAPTURED");
+            BookingException.class,
+            () -> refundService.bookRefund(reference, "refund-uncaptured-ref"));
+    assertThat(rejected.code()).isEqualTo(BookingErrorCodes.NOT_CAPTURED);
     assertThat(writes()).isEqualTo(writes);
   }
 
@@ -400,15 +390,14 @@ class PaymentBookingIntegrationTest {
   void secondRefundOfPaymentIsRejectedWithoutWrites() {
     String reference = "refund-second";
     createCapturedPayment(reference);
-    refunds.refund(reference, "refund-second-first");
+    refundService.bookRefund(reference, "refund-second-first");
     Writes writes = writes();
 
-    RefundException rejected =
+    BookingException rejected =
         catchThrowableOfType(
-            RefundException.class, () -> refunds.refund(reference, "refund-second-second"));
-
-    assertThat(rejected.status()).isEqualTo(422);
-    assertThat(rejected.code()).isEqualTo("ALREADY_REFUNDED");
+            BookingException.class,
+            () -> refundService.bookRefund(reference, "refund-second-second"));
+    assertThat(rejected.code()).isEqualTo(BookingErrorCodes.ALREADY_REFUNDED);
     assertThat(writes()).isEqualTo(writes);
   }
 
@@ -416,7 +405,7 @@ class PaymentBookingIntegrationTest {
   void paymentCaptureAndRefundCarryTheTimeTheirTransactionStored() {
     String reference = "dated-payment";
     createCapturedPayment(reference);
-    refunds.refund(reference, "dated-refund");
+    refundService.bookRefund(reference, "dated-refund");
 
     long paymentId = transactionId(reference);
     long captureId =
@@ -504,9 +493,9 @@ class PaymentBookingIntegrationTest {
   }
 
   private void createCapturedPayment(String reference, AccountingQueueRequest orderCreated) {
-    paymentCreation.create(orderCreated);
-    paymentEvents.recordAuthorisation(reference, true);
-    captures.capture(reference, true);
+    paymentService.bookPayment(orderCreated);
+    authorisationService.bookAuthorisation(reference, true);
+    captureService.bookCapture(reference, true);
   }
 
   private static AccountingQueueRequest orderCreated(String reference) {
@@ -858,7 +847,7 @@ class PaymentBookingIntegrationTest {
           "INSERT INTO transaction_event_type VALUES (?, ?, ?)",
           type.getTransactionEventTypeId(),
           type.getCode(),
-          type.isRequiresJournalEntry());
+          type.requiresJournalEntry());
     }
     for (JournalEntryTypes value : JournalEntryTypes.values()) {
       var type = value.getValue();

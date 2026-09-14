@@ -12,8 +12,8 @@ dependencies {
     implementation project(':platform-sanity:static-data-model')
     implementation project(':account:domain')
     implementation project(':common-iso:domain')
-    implementation project(':common-payment:domain')
-    implementation project(':tax')
+    implementation project(':payment:common:domain')
+    implementation project(':tax:domain')
     implementation project(':psp-integration:domain')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

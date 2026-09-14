@@ -3,7 +3,7 @@
     PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationMapper">
-  <select id="findByCode" resultType="com.outpost.integration.psp.simulator.repository.mybatis.PspConfigurationRow">
+  <select id="findPspConfigurationByPspCode" resultType="com.outpost.integration.psp.simulator.repository.mybatis.PspConfiguration">
     SELECT account.account_id AS accountId,
            account.code AS code,
            configuration.base_url AS baseUrl,
@@ -11,6 +11,6 @@
            configuration.hmac_secret AS hmacSecret
     FROM psp_configuration configuration
     JOIN account ON account.account_id = configuration.account_id
-    WHERE account.code = #{code}
+    WHERE account.code = #{pspCode}
   </select>
 </mapper>

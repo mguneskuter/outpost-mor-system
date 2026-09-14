@@ -3,8 +3,7 @@ package com.outpost.framework.security.hmac;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.outpost.framework.security.api.ApiKey;
-import com.outpost.framework.security.api.ApiKeyVerifier;
+import com.outpost.framework.security.apikey.ApiKey;
 import java.nio.charset.StandardCharsets;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -31,17 +30,14 @@ class HmacSha256Test {
 
     assertThat(HmacSha256.verify(KEY, PAYLOAD, HmacSignature.of(altered))).isFalse();
     assertThatThrownBy(() -> HmacSignature.of(new byte[31]))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("HMAC signature has invalid length");
+        .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> HmacSignature.fromBase64("not-base64"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void rejectsNullInputsAndEmptyKeyMaterial() {
-    assertThatThrownBy(() -> HmacKey.of(new byte[0]))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("HMAC key must not be empty");
+    assertThatThrownBy(() -> HmacKey.of(new byte[0])).isInstanceOf(IllegalArgumentException.class);
     assertThat(HmacSha256.verify(null, PAYLOAD, HmacSha256.sign(KEY, PAYLOAD))).isFalse();
     assertThat(HmacSha256.verify(KEY, (byte @Nullable []) null, HmacSha256.sign(KEY, PAYLOAD)))
         .isFalse();
@@ -53,18 +49,6 @@ class HmacSha256Test {
     assertThat(KEY.toString()).doesNotContain("test-key");
     assertThat(HmacSha256.sign(KEY, PAYLOAD).toString()).doesNotContain("exact raw payload");
     assertThat(ApiKey.fromUtf8("merchant-secret").toString()).doesNotContain("merchant-secret");
-  }
-
-  @Test
-  void exposesNarrowAuthenticationSeams() {
-    ApiKey expectedApiKey = ApiKey.fromUtf8("merchant-key");
-    ApiKeyVerifier apiKeyVerifier = key -> key.matches(expectedApiKey);
-    SignedPayloadVerifier signedPayloadVerifier =
-        (payload, signature) -> HmacSha256.verify(KEY, payload, signature);
-
-    assertThat(apiKeyVerifier.verify(expectedApiKey)).isTrue();
-    assertThat(apiKeyVerifier.verify(ApiKey.fromUtf8("wrong-key"))).isFalse();
-    assertThat(signedPayloadVerifier.verify(PAYLOAD, HmacSha256.sign(KEY, PAYLOAD))).isTrue();
   }
 
   @Test

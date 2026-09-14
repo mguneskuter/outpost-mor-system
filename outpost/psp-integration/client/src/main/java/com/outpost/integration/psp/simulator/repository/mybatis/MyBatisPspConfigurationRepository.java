@@ -1,36 +1,41 @@
 package com.outpost.integration.psp.simulator.repository.mybatis;
 
-import com.outpost.integration.psp.simulator.repository.PspConfiguration;
 import com.outpost.integration.psp.simulator.repository.PspConfigurationRepository;
-import java.util.Objects;
 import java.util.Optional;
+import org.apache.ibatis.session.SqlSession;
 
-/** MyBatis implementation of the PSP configuration repository. */
+/** Reads PSP configuration from {@code psp_configuration}. */
 public final class MyBatisPspConfigurationRepository implements PspConfigurationRepository {
   private final PspConfigurationMapper mapper;
   private final int connectTimeoutMillis;
   private final int readTimeoutMillis;
 
-  /** Creates a repository with transport timeouts applied to returned configurations. */
+  /**
+   * Creates a repository over a Spring-managed {@code sqlSession} whose returned configurations
+   * carry these transport timeouts.
+   */
   public MyBatisPspConfigurationRepository(
-      PspConfigurationMapper mapper, int connectTimeoutMillis, int readTimeoutMillis) {
-    this.mapper = Objects.requireNonNull(mapper, "mapper");
+      SqlSession sqlSession, int connectTimeoutMillis, int readTimeoutMillis) {
+    this.mapper = sqlSession.getMapper(PspConfigurationMapper.class);
     this.connectTimeoutMillis = connectTimeoutMillis;
     this.readTimeoutMillis = readTimeoutMillis;
   }
 
   @Override
-  public Optional<PspConfiguration> findByCode(String code) {
-    return Optional.ofNullable(mapper.findByCode(code)).map(this::toConfiguration);
+  public Optional<com.outpost.integration.psp.simulator.PspConfiguration>
+      findPspConfigurationByPspCode(String pspCode) {
+    return Optional.ofNullable(mapper.findPspConfigurationByPspCode(pspCode))
+        .map(this::toConfiguration);
   }
 
-  private PspConfiguration toConfiguration(PspConfigurationRow data) {
-    return new PspConfiguration(
-        data.accountId(),
-        data.code(),
-        data.baseUrl(),
-        data.apiKey(),
-        data.hmacSecret(),
+  private com.outpost.integration.psp.simulator.PspConfiguration toConfiguration(
+      PspConfiguration row) {
+    return new com.outpost.integration.psp.simulator.PspConfiguration(
+        row.accountId(),
+        row.code(),
+        row.baseUrl(),
+        row.apiKey(),
+        row.hmacSecret(),
         connectTimeoutMillis,
         readTimeoutMillis);
   }

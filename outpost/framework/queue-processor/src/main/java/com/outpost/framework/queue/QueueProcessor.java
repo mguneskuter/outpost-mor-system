@@ -14,8 +14,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Drains a {@link TimeOrderedQueue} with a pool of worker threads, handing each due item to a
- * {@link QueueItemHandler} and re-queueing or dropping items the handler asks to retry. The
- * processor logs no payload field.
+ * {@link QueueItemProcessor} and re-queueing or dropping items it asks to retry. The processor logs
+ * no payload field.
  */
 public final class QueueProcessor<T> {
   private static final StructuredLogger LOGGER =
@@ -24,7 +24,7 @@ public final class QueueProcessor<T> {
 
   private final String name;
   private final TimeOrderedQueue<T> queue;
-  private final QueueItemHandler<T> handler;
+  private final QueueItemProcessor<T> itemProcessor;
   private final QueueProcessorSettings settings;
   private @Nullable ScheduledThreadPoolExecutor executor;
 
@@ -32,11 +32,11 @@ public final class QueueProcessor<T> {
   public QueueProcessor(
       String name,
       TimeOrderedQueue<T> queue,
-      QueueItemHandler<T> handler,
+      QueueItemProcessor<T> itemProcessor,
       QueueProcessorSettings settings) {
     this.name = name;
     this.queue = queue;
-    this.handler = handler;
+    this.itemProcessor = itemProcessor;
     this.settings = settings;
   }
 
@@ -56,7 +56,7 @@ public final class QueueProcessor<T> {
   }
 
   /**
-   * Stops the worker threads, waiting for a running handler to finish. Items still queued are lost.
+   * Stops the worker threads, waiting for a running item to finish. Items still queued are lost.
    */
   public void stop() {
     ScheduledThreadPoolExecutor running;
@@ -87,20 +87,19 @@ public final class QueueProcessor<T> {
       QueuedItem<T> item = due.get();
       QueueItemResults result;
       try {
-        result = handler.handle(item.payload());
+        result = itemProcessor.process(item.payload());
       } catch (RuntimeException exception) {
         LOGGER.error(
-            "Queue item handling failed", exception, queueField(), attemptsField(item.attempts()));
+            "Queue item processing failed",
+            exception,
+            queueField(),
+            attemptsField(item.attempts()));
         result = QueueItemResults.RETRY_LATER;
       }
       if (result == QueueItemResults.RETRY_LATER) {
         int attempts = item.attempts() + 1;
         if (attempts >= settings.maxAttempts()) {
-          LOGGER.error(
-              "Queue item dropped",
-              new QueueItemDroppedException(),
-              queueField(),
-              attemptsField(attempts));
+          LOGGER.error("Queue item dropped", queueField(), attemptsField(attempts));
         } else {
           queue.add(item, settings.retryDelay());
         }
@@ -109,15 +108,12 @@ public final class QueueProcessor<T> {
   }
 
   private StructuredLogField queueField() {
-    return new StructuredLogField(LogField.QUEUE, name);
+    return new StructuredLogField(LogFields.QUEUE, name);
   }
 
   private static StructuredLogField attemptsField(int attempts) {
-    return new StructuredLogField(LogField.ATTEMPTS, Integer.toString(attempts));
+    return new StructuredLogField(LogFields.ATTEMPTS, Integer.toString(attempts));
   }
-
-  /** Carries the drop into the error log, which records only throwables. */
-  private static final class QueueItemDroppedException extends RuntimeException {}
 
   private static final class NamedThreadFactory implements ThreadFactory {
     private final String name;
@@ -132,22 +128,6 @@ public final class QueueProcessor<T> {
       Thread thread = new Thread(task, name + "-" + nextNumber.getAndIncrement());
       thread.setDaemon(false);
       return thread;
-    }
-  }
-
-  private enum LogField implements LogFields {
-    QUEUE("queue"),
-    ATTEMPTS("attempts");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
     }
   }
 }

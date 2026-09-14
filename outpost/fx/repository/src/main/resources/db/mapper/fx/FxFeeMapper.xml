@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.fx.repository.mybatis.FxFeeMapper">
+  <select id="findFxFees" resultType="com.outpost.fx.repository.mybatis.FxFee">
+    SELECT ff.fx_fee_id AS "fxFeeId",
+           bc.currency_id AS "baseCurrencyId",
+           bc.currency_code AS "baseCurrencyCode",
+           bc.exponent AS "baseCurrencyExponent",
+           qc.currency_id AS "quoteCurrencyId",
+           qc.currency_code AS "quoteCurrencyCode",
+           qc.exponent AS "quoteCurrencyExponent",
+           ff.fee_rate_bps AS "feeRateBps"
+    FROM fx_fee ff
+    JOIN currency bc ON bc.currency_id = ff.base_currency_id
+    JOIN currency qc ON qc.currency_id = ff.quote_currency_id
+    ORDER BY ff.base_currency_id, ff.quote_currency_id
+  </select>
+</mapper>

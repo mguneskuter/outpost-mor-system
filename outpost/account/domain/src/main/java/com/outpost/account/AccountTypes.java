@@ -29,8 +29,8 @@ public enum AccountTypes {
               Collectors.toUnmodifiableMap(
                   constant -> constant.getValue().getCode(), constant -> constant));
 
-  private static final Map<AccountTypes.AccountType, Set<AccountType>> ALLOWED_CHILDREN_TYPES =
-      buildAllowedChildrenTypes();
+  private static final Map<AccountTypes.AccountType, Set<AccountType>> ALLOWED_CHILD_TYPES =
+      buildAllowedChildTypes();
 
   @SuppressWarnings("Immutable")
   private final AccountType value;
@@ -51,12 +51,12 @@ public enum AccountTypes {
   }
 
   /** Returns the account types that a parent account type may contain. */
-  public static Set<AccountType> getAllowedChildrenTypesForParent(AccountType parentAccounType) {
-    return ALLOWED_CHILDREN_TYPES.getOrDefault(parentAccounType, Set.of());
+  public static Set<AccountType> allowedChildTypes(AccountType parentAccountType) {
+    return ALLOWED_CHILD_TYPES.getOrDefault(parentAccountType, Set.of());
   }
 
   private static Map<AccountTypes.AccountType, Set<AccountTypes.AccountType>>
-      buildAllowedChildrenTypes() {
+      buildAllowedChildTypes() {
     return Map.of(
         AccountTypes.ROOT.getValue(),
         Set.of(
@@ -118,8 +118,8 @@ public enum AccountTypes {
     }
 
     /** Returns whether this account type permits the supplied child type. */
-    public boolean isAllowedChildrenType(AccountTypes.AccountType childType) {
-      return ALLOWED_CHILDREN_TYPES.getOrDefault(this, Set.of()).contains(childType);
+    public boolean isAllowedChildType(AccountTypes.AccountType childType) {
+      return ALLOWED_CHILD_TYPES.getOrDefault(this, Set.of()).contains(childType);
     }
 
     @Override

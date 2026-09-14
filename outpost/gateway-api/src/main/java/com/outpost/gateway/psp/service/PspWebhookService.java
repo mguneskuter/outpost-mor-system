@@ -7,7 +7,7 @@ import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
-import com.outpost.integration.psp.simulator.repository.PspConfiguration;
+import com.outpost.integration.psp.simulator.PspConfiguration;
 import com.outpost.payment.order.Order;
 import com.outpost.payment.order.repository.OrderRepository;
 import java.util.Optional;
@@ -28,7 +28,7 @@ public final class PspWebhookService {
   }
 
   /**
-   * Queues one PSP event notification whose signature already matched {@code psp}.
+   * Queues one PSP event notification whose signature already matched {@code pspConfiguration}.
    *
    * <p>A valid signature proves which PSP sent the event, not that the event belongs to the order
    * it names, so the event is queued only when that order was created with the signing PSP's
@@ -36,34 +36,35 @@ public final class PspWebhookService {
    *
    * @return {@code ACCEPTED} when the event was queued; every other code means nothing was queued
    */
-  public PspWebhookProcessResultCodes process(PspConfiguration psp, PspOrderEvent event) {
+  public PspWebhookResults queueEvent(PspConfiguration pspConfiguration, PspOrderEvent event) {
     LOGGER.info("PSP event received", eventFields(event));
-    PspWebhookProcessResultCodes result = queue(psp, event);
+    PspWebhookResults result = queueMatchingEvent(pspConfiguration, event);
     LOGGER.info(
-        result == PspWebhookProcessResultCodes.ACCEPTED
+        result == PspWebhookResults.ACCEPTED
             ? "PSP event queued for the Ledger"
             : "PSP event not queued",
-        new StructuredLogField(LogField.PSP_REFERENCE, event.pspReference()),
-        new StructuredLogField(LogField.ORDER_REFERENCE, event.orderReference()),
-        new StructuredLogField(LogField.EVENT_CODE, event.eventCode().name()),
-        new StructuredLogField(LogField.WEBHOOK_RESULT, result.name()));
+        new StructuredLogField(LogFields.PSP_REFERENCE, event.pspReference()),
+        new StructuredLogField(LogFields.ORDER_REFERENCE, event.orderReference()),
+        new StructuredLogField(LogFields.EVENT_CODE, event.eventCode().name()),
+        new StructuredLogField(LogFields.WEBHOOK_RESULT, result.name()));
     return result;
   }
 
-  private PspWebhookProcessResultCodes queue(PspConfiguration psp, PspOrderEvent event) {
-    if (!psp.code().equals(event.pspCode())) {
-      return PspWebhookProcessResultCodes.INVALID_PAYLOAD;
+  private PspWebhookResults queueMatchingEvent(
+      PspConfiguration pspConfiguration, PspOrderEvent event) {
+    if (!pspConfiguration.code().equals(event.pspCode())) {
+      return PspWebhookResults.INVALID_PAYLOAD;
     }
     Optional<Order> found = orders.findOrderByOrderReference(event.orderReference());
     if (found.isEmpty()) {
-      return PspWebhookProcessResultCodes.UNKNOWN_PAYMENT;
+      return PspWebhookResults.UNKNOWN_ORDER;
     }
     Order order = found.orElseThrow();
-    if (order.getPspAccount().getAccountId() != psp.accountId()) {
-      return PspWebhookProcessResultCodes.FOREIGN_PAYMENT;
+    if (order.getPspAccount().getAccountId() != pspConfiguration.accountId()) {
+      return PspWebhookResults.UNKNOWN_ORDER;
     }
     if (!order.getPspReference().map(event.pspReference()::equals).orElse(false)) {
-      return PspWebhookProcessResultCodes.PSP_REFERENCE_MISMATCH;
+      return PspWebhookResults.PSP_REFERENCE_MISMATCH;
     }
     AccountingQueueRequestTypes type =
         switch (event.eventCode()) {
@@ -74,7 +75,7 @@ public final class PspWebhookService {
     String refundReference = event.refundReference();
     if (type == AccountingQueueRequestTypes.REFUND
         && (refundReference == null || refundReference.isBlank())) {
-      return PspWebhookProcessResultCodes.INVALID_PAYLOAD;
+      return PspWebhookResults.INVALID_PAYLOAD;
     }
     try {
       accountingQueue.add(
@@ -82,7 +83,7 @@ public final class PspWebhookService {
               type,
               order.getOrderReference(),
               order.getMerchantReference(),
-              psp.code(),
+              pspConfiguration.code(),
               event.pspReference(),
               event.success(),
               type == AccountingQueueRequestTypes.REFUND ? refundReference : null,
@@ -93,40 +94,19 @@ public final class PspWebhookService {
               null,
               null));
     } catch (QueueFullException full) {
-      return PspWebhookProcessResultCodes.QUEUE_FULL;
+      return PspWebhookResults.QUEUE_FULL;
     }
-    return PspWebhookProcessResultCodes.ACCEPTED;
+    return PspWebhookResults.ACCEPTED;
   }
 
   private static StructuredLogField[] eventFields(PspOrderEvent event) {
     return new StructuredLogField[] {
-      new StructuredLogField(LogField.PSP_CODE, event.pspCode()),
-      new StructuredLogField(LogField.PSP_REFERENCE, event.pspReference()),
-      new StructuredLogField(LogField.ORDER_REFERENCE, event.orderReference()),
-      new StructuredLogField(LogField.EVENT_CODE, event.eventCode().name()),
-      new StructuredLogField(LogField.SUCCESS, Boolean.toString(event.success())),
-      new StructuredLogField(LogField.RESULT_CODE, event.resultCode())
+      new StructuredLogField(LogFields.PSP_CODE, event.pspCode()),
+      new StructuredLogField(LogFields.PSP_REFERENCE, event.pspReference()),
+      new StructuredLogField(LogFields.ORDER_REFERENCE, event.orderReference()),
+      new StructuredLogField(LogFields.EVENT_CODE, event.eventCode().name()),
+      new StructuredLogField(LogFields.SUCCESS, Boolean.toString(event.success())),
+      new StructuredLogField(LogFields.RESULT_CODE, event.resultCode())
     };
-  }
-
-  private enum LogField implements LogFields {
-    PSP_CODE("psp_code"),
-    PSP_REFERENCE("psp_reference"),
-    ORDER_REFERENCE("order_reference"),
-    EVENT_CODE("event_code"),
-    SUCCESS("success"),
-    RESULT_CODE("result_code"),
-    WEBHOOK_RESULT("webhook_result");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
-    }
   }
 }

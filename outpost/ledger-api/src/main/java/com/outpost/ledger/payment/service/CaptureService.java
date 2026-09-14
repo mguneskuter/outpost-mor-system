@@ -1,249 +1,179 @@
 package com.outpost.ledger.payment.service;
 
 import com.outpost.account.Account;
-import com.outpost.accounting.JournalEntry;
+import com.outpost.account.AccountTypes;
+import com.outpost.account.repository.AccountRepository;
 import com.outpost.accounting.Register;
 import com.outpost.accounting.RegisterTypes;
-import com.outpost.accounting.Transaction;
-import com.outpost.accounting.TransactionEvent;
 import com.outpost.accounting.TransactionEventTypes;
 import com.outpost.accounting.TransactionEventTypes.TransactionEventType;
 import com.outpost.accounting.TransactionTypes;
+import com.outpost.accounting.journalentry.CaptureRegisters;
+import com.outpost.accounting.journalentry.JournalEntry;
+import com.outpost.accounting.journalentry.PendingFee;
 import com.outpost.accounting.journalentry.repository.JournalEntryRepository;
-import com.outpost.accounting.payment.PaymentProcessorStateMachine;
+import com.outpost.accounting.payment.PaymentStateMachine;
+import com.outpost.accounting.repository.RegisterRepository;
 import com.outpost.accounting.templates.CaptureJournalTemplates;
 import com.outpost.accounting.templates.PendingFeeJournalTemplates;
-import com.outpost.common.iso.Currencies;
-import com.outpost.common.iso.Currencies.Currency;
+import com.outpost.accounting.transaction.PaymentDetail;
+import com.outpost.accounting.transaction.Transaction;
+import com.outpost.accounting.transaction.TransactionEvent;
+import com.outpost.accounting.transaction.repository.TransactionRepository;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
-import com.outpost.ledger.payment.repository.CaptureChild;
-import com.outpost.ledger.payment.repository.PaymentEvent;
-import com.outpost.ledger.payment.repository.PaymentRepository;
-import com.outpost.ledger.payment.repository.PaymentTransaction;
-import com.outpost.ledger.payment.repository.PendingFee;
-import com.outpost.ledger.payment.repository.StoredTransaction;
-import com.outpost.payment.common.Amount;
-import java.time.Instant;
-import java.util.Arrays;
-import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Books one PSP capture outcome on an authorised payment and its accounting evidence. */
+/** Books the PSP's capture answer on an authorised payment and its journal entry. */
 public class CaptureService {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(CaptureService.class));
-  private final PaymentRepository repository;
-  private final JournalEntryRepository journalEntryRepository;
-  private final PaymentProcessorStateMachine stateMachine;
+  private final TransactionRepository transactions;
+  private final JournalEntryRepository journalEntries;
+  private final AccountRepository accounts;
+  private final RegisterRepository registers;
+  private final PaymentStateMachine stateMachine;
 
-  /** Creates a service using the persistence seams and payment processor state machine. */
+  /** Creates a service over the repositories it books through and the payment state machine. */
   public CaptureService(
-      PaymentRepository repository,
-      JournalEntryRepository journalEntryRepository,
-      PaymentProcessorStateMachine stateMachine) {
-    this.repository = repository;
-    this.journalEntryRepository = journalEntryRepository;
+      TransactionRepository transactions,
+      JournalEntryRepository journalEntries,
+      AccountRepository accounts,
+      RegisterRepository registers,
+      PaymentStateMachine stateMachine) {
+    this.transactions = transactions;
+    this.journalEntries = journalEntries;
+    this.accounts = accounts;
+    this.registers = registers;
     this.stateMachine = stateMachine;
   }
 
   /**
-   * Books the PSP's capture outcome as the payment's single CAPTURE child for the payment's gross
-   * amount: CAPTURED and the CAPTURE entry when {@code success}, otherwise CAPTURE_FAILED and the
-   * release of the pending fee. A repeat of the booked outcome writes nothing.
+   * Books the PSP's capture answer as the payment's single CAPTURE transaction for the payment's
+   * gross amount: CAPTURED and the CAPTURE entry when {@code success}, otherwise CAPTURE_FAILED and
+   * the release of the pending fee. A repeat of the booked answer writes nothing.
    *
-   * @throws CaptureException 404 PAYMENT_NOT_FOUND, 409 CAPTURE_CONFLICT or REFERENCE_CONFLICT, 422
-   *     INVALID_CAPTURE
+   * @throws BookingException when the request is not booked; its code says why
    */
   @Transactional
-  public void capture(String originalReference, boolean success) {
-    TransactionEventType candidate =
+  public void bookCapture(String originalReference, boolean success) {
+    TransactionEventType eventType =
         success
             ? TransactionEventTypes.CAPTURED.getValue()
             : TransactionEventTypes.CAPTURE_FAILED.getValue();
-    PaymentTransaction payment = repository.findPaymentTransactionForUpdate(originalReference);
-    if (payment == null) {
-      throw new CaptureException(404, "PAYMENT_NOT_FOUND");
-    }
-    CaptureChild existing = repository.findCaptureChild(payment.transactionId());
-    if (existing != null) {
-      if (existing.eventTypeId() != null
-          && existing.eventTypeId() == candidate.getTransactionEventTypeId()) {
+    PaymentDetail payment =
+        transactions
+            .findPaymentDetailByReferenceForUpdate(originalReference)
+            .orElseThrow(() -> refused(BookingErrorCodes.PAYMENT_NOT_FOUND));
+    Transaction paymentTransaction = payment.getPaymentTransaction();
+    Optional<TransactionEvent> bookedCaptureEvent =
+        transactions.findCaptureTransactionEventByPayment(paymentTransaction);
+    if (bookedCaptureEvent.isPresent()) {
+      if (bookedCaptureEvent.get().getTransactionEventType().equals(eventType)) {
         LOGGER.info(
-            "Capture outcome already booked",
-            new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
-            new StructuredLogField(LogField.EVENT, candidate.getCode()));
+            "Capture already booked",
+            new StructuredLogField(LogFields.ORIGINAL_REFERENCE, originalReference),
+            new StructuredLogField(LogFields.EVENT, eventType.getCode()));
         return;
       }
-      throw new CaptureException(409, "CAPTURE_CONFLICT");
+      throw refused(BookingErrorCodes.CAPTURE_CONFLICT);
     }
-    List<PaymentEvent> events = repository.findPaymentEvents(payment.transactionId());
-    TransactionEventType paymentState = fold(events);
-    if (!stateMachine.isNextCapture(paymentState, false, candidate)) {
-      throw new CaptureException(422, "INVALID_CAPTURE");
+    TransactionEventType paymentState;
+    try {
+      paymentState =
+          stateMachine.fold(
+              transactions.findTransactionEvents(paymentTransaction).stream()
+                  .map(TransactionEvent::getTransactionEventType)
+                  .toList());
+    } catch (IllegalArgumentException exception) {
+      throw inconsistentBooking(exception);
     }
-    PendingFee pendingFee = repository.findPendingFee(payment.transactionId());
-    if (!validPendingFee(payment, pendingFee)) {
-      throw internal();
+    if (!stateMachine.isNextCapture(paymentState, false, eventType)) {
+      throw refused(BookingErrorCodes.INVALID_CAPTURE);
     }
+    PendingFee pendingFee =
+        journalEntries
+            .findPendingFeeByPayment(paymentTransaction)
+            .orElseThrow(() -> inconsistentBooking(null));
 
     String captureReference = "capture-" + UUID.randomUUID();
-    Currency currency = currency(payment.currencyId());
-    StoredTransaction capture =
-        repository.insertCaptureTransaction(
-            payment.transactionId(),
-            payment.merchantAccountId(),
-            captureReference,
-            payment.grossQuantity(),
-            payment.currencyId());
-    if (capture == null) {
-      throw new CaptureException(409, "REFERENCE_CONFLICT");
-    }
-    PaymentEvent event =
-        repository.insertPaymentEvent(
-            capture.transactionId(), candidate.getTransactionEventTypeId());
-    if (event == null) {
-      throw internal();
-    }
-    Account merchantAccount = repository.findAccountById(payment.merchantAccountId());
-    if (merchantAccount == null) {
-      throw internal();
-    }
-    TransactionEvent transactionEvent;
-    try {
-      transactionEvent =
-          new TransactionEvent(
-              event.transactionEventId(),
-              Transaction.of(
-                  capture.transactionId(),
-                  TransactionTypes.CAPTURE.getValue(),
-                  merchantAccount,
-                  captureReference,
-                  new Amount(currency, payment.grossQuantity()),
-                  capture.createdAt()),
-              candidate,
-              event.occurredAt());
-    } catch (IllegalArgumentException exception) {
-      throw internal();
-    }
-    journalEntryRepository.insertJournalEntry(journalEntry(payment, pendingFee, transactionEvent));
+    Transaction capture =
+        transactions
+            .insertTransaction(
+                Transaction.childOf(
+                    paymentTransaction,
+                    null,
+                    TransactionTypes.CAPTURE.getValue(),
+                    paymentTransaction.getMerchantAccount(),
+                    captureReference,
+                    paymentTransaction.getAmount(),
+                    null))
+            .orElseThrow(() -> refused(BookingErrorCodes.REFERENCE_CONFLICT));
+    TransactionEvent event =
+        transactions
+            .insertTransactionEvent(capture, eventType)
+            .orElseThrow(() -> inconsistentBooking(null));
+    journalEntries.insertJournalEntry(journalEntry(event, payment, pendingFee));
     LOGGER.info(
         success
             ? "Capture booked: net to the merchant, tax to the tax authority, fee to Outpost"
             : "Capture failure booked and the pending fee released",
-        new StructuredLogField(LogField.ORIGINAL_REFERENCE, originalReference),
-        new StructuredLogField(LogField.CAPTURE_REFERENCE, captureReference),
-        new StructuredLogField(LogField.EVENT, candidate.getCode()));
+        new StructuredLogField(LogFields.ORIGINAL_REFERENCE, originalReference),
+        new StructuredLogField(LogFields.CAPTURE_REFERENCE, captureReference),
+        new StructuredLogField(LogFields.EVENT, eventType.getCode()));
   }
 
   private JournalEntry journalEntry(
-      PaymentTransaction payment, PendingFee pendingFee, TransactionEvent transactionEvent) {
+      TransactionEvent event, PaymentDetail payment, PendingFee pendingFee) {
     try {
-      Account platformAccount = repository.findPlatformAccount();
-      if (platformAccount == null) {
-        throw internal();
-      }
-      Register merchantPendingFee =
-          register(payment.merchantAccountId(), RegisterTypes.PENDING_FEE);
-      Register platformPendingFee =
-          register(platformAccount.getAccountId(), RegisterTypes.PENDING_FEE);
-      if (merchantPendingFee.getRegisterId() != pendingFee.merchantRegisterId()
-          || platformPendingFee.getRegisterId() != pendingFee.platformRegisterId()) {
-        throw internal();
-      }
-      Amount gross = transactionEvent.getTransaction().getAmount();
-      Amount fee = new Amount(gross.currency(), pendingFee.fee());
-      Instant occurredAt = transactionEvent.getOccurredAt();
-      if (!transactionEvent
-          .getTransactionEventType()
-          .equals(TransactionEventTypes.CAPTURED.getValue())) {
+      if (!event.getTransactionEventType().equals(TransactionEventTypes.CAPTURED.getValue())) {
         return PendingFeeJournalTemplates.FEE_RELEASE.build(
-            transactionEvent, merchantPendingFee, platformPendingFee, fee, occurredAt);
-      }
-      Account taxAuthorityAccount =
-          repository.findTaxAuthorityAccountByCountryId(payment.shopperCountryId());
-      if (taxAuthorityAccount == null) {
-        throw internal();
+            event,
+            pendingFee.merchantPendingFeeRegister(),
+            pendingFee.platformPendingFeeRegister(),
+            pendingFee.fee(),
+            event.getOccurredAt());
       }
       return CaptureJournalTemplates.CAPTURE.build(
-          transactionEvent,
-          register(payment.pspAccountId(), RegisterTypes.PSP_RECEIVABLE),
-          register(taxAuthorityAccount.getAccountId(), RegisterTypes.TAX_PAYABLE),
-          register(payment.merchantAccountId(), RegisterTypes.MERCHANT_PAYABLE),
-          register(platformAccount.getAccountId(), RegisterTypes.FEE_REVENUE),
-          merchantPendingFee,
-          platformPendingFee,
-          gross,
-          new Amount(gross.currency(), payment.netQuantity()),
-          new Amount(gross.currency(), payment.taxQuantity()),
-          fee,
-          occurredAt);
+          event, payment, captureRegisters(payment), pendingFee, event.getOccurredAt());
     } catch (IllegalArgumentException | ArithmeticException exception) {
-      throw internal();
+      throw inconsistentBooking(exception);
     }
   }
 
-  private Register register(long accountId, RegisterTypes registerType) {
-    Register register =
-        repository.findRegister(accountId, registerType.getValue().getRegisterTypeId());
-    if (register == null || register.getAccount().getAccountId() != accountId) {
-      throw internal();
-    }
-    return register;
+  private CaptureRegisters captureRegisters(PaymentDetail payment) {
+    Account taxAuthority =
+        accounts
+            .findTaxAuthorityAccountByCountryId(payment.getShopperCountry().getCountryId())
+            .orElseThrow(() -> inconsistentBooking(null));
+    Account platform =
+        accounts
+            .findAccountByAccountType(AccountTypes.PLATFORM.getValue())
+            .orElseThrow(() -> inconsistentBooking(null));
+    return new CaptureRegisters(
+        register(payment.getPspAccount(), RegisterTypes.PSP_RECEIVABLE),
+        register(taxAuthority, RegisterTypes.TAX_PAYABLE),
+        register(
+            payment.getPaymentTransaction().getMerchantAccount(), RegisterTypes.MERCHANT_PAYABLE),
+        register(platform, RegisterTypes.FEE_REVENUE));
   }
 
-  private static boolean validPendingFee(PaymentTransaction payment, PendingFee fee) {
-    return fee != null
-        && fee.fee() >= 0
-        && fee.fee() <= payment.netQuantity()
-        && fee.currencyId() == payment.currencyId();
+  private Register register(Account account, RegisterTypes registerType) {
+    return registers
+        .findRegisterByAccountAndRegisterType(account, registerType.getValue())
+        .orElseThrow(() -> inconsistentBooking(null));
   }
 
-  private TransactionEventType fold(List<PaymentEvent> events) {
-    try {
-      return stateMachine.fold(events.stream().map(CaptureService::eventType).toList());
-    } catch (IllegalArgumentException exception) {
-      throw internal();
-    }
+  private static BookingException refused(BookingErrorCodes code) {
+    return new BookingException(code, null);
   }
 
-  private static TransactionEventType eventType(PaymentEvent event) {
-    return Arrays.stream(TransactionEventTypes.values())
-        .map(TransactionEventTypes::getValue)
-        .filter(type -> type.getTransactionEventTypeId() == event.transactionEventTypeId())
-        .findFirst()
-        .orElseThrow(CaptureService::internal);
-  }
-
-  private static Currency currency(long currencyId) {
-    return Arrays.stream(Currencies.values())
-        .map(Currencies::getValue)
-        .filter(value -> value.getCurrencyId() == currencyId)
-        .findFirst()
-        .orElseThrow(CaptureService::internal);
-  }
-
-  private static CaptureException internal() {
-    return new CaptureException(500, "INTERNAL_ERROR");
-  }
-
-  private enum LogField implements LogFields {
-    ORIGINAL_REFERENCE("original_reference"),
-    CAPTURE_REFERENCE("capture_reference"),
-    EVENT("event");
-
-    private final String jsonKey;
-
-    LogField(String jsonKey) {
-      this.jsonKey = jsonKey;
-    }
-
-    @Override
-    public String getJsonKey() {
-      return jsonKey;
-    }
+  private static BookingException inconsistentBooking(@Nullable Throwable cause) {
+    return new BookingException(BookingErrorCodes.INCONSISTENT_BOOKING, cause);
   }
 }

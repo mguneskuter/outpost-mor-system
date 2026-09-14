@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.outpost.accounting.journalentry.repository.mybatis.JournalEntryMapper">
+  <!-- flushCache: a select is otherwise served from the session cache, so a second identical
+       line would return the first line's identifier instead of being inserted. -->
+  <select id="insertJournalEntry" resultType="long" flushCache="true" useCache="false">
+    INSERT INTO journal_entry (transaction_event_id, journal_entry_type_id, booked, posted)
+    VALUES (
+      #{transactionEvent.transactionEventId},
+      (SELECT journal_entry_type_id FROM journal_entry_type WHERE code = #{journalEntryType.code}),
+      now(),
+      now()
+    )
+    RETURNING journal_entry_id
+  </select>
+
+  <select id="insertJournalEntryLine" resultType="long" flushCache="true" useCache="false">
+    INSERT INTO journal_entry_line (journal_entry_id, register_id, currency_id, quantity)
+    VALUES (
+      #{journalEntryId},
+      #{journalEntryLine.register.registerId},
+      (SELECT currency_id FROM currency
+        WHERE currency_code = #{journalEntryLine.amount.currency.currencyCode}),
+      #{journalEntryLine.amount.quantity}
+    )
+    RETURNING journal_entry_line_id
+  </select>
+
+  <resultMap id="pendingFee" type="com.outpost.accounting.journalentry.repository.mybatis.PendingFee">
+    <constructor>
+      <arg column="currency_code" javaType="string"/>
+      <arg column="fee" javaType="_long"/>
+      <arg column="merchant_pending_fee_register_id" javaType="_long"/>
+      <arg column="merchant_register_type" javaType="string"/>
+      <arg column="merchant_account_id" javaType="_long"/>
+      <arg column="platform_pending_fee_register_id" javaType="_long"/>
+      <arg column="platform_register_type" javaType="string"/>
+      <arg column="platform_account_id" javaType="_long"/>
+    </constructor>
+  </resultMap>
+
+  <select id="findPendingFeeByPayment" resultMap="pendingFee">
+    SELECT currency.currency_code, merchant_line.quantity AS fee,
+           merchant_line.register_id AS merchant_pending_fee_register_id,
+           merchant_type.register_type_code AS merchant_register_type,
+           merchant_register.account_id AS merchant_account_id,
+           platform_line.register_id AS platform_pending_fee_register_id,
+           platform_type.register_type_code AS platform_register_type,
+           platform_register.account_id AS platform_account_id
+      FROM transaction payment
+      JOIN transaction_event event ON event.transaction_id = payment.transaction_id
+      JOIN transaction_event_type event_type
+        ON event_type.transaction_event_type_id = event.transaction_event_type_id
+       AND event_type.code = 'ORDER_CREATED'
+      JOIN journal_entry entry ON entry.transaction_event_id = event.transaction_event_id
+      JOIN journal_entry_type entry_type
+        ON entry_type.journal_entry_type_id = entry.journal_entry_type_id
+       AND entry_type.code = 'FEE_PENDING'
+      JOIN journal_entry_line merchant_line ON merchant_line.journal_entry_id = entry.journal_entry_id
+      JOIN register merchant_register
+        ON merchant_register.register_id = merchant_line.register_id
+       AND merchant_register.account_id = payment.account_id
+      JOIN register_type merchant_type
+        ON merchant_type.register_type_id = merchant_register.register_type_id
+      JOIN journal_entry_line platform_line
+        ON platform_line.journal_entry_id = entry.journal_entry_id
+       AND platform_line.journal_entry_line_id &lt;&gt; merchant_line.journal_entry_line_id
+      JOIN register platform_register ON platform_register.register_id = platform_line.register_id
+      JOIN register_type platform_type
+        ON platform_type.register_type_id = platform_register.register_type_id
+      JOIN currency ON currency.currency_id = merchant_line.currency_id
+     WHERE payment.transaction_id = #{paymentTransactionId}
+  </select>
+
+  <resultMap id="captureRegisters" type="com.outpost.accounting.journalentry.repository.mybatis.CaptureRegisters">
+    <constructor>
+      <arg column="psp_receivable_register_id" javaType="_long"/>
+      <arg column="psp_account_id" javaType="_long"/>
+      <arg column="tax_payable_register_id" javaType="_long"/>
+      <arg column="tax_authority_account_id" javaType="_long"/>
+      <arg column="merchant_payable_register_id" javaType="_long"/>
+      <arg column="merchant_account_id" javaType="_long"/>
+      <arg column="fee_revenue_register_id" javaType="_long"/>
+      <arg column="platform_account_id" javaType="_long"/>
+    </constructor>
+  </resultMap>
+
+  <select id="findCaptureRegistersByPayment" resultMap="captureRegisters">
+    SELECT MAX(line.register_id) FILTER (WHERE register_type.register_type_code = 'PSP_RECEIVABLE')
+             AS psp_receivable_register_id,
+           MAX(register.account_id) FILTER (WHERE register_type.register_type_code = 'PSP_RECEIVABLE')
+             AS psp_account_id,
+           MAX(line.register_id) FILTER (WHERE register_type.register_type_code = 'TAX_PAYABLE')
+             AS tax_payable_register_id,
+           MAX(register.account_id) FILTER (WHERE register_type.register_type_code = 'TAX_PAYABLE')
+             AS tax_authority_account_id,
+           MAX(line.register_id) FILTER (WHERE register_type.register_type_code = 'MERCHANT_PAYABLE')
+             AS merchant_payable_register_id,
+           MAX(register.account_id) FILTER (WHERE register_type.register_type_code = 'MERCHANT_PAYABLE')
+             AS merchant_account_id,
+           MAX(line.register_id) FILTER (WHERE register_type.register_type_code = 'FEE_REVENUE')
+             AS fee_revenue_register_id,
+           MAX(register.account_id) FILTER (WHERE register_type.register_type_code = 'FEE_REVENUE')
+             AS platform_account_id
+      FROM transaction capture
+      JOIN transaction_type capture_type
+        ON capture_type.transaction_type_id = capture.transaction_type_id
+       AND capture_type.code = 'CAPTURE'
+      JOIN transaction_event event ON event.transaction_id = capture.transaction_id
+      JOIN journal_entry entry ON entry.transaction_event_id = event.transaction_event_id
+      JOIN journal_entry_type entry_type
+        ON entry_type.journal_entry_type_id = entry.journal_entry_type_id
+       AND entry_type.code = 'CAPTURE'
+      JOIN journal_entry_line line ON line.journal_entry_id = entry.journal_entry_id
+      JOIN register ON register.register_id = line.register_id
+      JOIN register_type ON register_type.register_type_id = register.register_type_id
+     WHERE capture.parent_transaction_id = #{paymentTransactionId}
+    HAVING COUNT(*) &gt; 0
+  </select>
+</mapper>
