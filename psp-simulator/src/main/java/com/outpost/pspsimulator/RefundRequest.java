@@ -8,8 +8,8 @@ import tools.jackson.databind.annotation.JsonNaming;
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record RefundRequest(String pspReference, String refundReference) {
 
-  /** Returns the request as a refund command, parsing the reference for the domain. */
+  /** Returns the request as a refund command. */
   public RefundCommand toCommand() {
-    return new RefundCommand(Long.parseLong(pspReference), refundReference);
+    return new RefundCommand(pspReference, refundReference);
   }
 }

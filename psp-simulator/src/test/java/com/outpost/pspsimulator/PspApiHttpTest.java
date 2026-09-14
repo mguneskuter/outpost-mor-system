@@ -64,7 +64,7 @@ class PspApiHttpTest {
 
   @Test
   void repeatedOrderRequestReturnsTheSameReferenceWithOk() throws Exception {
-    Order order = new Order("DEMO_PSP", 41, "payment-1", 1250, "EUR", OrderStatuses.CREATED);
+    Order order = new Order("DEMO_PSP", "psp-1", "payment-1", 1250, "EUR", OrderStatuses.CREATED);
     when(orders.createOrder(any(), any()))
         .thenReturn(new OrderService.CreateOrderResult(order, "http://payment", true))
         .thenReturn(new OrderService.CreateOrderResult(order, "http://payment", false));
@@ -86,11 +86,11 @@ class PspApiHttpTest {
   @Test
   void refundResponseEchoesPspReferenceAndRepeatedRequestIsSuccessful() throws Exception {
     when(refunds.refund(any(), any()))
-        .thenReturn(new RefundService.RefundResult(77, true))
-        .thenReturn(new RefundService.RefundResult(77, true));
+        .thenReturn(new RefundService.RefundResult("psp-refund-1", true))
+        .thenReturn(new RefundService.RefundResult("psp-refund-1", true));
     String body =
         """
-        {"psp_reference":41,"refund_reference":"refund-1"}
+        {"psp_reference":"psp-1","refund_reference":"refund-1"}
         """;
     mvc.perform(
             post("/v1/DEMO_PSP/refund")
@@ -107,7 +107,7 @@ class PspApiHttpTest {
             .andExpect(status().isOk())
             .andReturn()
             .getResponse();
-    assertThat(response.getContentAsString()).contains("\"psp_refund_reference\":\"77\"");
+    assertThat(response.getContentAsString()).contains("\"psp_refund_reference\":\"psp-refund-1\"");
   }
 
   private static String orderJson() {

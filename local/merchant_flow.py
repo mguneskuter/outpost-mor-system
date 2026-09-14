@@ -294,7 +294,7 @@ def psp_refund_count(psp_reference):
     return int(
         query(
             "SELECT count(*) FROM psp_simulator.psp_refund "
-            f"WHERE psp_reference = {int(psp_reference)}"
+            f"WHERE psp_reference = {sql_literal(psp_reference)}"
         )
     )
 

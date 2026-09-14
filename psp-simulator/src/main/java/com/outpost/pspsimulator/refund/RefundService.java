@@ -75,7 +75,7 @@ public final class RefundService {
                     new IllegalStateException(
                         "refund reference claimed but not persisted: "
                             + command.refundReference()));
-    if (existing.pspReference() != command.pspReference()) {
+    if (!existing.pspReference().equals(command.pspReference())) {
       throw new ConflictException(
           "refund reference " + command.refundReference() + " was used for another order");
     }
@@ -83,5 +83,5 @@ public final class RefundService {
   }
 
   /** The result of a refund command: the PSP refund reference and whether it was accepted. */
-  public record RefundResult(long pspRefundReference, boolean accepted) {}
+  public record RefundResult(String pspRefundReference, boolean accepted) {}
 }

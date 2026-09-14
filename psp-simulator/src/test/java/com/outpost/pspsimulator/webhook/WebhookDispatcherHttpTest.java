@@ -61,10 +61,11 @@ class WebhookDispatcherHttpTest {
   void refusedPaymentPostsOnlyFailedAuthorisationWebhook() throws Exception {
     try (RecordingWebhookServer server = new RecordingWebhookServer()) {
       SimulatorProperties properties = properties(server);
-      Order order = new Order("DEMO_PSP", 41, "payment-1", 1250, "EUR", OrderStatuses.CREATED);
+      Order order = new Order("DEMO_PSP", "psp-1", "payment-1", 1250, "EUR", OrderStatuses.CREATED);
       OrderRepository repository = mock(OrderRepository.class);
-      when(repository.findByPspReference("DEMO_PSP", 41)).thenReturn(java.util.Optional.of(order));
-      when(repository.transition("DEMO_PSP", 41, OrderStatuses.CREATED, OrderStatuses.REFUSED))
+      when(repository.findByPspReference("DEMO_PSP", "psp-1"))
+          .thenReturn(java.util.Optional.of(order));
+      when(repository.transition("DEMO_PSP", "psp-1", OrderStatuses.CREATED, OrderStatuses.REFUSED))
           .thenReturn(true);
       TaskScheduler scheduler = mock(TaskScheduler.class);
       when(scheduler.schedule(any(Runnable.class), any(Instant.class)))
@@ -92,7 +93,7 @@ class WebhookDispatcherHttpTest {
                       "/v1/DEMO_PSP/payment")
                   .header("X-Outpost-Api-Key", "api-key")
                   .contentType("application/json")
-                  .content("{\"psp_reference\":41,\"card_number\":\"4000000000000002\"}"))
+                  .content("{\"psp_reference\":\"psp-1\",\"card_number\":\"4000000000000002\"}"))
           .andExpect(
               org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
                   .isAccepted());
@@ -121,7 +122,7 @@ class WebhookDispatcherHttpTest {
       WebhookEventCodes code, ResultCodes result, @Nullable String refundReference) {
     return new WebhookPayload(
         "DEMO_PSP",
-        "41",
+        "psp-1",
         null,
         "payment-1",
         code,

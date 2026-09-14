@@ -7,12 +7,12 @@ package com.outpost.pspsimulator.refund;
  * @param pspReference the order's PSP reference
  * @param refundReference the caller's reference for the refund, unique per PSP
  */
-public record RefundCommand(long pspReference, String refundReference) {
+public record RefundCommand(String pspReference, String refundReference) {
 
   /** Validates the order reference and refund reference. */
   public RefundCommand {
-    if (pspReference <= 0) {
-      throw new IllegalArgumentException("psp reference must be positive: " + pspReference);
+    if (pspReference == null || pspReference.isBlank()) {
+      throw new IllegalArgumentException("psp reference must not be blank");
     }
     if (refundReference == null || refundReference.isBlank()) {
       throw new IllegalArgumentException("refund reference must not be blank");

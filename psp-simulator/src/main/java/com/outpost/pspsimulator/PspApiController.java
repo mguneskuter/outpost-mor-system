@@ -45,9 +45,7 @@ public class PspApiController {
     OrderService.CreateOrderResult result = orderService.createOrder(pspCode, request.toCommand());
     HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
     return ResponseEntity.status(status)
-        .body(
-            new CreateOrderResponse(
-                Long.toString(result.order().pspReference()), result.paymentUrl()));
+        .body(new CreateOrderResponse(result.order().pspReference(), result.paymentUrl()));
   }
 
   /** Submits a card number against an order; the outcome arrives later by webhook. */
@@ -71,8 +69,7 @@ public class PspApiController {
       @RequestHeader(value = API_KEY_HEADER, required = false) @Nullable String apiKey) {
     requirePspAccount(pspCode, apiKey);
     RefundService.RefundResult result = refundService.refund(pspCode, request.toCommand());
-    return ResponseEntity.ok(
-        new RefundResponse(Long.toString(result.pspRefundReference()), result.accepted()));
+    return ResponseEntity.ok(new RefundResponse(result.pspRefundReference(), result.accepted()));
   }
 
   private PspAccount requirePspAccount(String pspCode, @Nullable String apiKey) {

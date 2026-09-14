@@ -8,8 +8,8 @@ import tools.jackson.databind.annotation.JsonNaming;
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record PayRequest(String pspReference, String cardNumber) {
 
-  /** Returns the request as a payment command, parsing the reference for the domain. */
+  /** Returns the request as a payment command. */
   public PayCommand toCommand() {
-    return new PayCommand(Long.parseLong(pspReference), cardNumber);
+    return new PayCommand(pspReference, cardNumber);
   }
 }

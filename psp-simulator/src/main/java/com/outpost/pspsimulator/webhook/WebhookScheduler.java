@@ -102,8 +102,8 @@ public final class WebhookScheduler {
         dispatcher.dispatch(
             new WebhookPayload(
                 order.pspCode(),
-                Long.toString(order.pspReference()),
-                Long.toString(refund.pspRefundReference()),
+                order.pspReference(),
+                refund.pspRefundReference(),
                 order.paymentReference(),
                 WebhookEventCodes.REFUND,
                 Instant.now().getEpochSecond(),
@@ -118,7 +118,7 @@ public final class WebhookScheduler {
       Order order, WebhookEventCodes eventCode, ResultCodes resultCode) {
     return new WebhookPayload(
         order.pspCode(),
-        Long.toString(order.pspReference()),
+        order.pspReference(),
         null,
         order.paymentReference(),
         eventCode,

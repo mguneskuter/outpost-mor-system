@@ -2,6 +2,7 @@ package com.outpost.pspsimulator.refund;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -14,8 +15,8 @@ public class RefundRepository {
       (resultSet, rowNum) ->
           new Refund(
               resultSet.getString("psp_code"),
-              resultSet.getLong("psp_reference"),
-              resultSet.getLong("psp_refund_reference"),
+              resultSet.getString("psp_reference"),
+              resultSet.getString("psp_refund_reference"),
               resultSet.getString("refund_reference"),
               resultSet.getLong("amount"),
               resultSet.getString("currency_code"),
@@ -29,13 +30,14 @@ public class RefundRepository {
   }
 
   /**
-   * Inserts a new refund, or does nothing when the refund reference already exists for the PSP.
+   * Inserts a new refund under a fresh PSP refund reference, or does nothing when the refund
+   * reference already exists for the PSP.
    *
    * @return the inserted refund, or empty when the refund reference is already in use
    */
   public Optional<Refund> insert(
       String pspCode,
-      long pspReference,
+      String pspReference,
       String refundReference,
       long amountMinor,
       String currencyCode,
@@ -44,9 +46,10 @@ public class RefundRepository {
         jdbcTemplate.query(
             """
             INSERT INTO psp_refund (
-                psp_code, psp_reference, refund_reference, amount, currency_code, accepted
+                psp_refund_reference, psp_code, psp_reference, refund_reference, amount,
+                currency_code, accepted
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (psp_code, refund_reference) DO NOTHING
             RETURNING
                 psp_refund_reference,
@@ -58,6 +61,7 @@ public class RefundRepository {
                 accepted
             """,
             ROW_MAPPER,
+            "psp-refund-" + UUID.randomUUID(),
             pspCode,
             pspReference,
             refundReference,
