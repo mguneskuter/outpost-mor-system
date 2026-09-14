@@ -2,6 +2,7 @@ package com.outpost.pspsimulator.order;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -14,7 +15,7 @@ public class OrderRepository {
       (resultSet, rowNum) ->
           new Order(
               resultSet.getString("psp_code"),
-              resultSet.getLong("psp_reference"),
+              resultSet.getString("psp_reference"),
               resultSet.getString("payment_reference"),
               resultSet.getLong("amount"),
               resultSet.getString("currency_code"),
@@ -28,8 +29,8 @@ public class OrderRepository {
   }
 
   /**
-   * Inserts a new order for the payment reference, or does nothing when that reference already
-   * exists for the PSP.
+   * Inserts a new order for the payment reference under a fresh PSP reference, or does nothing when
+   * that payment reference already exists for the PSP.
    *
    * @return the inserted order, or empty when the payment reference is already in use
    */
@@ -38,12 +39,15 @@ public class OrderRepository {
     List<Order> rows =
         jdbcTemplate.query(
             """
-            INSERT INTO psp_order (psp_code, payment_reference, amount, currency_code, status)
-            VALUES (?, ?, ?, ?, 'CREATED')
+            INSERT INTO psp_order (
+                psp_reference, psp_code, payment_reference, amount, currency_code, status
+            )
+            VALUES (?, ?, ?, ?, ?, 'CREATED')
             ON CONFLICT (psp_code, payment_reference) DO NOTHING
             RETURNING psp_reference, psp_code, payment_reference, amount, currency_code, status
             """,
             ROW_MAPPER,
+            "psp-" + UUID.randomUUID(),
             pspCode,
             paymentReference,
             amountMinor,
@@ -52,7 +56,7 @@ public class OrderRepository {
   }
 
   /** Returns the order with the supplied PSP reference, scoped to the PSP. */
-  public Optional<Order> findByPspReference(String pspCode, long pspReference) {
+  public Optional<Order> findByPspReference(String pspCode, String pspReference) {
     List<Order> rows =
         jdbcTemplate.query(
             """
@@ -87,7 +91,7 @@ public class OrderRepository {
    * @return whether the transition happened; {@code false} when the order moved on in the meantime
    */
   public boolean transition(
-      String pspCode, long pspReference, OrderStatuses from, OrderStatuses to) {
+      String pspCode, String pspReference, OrderStatuses from, OrderStatuses to) {
     int updated =
         jdbcTemplate.update(
             """
