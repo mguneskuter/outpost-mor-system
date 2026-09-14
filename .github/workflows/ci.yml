@@ -77,3 +77,10 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+      - name: Scan back office image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: backoffice:latest
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'

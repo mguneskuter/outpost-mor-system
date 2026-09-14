@@ -11,8 +11,9 @@ authority, and refunds on request. It is one PostgreSQL database and two deploya
   and answers the balance reports. Only the Gateway calls it.
 
 The local platform adds a PSP simulator (`psp-simulator`, port 8083) that hosts the payment page
-and sends the webhooks a real PSP would. `merchant-cli` is a merchant's shell for driving the
-platform by hand; it is not part of the Compose platform.
+and sends the webhooks a real PSP would, and a Backoffice (`backoffice`, port 8090) that shows
+the platform in a browser. `merchant-cli` is a merchant's shell for driving the platform by hand;
+it is not part of the Compose platform.
 
 ## Prerequisites
 
@@ -29,7 +30,7 @@ platform by hand; it is not part of the Compose platform.
 make setup                 # once: scanners into bin/, Git hooks installed
 cp .env.example .env       # then set the secrets; .env is gitignored
 make smoke                 # build images, start the platform, migrate, seed, run one merchant flow
-make tail ledger           # follow logs: gateway, ledger, psp-simulator, postgres; none for all
+make tail ledger           # follow logs: gateway, ledger, psp-simulator, backoffice, postgres; none for all
 make down                  # stop the platform and remove its volume
 ```
 
@@ -44,6 +45,35 @@ refused. The same actions run scripted:
 `pay <order-reference> [--card <number>]`, `refund <order-reference>`,
 `status <order-reference>`, `merchants`, `psps`, `catalogue`,
 `report --from 2026-09-01 --to 2026-09-30`, `report-platform --from … --to …`, and `help`.
+
+The Backoffice at `http://localhost:8090` shows the same platform in a browser, with no login.
+It starts with the platform as the `backoffice` container; `make backoffice` runs it on the
+host instead, against the same `.env`, so stop the container first since both listen on 8090.
+It reads Outpost's tables over a read-only connection and calls the Gateway and the PSP the way
+the shell does. Its pages load DaisyUI and Tailwind from the jsDelivr CDN, so the browser needs
+internet access; the server does not. Inside the Compose network the simulator's payment links still name
+`localhost:8083`, the host's address, so the container pays at
+`OUTPOST_BACKOFFICE_PSP_BASE_URL` (`http://psp-simulator:8083`) under each link's path; on the
+host that setting is empty and the link is used as published.
+
+- **Payments** creates an order as a merchant with a PSP, catalogue items, shopper country, and
+  test card, and pays it in one step. The table lists every payment with the gross, net, tax,
+  platform fee, shopper country, goods types, and the status the Ledger booked last (created,
+  authorised, refused, captured, refunded; PSP error when the PSP never accepted the order), with
+  a refund button on captured ones. Each order links to its page: the payment's transactions and
+  events, its journal entries line by line, and the balance accounts it posted to, with a total
+  per currency under each table.
+- **Balance accounts** lists every balance account of every merchant, tax authority, PSP, and
+  platform account, in every operating currency, filtered by account type, account, and balance
+  account, with a summary per balance account and currency on top and a total per currency under
+  each table. Each row shows the debits and the credits posted to the balance account separately
+  and their difference as the balance on its side, `64.85 Cr` or `1.25 Dr`, `0.00` where nothing is
+  booked. One balance account carries both sides: a merchant's payable is credited by each capture
+  with the net less the fee and debited by each refund with the net reversed, so its debits are
+  the refunds, its credits the captures, and its balance what Outpost owes the merchant. With no
+  filter chosen the totals show debits equal to credits, the double-entry check across the ledger.
+- **Reports** reads the Gateway's period balance report for a merchant or for the platform, with
+  a total per currency.
 
 `make smoke` builds the images with Buildpacks, starts PostgreSQL, applies the Flyway
 migrations, materialises the enum tables, seeds a demo merchant and PSP, starts the services,
@@ -232,6 +262,7 @@ other's output.
 | `.github/workflows/` | The manually started CI workflow.                                       |
 | `bin/`               | Gitignored repository-local scanner binaries from `make setup`.         |
 | `local/`             | Docker Compose platform, migrations and seed scripts, the smoke flow.   |
+| `backoffice/`        | Gradle root of the browser view of the platform.                        |
 | `merchant-cli/`      | Gradle root of the merchant shell.                                      |
 | `openapi/`           | The Gateway and Ledger API contracts.                                   |
 | `outpost/`           | Gradle root of the Outpost modules, deployables, and Flyway migrations. |

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-theme="corporate">
+<head th:replace="~{fragments :: head('Reports')}"></head>
+<body class="bg-base-200 min-h-screen">
+<div th:replace="~{fragments :: nav('reports')}"></div>
+<main class="p-6 space-y-6">
+  <div th:replace="~{fragments :: notices}"></div>
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <form class="flex flex-wrap items-end gap-3" method="get" th:action="@{/reports}">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Scope</legend>
+          <select name="scope" class="select">
+            <option value="PLATFORM" th:selected="${scope == 'PLATFORM'}">Platform (operator)</option>
+            <option th:each="m : ${merchants}" th:value="${m.code}" th:text="${m.code} + ' – ' + ${m.name}" th:selected="${m.code == scope}"></option>
+          </select>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">From (UTC day)</legend>
+          <input type="date" name="from" class="input" th:value="${from}">
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">To (UTC day)</legend>
+          <input type="date" name="to" class="input" th:value="${to}">
+        </fieldset>
+        <button type="submit" class="btn btn-primary">Read report</button>
+      </form>
+    </div>
+  </div>
+  <div class="card bg-base-100 shadow-sm" th:if="${rows != null}">
+    <div class="card-body">
+      <h2 class="card-title">Balance report</h2>
+      <div class="overflow-auto max-h-[60vh]">
+        <table class="table table-sm table-pin-rows">
+          <thead><tr><th>Account</th><th>Balance account</th><th>Currency</th><th class="text-right">Balance</th></tr></thead>
+          <tbody>
+            <tr th:each="row : ${rows}">
+              <td th:text="${row.accountCode}"></td><td th:text="${row.balanceAccountCode}"></td><td th:text="${row.currency}"></td><td class="text-right tabular-nums" th:text="${row.balance}"></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(rows)}"><td colspan="4" class="opacity-60">Nothing posted in the period.</td></tr>
+          </tbody>
+          <tfoot class="font-bold">
+            <tr th:each="t : ${totals}">
+              <td colspan="2">Total</td><td th:text="${t.currency}"></td><td class="text-right tabular-nums" th:text="${t.balance}"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

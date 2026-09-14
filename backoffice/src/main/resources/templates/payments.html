@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-theme="corporate">
+<head th:replace="~{fragments :: head('Payments')}"></head>
+<body class="bg-base-200 min-h-screen">
+<div th:replace="~{fragments :: nav('payments')}"></div>
+<main class="p-6 space-y-6">
+  <div th:replace="~{fragments :: notices}"></div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">New payment</h2>
+      <form class="flex flex-wrap items-end gap-3" method="get" th:action="@{/payments}">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Merchant</legend>
+          <select name="merchant" class="select" onchange="this.form.submit()">
+            <option th:each="m : ${merchants}" th:value="${m.code}" th:text="${m.code} + ' – ' + ${m.name}" th:selected="${m.code == selectedMerchant}"></option>
+          </select>
+        </fieldset>
+      </form>
+      <form class="flex flex-wrap items-end gap-3" method="post" th:action="@{/payments}">
+        <input type="hidden" name="merchant" th:value="${selectedMerchant}">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">PSP</legend>
+          <select name="psp" class="select">
+            <option th:each="p : ${psps}" th:value="${p.code}" th:text="${p.code} + ' – ' + ${p.name}"></option>
+          </select>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Items</legend>
+          <div class="dropdown dropdown-bottom">
+            <div tabindex="0" role="button" class="btn btn-outline btn-primary font-normal justify-between w-64">Choose items ▾</div>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-96 p-2 shadow">
+              <li th:each="item : ${catalogue}"><label class="label cursor-pointer justify-start gap-3"><input type="checkbox" class="checkbox checkbox-primary checkbox-sm" name="items" th:value="${item.sku}"> <span th:text="${item.label}"></span></label></li>
+            </ul>
+          </div>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Shopper country</legend>
+          <select name="country" class="select w-28">
+            <option th:each="c : ${countries}" th:value="${c}" th:text="${c}" th:selected="${c == 'NL'}"></option>
+          </select>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">State (e.g. US-CA)</legend>
+          <input name="state" class="input w-32">
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Test card</legend>
+          <select name="card" class="select">
+            <option th:each="card : ${cards}" th:value="${card.number}" th:text="${card.number} + ' – ' + ${card.outcome}"></option>
+          </select>
+        </fieldset>
+        <button type="submit" class="btn btn-primary">Create order and pay</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Payments</h2>
+      <div class="overflow-auto max-h-[60vh]">
+        <table class="table table-sm table-pin-rows">
+          <thead>
+            <tr>
+              <th>PSP ref</th><th>Order ref</th><th>Merchant</th><th>PSP</th><th>Status</th>
+              <th class="text-right">Gross</th><th class="text-right">Net</th><th class="text-right">Tax</th><th class="text-right">Platform fee</th>
+              <th>Currency</th><th>Country</th><th>Goods</th><th>Created</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr th:each="p : ${payments}">
+              <td th:text="${p.pspReference}"></td>
+              <td><a class="link link-primary" th:href="@{/payments/{ref}(ref=${p.orderReference})}" th:text="${p.orderReference}"></a></td>
+              <td th:text="${p.merchantName}"></td>
+              <td th:text="${p.pspName}"></td>
+              <td th:text="${p.status}"></td>
+              <td class="text-right tabular-nums" th:text="${p.gross}"></td>
+              <td class="text-right tabular-nums" th:text="${p.net}"></td>
+              <td class="text-right tabular-nums" th:text="${p.tax}"></td>
+              <td class="text-right tabular-nums" th:text="${p.platformFee}"></td>
+              <td th:text="${p.currency}"></td>
+              <td th:text="${p.shopperCountry}"></td>
+              <td th:text="${p.goodsTypes}"></td>
+              <td class="opacity-60" th:text="${p.createdAt}"></td>
+              <td>
+                <form th:if="${p.refundable}" method="post" th:action="@{/payments/{ref}/refund(ref=${p.orderReference})}">
+                  <input type="hidden" name="merchant" th:value="${p.merchantCode}">
+                  <button class="btn btn-xs btn-outline btn-primary" type="submit">Refund</button>
+                </form>
+              </td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(payments)}"><td colspan="14" class="opacity-60">No payments yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

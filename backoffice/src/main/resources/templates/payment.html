@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-theme="corporate">
+<head th:replace="~{fragments :: head('Payment')}"></head>
+<body class="bg-base-200 min-h-screen">
+<div th:replace="~{fragments :: nav('payments')}"></div>
+<main class="p-6 space-y-6">
+  <div class="breadcrumbs text-sm"><ul><li><a th:href="@{/payments}">Payments</a></li><li th:text="${payment.orderReference}"></li></ul></div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Payment</h2>
+      <table class="table table-sm w-auto">
+        <tbody class="[&_td]:font-bold">
+          <tr><th>Merchant</th><td th:text="${payment.merchantName}"></td><th>Status</th><td th:text="${payment.status}"></td></tr>
+          <tr><th>PSP</th><td th:text="${payment.pspName}"></td><th>PSP reference</th><td th:text="${payment.pspReference}"></td></tr>
+          <tr><th>Gross</th><td class="text-right tabular-nums" th:text="${payment.gross} + ' ' + ${payment.currency}"></td><th>Net</th><td class="text-right tabular-nums" th:text="${payment.net} + ' ' + ${payment.currency}"></td></tr>
+          <tr><th>Tax</th><td class="text-right tabular-nums" th:text="${payment.tax} + ' ' + ${payment.currency}"></td><th>Platform fee</th><td class="text-right tabular-nums" th:text="${payment.platformFee}"></td></tr>
+          <tr><th>Shopper country</th><td th:text="${payment.shopperCountry}"></td><th>Goods</th><td th:text="${payment.goodsTypes}"></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Transactions and events</h2>
+      <div class="overflow-auto max-h-[60vh]">
+        <table class="table table-sm table-pin-rows">
+          <thead><tr><th>Event</th><th>Transaction</th><th>Reference</th><th class="text-right">Amount</th><th>Currency</th><th>Event type</th><th>Occurred</th></tr></thead>
+          <tbody>
+            <tr th:each="e : ${events}">
+              <td th:text="${e.id}"></td><td th:text="${e.transactionType}"></td><td th:text="${e.transactionReference}"></td>
+              <td class="text-right tabular-nums" th:text="${e.amount}"></td><td th:text="${e.currency}"></td><td th:text="${e.eventType}"></td><td class="opacity-60" th:text="${e.occurredAt}"></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(events)}"><td colspan="7" class="opacity-60">Nothing booked yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Journal entries</h2>
+      <div class="overflow-auto max-h-[60vh]">
+        <table class="table table-sm table-pin-rows">
+          <thead><tr><th>Entry</th><th>Entry type</th><th>Event</th><th>Posted</th><th>Account</th><th>Balance account</th><th>Currency</th><th class="text-right">Debit</th><th class="text-right">Credit</th></tr></thead>
+          <tbody>
+            <tr th:each="l : ${lines}">
+              <td th:text="${l.entryId}"></td><td th:text="${l.entryType}"></td><td th:text="${l.eventType}"></td>
+              <td class="opacity-60" th:text="${l.postedAt}"></td><td th:text="${l.accountCode}"></td><td th:text="${l.registerType}"></td><td th:text="${l.currency}"></td>
+              <td class="text-right tabular-nums" th:text="${l.debit}"></td><td class="text-right tabular-nums" th:text="${l.credit}"></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(lines)}"><td colspan="9" class="opacity-60">No journal entry yet.</td></tr>
+          </tbody>
+          <tfoot class="font-bold">
+            <tr th:each="t : ${totals}">
+              <td colspan="6">Total</td><td th:text="${t.currency}"></td><td class="text-right tabular-nums" th:text="${t.debits}"></td><td class="text-right tabular-nums" th:text="${t.credits}"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Balance accounts</h2>
+      <div class="overflow-auto max-h-[60vh]">
+        <table class="table table-sm table-pin-rows">
+          <thead><tr><th>Account</th><th>Name</th><th>Balance account</th><th>Currency</th><th class="text-right">Debits</th><th class="text-right">Credits</th><th class="text-right">Balance</th></tr></thead>
+          <tbody>
+            <tr th:each="r : ${balanceAccounts}">
+              <td th:text="${r.accountCode}"></td><td th:text="${r.accountName}"></td><td th:text="${r.registerType}"></td><td th:text="${r.currency}"></td>
+              <td class="text-right tabular-nums" th:text="${r.debits}"></td><td class="text-right tabular-nums" th:text="${r.credits}"></td><td class="text-right tabular-nums" th:text="${r.net}"></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(balanceAccounts)}"><td colspan="7" class="opacity-60">No balance account posted to yet.</td></tr>
+          </tbody>
+          <tfoot class="font-bold">
+            <tr th:each="t : ${totals}">
+              <td colspan="3">Total</td><td th:text="${t.currency}"></td><td class="text-right tabular-nums" th:text="${t.debits}"></td><td class="text-right tabular-nums" th:text="${t.credits}"></td><td class="text-right tabular-nums" th:text="${t.net}"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
