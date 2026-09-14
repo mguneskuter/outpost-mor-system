@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-theme="corporate">
+<head th:fragment="head(title)">
+  <meta charset="utf-8">
+  <title th:text="'Outpost Backoffice – ' + ${title}">Outpost Backoffice</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5/daisyui.css" rel="stylesheet" type="text/css">
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body>
+<div th:fragment="nav(tab)">
+  <div class="navbar bg-primary text-primary-content px-6 shadow">
+    <span class="text-lg font-semibold">Outpost Backoffice</span>
+  </div>
+  <div role="tablist" class="tabs tabs-border bg-base-100 px-6 shadow-sm">
+    <a role="tab" th:href="@{/payments}" class="tab" th:classappend="${tab == 'payments'} ? 'tab-active text-primary font-semibold'">Payments</a>
+    <a role="tab" th:href="@{/balances}" class="tab" th:classappend="${tab == 'balances'} ? 'tab-active text-primary font-semibold'">Balance accounts</a>
+    <a role="tab" th:href="@{/reports}" class="tab" th:classappend="${tab == 'reports'} ? 'tab-active text-primary font-semibold'">Reports</a>
+  </div>
+</div>
+<div th:fragment="notices">
+  <div role="alert" class="alert alert-info mb-4" th:if="${message}"><span th:text="${message}"></span></div>
+  <div role="alert" class="alert alert-error mb-4" th:if="${error}"><span th:text="${error}"></span></div>
+</div>
+</body>
+</html>

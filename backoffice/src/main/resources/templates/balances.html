@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-theme="corporate">
+<head th:replace="~{fragments :: head('Balance accounts')}"></head>
+<body class="bg-base-200 min-h-screen">
+<div th:replace="~{fragments :: nav('balances')}"></div>
+<main class="p-6 space-y-6">
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <form class="flex flex-wrap items-end gap-3" method="get" th:action="@{/balances}">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Account type</legend>
+          <div class="dropdown dropdown-bottom">
+            <div tabindex="0" role="button" class="btn btn-outline btn-primary font-normal w-52 justify-between" th:classappend="${!#lists.isEmpty(chosenAccountTypes)} ? 'btn-active'" th:text="${#lists.isEmpty(chosenAccountTypes)} ? 'All account types ▾' : ${#strings.listJoin(chosenAccountTypes, ', ')} + ' ▾'"></div>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-64 p-2 shadow">
+              <li th:each="v : ${accountTypes}"><label class="label cursor-pointer justify-start gap-3"><input type="checkbox" class="checkbox checkbox-primary checkbox-sm" name="accountType" th:value="${v}" th:checked="${#lists.contains(chosenAccountTypes, v)}"> <span th:text="${v}"></span></label></li>
+            </ul>
+          </div>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Account</legend>
+          <div class="dropdown dropdown-bottom">
+            <div tabindex="0" role="button" class="btn btn-outline btn-primary font-normal w-64 justify-between" th:classappend="${!#lists.isEmpty(chosenAccounts)} ? 'btn-active'" th:text="${#lists.isEmpty(chosenAccounts)} ? 'All accounts ▾' : ${#strings.listJoin(chosenAccounts, ', ')} + ' ▾'"></div>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-72 p-2 shadow max-h-80 overflow-auto flex-nowrap">
+              <li th:each="v : ${accounts}"><label class="label cursor-pointer justify-start gap-3"><input type="checkbox" class="checkbox checkbox-primary checkbox-sm" name="account" th:value="${v}" th:checked="${#lists.contains(chosenAccounts, v)}"> <span th:text="${v}"></span></label></li>
+            </ul>
+          </div>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Balance account</legend>
+          <div class="dropdown dropdown-bottom">
+            <div tabindex="0" role="button" class="btn btn-outline btn-primary font-normal w-64 justify-between" th:classappend="${!#lists.isEmpty(chosenBalanceAccounts)} ? 'btn-active'" th:text="${#lists.isEmpty(chosenBalanceAccounts)} ? 'All balance accounts ▾' : ${#strings.listJoin(chosenBalanceAccounts, ', ')} + ' ▾'"></div>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-10 w-72 p-2 shadow">
+              <li th:each="v : ${balanceAccounts}"><label class="label cursor-pointer justify-start gap-3"><input type="checkbox" class="checkbox checkbox-primary checkbox-sm" name="balanceAccount" th:value="${v}" th:checked="${#lists.contains(chosenBalanceAccounts, v)}"> <span th:text="${v}"></span></label></li>
+            </ul>
+          </div>
+        </fieldset>
+        <button type="submit" class="btn btn-primary">Apply</button>
+        <a class="btn btn-ghost" th:href="@{/balances}">Clear</a>
+      </form>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Per balance account and currency</h2>
+      <table class="table table-sm w-auto">
+        <thead><tr><th>Balance account</th><th class="text-right">Debits</th><th class="text-right">Credits</th><th class="text-right">Balance</th></tr></thead>
+        <tbody>
+          <tr th:each="s : ${summary}">
+            <td th:text="${s.label}"></td><td class="text-right tabular-nums" th:text="${s.debits}"></td><td class="text-right tabular-nums" th:text="${s.credits}"></td><td class="text-right tabular-nums" th:text="${s.balance}"></td>
+          </tr>
+        </tbody>
+        <tfoot class="font-bold">
+          <tr th:each="t : ${totals}">
+            <td th:text="'Total ' + ${t.label}"></td><td class="text-right tabular-nums" th:text="${t.debits}"></td><td class="text-right tabular-nums" th:text="${t.credits}"></td><td class="text-right tabular-nums" th:text="${t.balance}"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Balance accounts</h2>
+      <div class="overflow-auto max-h-[60vh]">
+        <table class="table table-sm table-pin-rows">
+          <thead>
+            <tr><th>Account type</th><th>Account</th><th>Name</th><th>Balance account</th><th>Currency</th><th class="text-right">Debits</th><th class="text-right">Credits</th><th class="text-right">Balance</th></tr>
+          </thead>
+          <tbody>
+            <tr th:each="row : ${rows}">
+              <td th:text="${row.accountType}"></td><td th:text="${row.accountCode}"></td><td th:text="${row.accountName}"></td>
+              <td th:text="${row.balanceAccount}"></td><td th:text="${row.currency}"></td>
+              <td class="text-right tabular-nums" th:text="${row.debits}"></td><td class="text-right tabular-nums" th:text="${row.credits}"></td><td class="text-right tabular-nums" th:text="${row.balance}"></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(rows)}"><td colspan="8" class="opacity-60">No balance account matches the filters.</td></tr>
+          </tbody>
+          <tfoot class="font-bold">
+            <tr th:each="t : ${totals}">
+              <td colspan="4">Total</td><td th:text="${t.label}"></td><td class="text-right tabular-nums" th:text="${t.debits}"></td><td class="text-right tabular-nums" th:text="${t.credits}"></td><td class="text-right tabular-nums" th:text="${t.balance}"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

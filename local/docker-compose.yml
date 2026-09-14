@@ -107,6 +107,41 @@ services:
       timeout: 5s
       retries: 12
 
+  backoffice:
+    image: backoffice:latest
+    container_name: outpost-backoffice
+    environment:
+      OUTPOST_DB_URL: jdbc:postgresql://postgres:5432/outpost
+      OUTPOST_DB_USER: ${OUTPOST_DB_USER:-outpost}
+      OUTPOST_DB_PASSWORD: ${OUTPOST_DB_PASSWORD:?OUTPOST_DB_PASSWORD must be set in .env}
+      OUTPOST_GATEWAY_BASE_URL: http://gateway-api:8080
+      OUTPOST_OPERATOR_API_KEY: ${OUTPOST_OPERATOR_API_KEY:?OUTPOST_OPERATOR_API_KEY must be set in .env}
+      OUTPOST_MERCHANT_API_KEY: ${OUTPOST_MERCHANT_API_KEY:?OUTPOST_MERCHANT_API_KEY must be set in .env}
+      OUTPOST_MERCHANT_HMAC_SECRET: ${OUTPOST_MERCHANT_HMAC_SECRET:?OUTPOST_MERCHANT_HMAC_SECRET must be set in .env}
+      OUTPOST_PSP_SIMULATOR_API_KEY: ${OUTPOST_PSP_SIMULATOR_API_KEY:?OUTPOST_PSP_SIMULATOR_API_KEY must be set in .env}
+      OUTPOST_BACKOFFICE_PSP_BASE_URL: http://psp-simulator:8083
+    ports: ["8090:8090"]
+    networks: [edge, data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway-api:
+        condition: service_healthy
+      psp-simulator:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/layers/paketo-buildpacks_bellsoft-liberica/jre/bin/java",
+          "-cp",
+          "/workspace/BOOT-INF/classes",
+          "com.outpost.backoffice.readiness.ReadinessProbe",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
 networks:
   edge: {}
   data:

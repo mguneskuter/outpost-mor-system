@@ -1,4 +1,4 @@
-.PHONY: all clean hooks format format-check lint build test psp-simulator merchant-cli precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify smoke smoke-flow tail
+.PHONY: all clean hooks format format-check lint build test psp-simulator merchant-cli backoffice precommit setup up down status migrate ensure-static-data seed seed-test journal-controls generate-fx-seed generate-fx-seed-test fetch-fx-fixture lifecycle images verify smoke smoke-flow tail
 
 PRECOMMIT_SKIP ?= no-commit-to-branch
 
@@ -48,9 +48,16 @@ merchant-cli:
 	./outpost/gradlew -p merchant-cli bootJar --quiet
 	set -a; . ./.env; set +a; java -jar merchant-cli/build/libs/merchant-cli.jar
 
+# The Backoffice also runs on the host, like the shell, against the same .env; the platform
+# starts its containerised copy on the same port, so stop that one first.
+backoffice:
+	./outpost/gradlew -p backoffice bootJar --quiet
+	set -a; . ./.env; set +a; java -jar backoffice/build/libs/backoffice.jar
+
 images:
 	./outpost/gradlew -p outpost :gateway-api:bootBuildImage :ledger-api:bootBuildImage :static-data-job:bootBuildImage
 	./outpost/gradlew -p psp-simulator bootBuildImage
+	./outpost/gradlew -p backoffice bootBuildImage
 
 precommit:
 	SKIP=$(PRECOMMIT_SKIP) pre-commit run --all-files --hook-stage manual
@@ -61,6 +68,7 @@ verify:
 	./outpost/gradlew -p outpost spotlessCheck checkstyleMain checkstyleTest build
 	./outpost/gradlew -p psp-simulator spotlessCheck checkstyleMain checkstyleTest build
 	./outpost/gradlew -p merchant-cli spotlessCheck checkstyleMain checkstyleTest build
+	./outpost/gradlew -p backoffice spotlessCheck checkstyleMain checkstyleTest build
 	$(MAKE) seed-test
 
 setup:
@@ -74,7 +82,7 @@ up: images
 down:
 	docker compose --env-file .env -f local/docker-compose.yml down --volumes
 
-# Follows the logs of the named services (gateway, ledger, psp-simulator, postgres), or of all of them.
+# Follows the logs of the named services (gateway, ledger, psp-simulator, backoffice, postgres), or of all of them.
 tail:
 	docker compose --env-file .env -f local/docker-compose.yml logs --follow --tail=200 $(patsubst gateway,gateway-api,$(patsubst ledger,ledger-api,$(TAIL_SERVICES)))
 
