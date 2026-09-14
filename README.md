@@ -1,132 +1,213 @@
-# Outpost MoR System
+# Outpost
 
-Outpost is a merchant-of-record payment platform: a merchant hands it an order, Outpost prices
+Outpost is a merchant-of-record payment platform. A merchant hands it an order; Outpost prices
 the tax for the shopper's jurisdiction, collects the gross amount through a payment service
 provider (PSP), keeps a double-entry ledger of what it owes each merchant and each tax
-authority, and refunds on request. It is one PostgreSQL database and two deployables:
+authority, and refunds on request.
 
-- **Gateway API** (`outpost/gateway-api`, port 8080) authenticates merchants, the operator, and
-  PSPs; creates and refunds orders; receives PSP payment events; and serves balance reports.
-- **Ledger API** (`outpost/ledger-api`, port 8081) books every payment event as journal entries
-  and answers the balance reports. Only the Gateway calls it.
+**Stack:** Java 21, Spring Boot, MyBatis, PostgreSQL 18, Flyway, Gradle, Docker Compose.
 
-The local platform adds a PSP simulator (`psp-simulator`, port 8083) that hosts the payment page
-and sends the webhooks a real PSP would, and a Backoffice (`backoffice`, port 8090) that shows
-the platform in a browser. `merchant-cli` is a merchant's shell for driving the platform by hand;
-it is not part of the Compose platform.
+## Contents
 
-## Prerequisites
+- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [Using the platform](#using-the-platform)
+- [Development](#development)
+- [API](#api)
+- [How a payment flows](#how-a-payment-flows)
+- [Design notes](#design-notes)
+- [Repository layout](#repository-layout)
+- [Contributing](#contributing)
 
-- Docker with Compose; every service and the test databases run in containers.
-- A JDK that can launch Gradle. The build provisions its own pinned Java 21 toolchain through
-  Foojay.
-- Python 3 and `pre-commit` for the Git hooks; `make setup` installs the pinned TruffleHog and
-  Gitleaks binaries into `bin/`.
-- `psql` on the `PATH` for `make seed` and `make smoke`, or `OUTPOST_PSQL_BIN` pointing at one.
+## Architecture
 
-## Run it
+Outpost is one PostgreSQL database and two services. The local platform adds two supporting
+services and a command-line tool.
 
-```shell
-make setup                 # once: scanners into bin/, Git hooks installed
-cp .env.example .env       # then set the secrets; .env is gitignored
-make smoke                 # build images, start the platform, migrate, seed, run one merchant flow
-make tail ledger           # follow logs: gateway, ledger, psp-simulator, backoffice, postgres; none for all
-make down                  # stop the platform and remove its volume
+| Component         | Port | Role                                                                                                                                          |
+| ----------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Gateway API**   | 8080 | Authenticates merchants, the operator, and PSPs; creates and refunds orders; receives PSP payment events; serves balance reports.             |
+| **Ledger API**    | 8081 | Books every payment event as journal entries and answers balance queries. Only the Gateway calls it; Compose does not publish it to the host. |
+| **PSP simulator** | 8083 | Stands in for a real PSP: hosts the payment page, accepts test cards, and sends the webhooks a PSP would.                                     |
+| **Backoffice**    | 8090 | Browser view of payments, balance accounts, and reports. No login.                                                                            |
+| **Merchant CLI**  | –    | A merchant's shell for driving the platform by hand. Runs on the host, not in Compose.                                                        |
+
+```
+merchant / merchant-cli ──▶ Gateway API ──▶ PSP simulator
+                                │  ▲             │
+                                │  └── webhooks ─┘
+                                ▼
+                            Ledger API ──▶ PostgreSQL ◀── Backoffice (read-only)
 ```
 
-`make merchant-cli` opens a merchant's shell against the running platform. It asks step by
-step: which merchant, what to do (create an order, pay it, refund it, see what happened to it,
-read today's balance report for the merchant or for the platform), and for an order which PSP,
-which shopper country, and which catalogue items; it prints the result and asks again. Paying
-posts the card to the PSP's payment route, the way the payment page would, then waits for the
-Ledger to book the outcome the PSP reports by webhook and prints it: authorised and captured, or
-refused. The same actions run scripted:
-`java -jar merchant-cli/build/libs/merchant-cli.jar order --psp DEMO_PSP --items EBOOK,TSHIRT`,
-`pay <order-reference> [--card <number>]`, `refund <order-reference>`,
-`status <order-reference>`, `merchants`, `psps`, `catalogue`,
-`report --from 2026-09-01 --to 2026-09-30`, `report-platform --from … --to …`, and `help`.
+## Quick start
 
-The Backoffice at `http://localhost:8090` shows the same platform in a browser, with no login.
-It starts with the platform as the `backoffice` container; `make backoffice` runs it on the
-host instead, against the same `.env`, so stop the container first since both listen on 8090.
-It reads Outpost's tables over a read-only connection and calls the Gateway and the PSP the way
-the shell does. Its pages load DaisyUI and Tailwind from the jsDelivr CDN, so the browser needs
-internet access; the server does not. Inside the Compose network the simulator's payment links still name
-`localhost:8083`, the host's address, so the container pays at
-`OUTPOST_BACKOFFICE_PSP_BASE_URL` (`http://psp-simulator:8083`) under each link's path; on the
+### Prerequisites
+
+| Tool                       | Notes                                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------- |
+| Docker with Compose        | Every service and the test databases run in containers.                                  |
+| A JDK (any recent version) | Only to launch Gradle; the build provisions its own pinned Java 21 toolchain via Foojay. |
+| Python 3 and `pre-commit`  | Git hooks and the smoke flow. `python3 -m pip install --user pre-commit`                 |
+| `psql`                     | For `make seed` and `make smoke`. Set `OUTPOST_PSQL_BIN` if it is not on your `PATH`.    |
+
+### Run the platform
+
+```shell
+make setup             # once: install Git hooks and the secret scanners into bin/
+cp .env.example .env   # set OUTPOST_DB_PASSWORD and the other secrets; .env is gitignored
+make smoke             # build images, start everything, migrate, seed, run one end-to-end payment
+```
+
+`make smoke` exits 0 when the whole flow holds: it creates an order for a Dutch shopper, pays it
+on the simulator, waits for the capture to be booked, reads both balance reports, refunds the
+order, waits for the refund to be booked, and reads the reports again.
+
+Once it passes, open the Backoffice at <http://localhost:8090> or start a merchant shell with
+`make merchant-cli`.
+
+### Everyday commands
+
+| Command             | Does                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| `make up`           | Build images, start the platform, migrate, load enum tables, and seed the demo data.    |
+| `make smoke-flow`   | Run the end-to-end payment flow against an already running platform.                    |
+| `make status`       | Show container status and whether PostgreSQL is ready.                                  |
+| `make tail ledger`  | Follow logs for `gateway`, `ledger`, `psp-simulator`, `backoffice`, `postgres`, or all. |
+| `make down`         | Stop the platform and remove its data volume.                                           |
+| `make merchant-cli` | Open a merchant shell against the running platform.                                     |
+| `make backoffice`   | Run the Backoffice on the host instead of in Compose (stop the container first).        |
+
+`make up` is not re-runnable on a volume that already holds data; run `make down` first.
+Database-only targets (`migrate`, `ensure-static-data`, `seed`, `journal-controls`) are
+described in [`local/README.md`](local/README.md). Every setting and environment variable is
+listed in [`CONFIGURATION.md`](CONFIGURATION.md).
+
+## Using the platform
+
+### Merchant CLI
+
+`make merchant-cli` opens a guided session: pick a merchant, then an action (create an order,
+pay it, refund it, show its status, or read a balance report for the merchant or the platform).
+For an order it asks which PSP, which shopper country, and which catalogue items. Paying posts
+the card to the PSP's payment route, as the payment page would, then waits for the Ledger to
+book the outcome the PSP reports by webhook: authorised and captured, or refused.
+
+The same actions run scripted from the built jar:
+
+```shell
+java -jar merchant-cli/build/libs/merchant-cli.jar order --psp DEMO_PSP --items EBOOK,TSHIRT
+java -jar merchant-cli/build/libs/merchant-cli.jar pay <order-reference> [--card <number>]
+java -jar merchant-cli/build/libs/merchant-cli.jar refund <order-reference>
+java -jar merchant-cli/build/libs/merchant-cli.jar status <order-reference>
+java -jar merchant-cli/build/libs/merchant-cli.jar report --from 2026-09-01 --to 2026-09-30
+java -jar merchant-cli/build/libs/merchant-cli.jar report-platform --from 2026-09-01 --to 2026-09-30
+java -jar merchant-cli/build/libs/merchant-cli.jar merchants | psps | catalogue | help
+```
+
+The shell reads its credentials from `.env`.
+
+### Backoffice
+
+The Backoffice at <http://localhost:8090> reads Outpost's tables over a read-only connection
+and calls the Gateway and the PSP the way the shell does. Its pages load DaisyUI and Tailwind
+from a CDN, so the browser needs internet access; the server does not.
+
+- **Payments** creates and pays an order in one step, and lists every payment with gross, net,
+  tax, platform fee, shopper country, goods types, and the status the Ledger booked last. Captured
+  payments have a refund button. Each order links to its transactions and events, its journal
+  entries line by line, and the balance accounts it posted to.
+- **Balance accounts** lists every balance account of every merchant, tax authority, PSP, and
+  platform account in every operating currency, with filters and per-currency totals. Each row
+  shows debits and credits separately and the balance on its side (`64.85 Cr`, `1.25 Dr`). With
+  no filter, total debits equal total credits: the double-entry check across the ledger.
+- **Reports** reads the Gateway's period balance report for a merchant or for the platform.
+
+Inside the Compose network the simulator's payment links still name `localhost:8083`, so the
+container pays through `OUTPOST_BACKOFFICE_PSP_BASE_URL` (`http://psp-simulator:8083`). On the
 host that setting is empty and the link is used as published.
 
-- **Payments** creates an order as a merchant with a PSP, catalogue items, shopper country, and
-  test card, and pays it in one step. The table lists every payment with the gross, net, tax,
-  platform fee, shopper country, goods types, and the status the Ledger booked last (created,
-  authorised, refused, captured, refunded; PSP error when the PSP never accepted the order), with
-  a refund button on captured ones. Each order links to its page: the payment's transactions and
-  events, its journal entries line by line, and the balance accounts it posted to, with a total
-  per currency under each table.
-- **Balance accounts** lists every balance account of every merchant, tax authority, PSP, and
-  platform account, in every operating currency, filtered by account type, account, and balance
-  account, with a summary per balance account and currency on top and a total per currency under
-  each table. Each row shows the debits and the credits posted to the balance account separately
-  and their difference as the balance on its side, `64.85 Cr` or `1.25 Dr`, `0.00` where nothing is
-  booked. One balance account carries both sides: a merchant's payable is credited by each capture
-  with the net less the fee and debited by each refund with the net reversed, so its debits are
-  the refunds, its credits the captures, and its balance what Outpost owes the merchant. With no
-  filter chosen the totals show debits equal to credits, the double-entry check across the ledger.
-- **Reports** reads the Gateway's period balance report for a merchant or for the platform, with
-  a total per currency.
+## Development
 
-`make smoke` builds the images with Buildpacks, starts PostgreSQL, applies the Flyway
-migrations, materialises the enum tables, seeds a demo merchant and PSP, starts the services,
-and runs `local/merchant_flow.py`: it creates an order for a Dutch shopper, pays it on the
-simulator, waits for the capture to be booked, reads both balance reports, refunds the order,
-waits for the refund to be booked, and reads the reports again. It exits 0 when every
-assertion holds. `make up` alone starts the platform; `make smoke-flow` runs only the flow
-against a running platform. `local/README.md` describes the platform's services, volumes,
-seed lifecycle, and the read-only journal controls.
+All Gradle commands run from the repository root with `-p <gradle-root>`. The main build is
+`outpost/`; `psp-simulator/`, `merchant-cli/`, and `backoffice/` are separate Gradle roots.
 
-## Verify it
+| Command          | Runs                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `make build`     | Compile and every build check: Error Prone, NullAway, Checkstyle, module graph                 |
+| `make test`      | Every test; database tests start PostgreSQL through Testcontainers                             |
+| `make format`    | Apply Google Java Format                                                                       |
+| `make precommit` | Every content hook across the repository: build, formatting, secret scanners, SQL and Markdown |
+| `make verify`    | Build and test every Gradle root plus the seed runner tests; the CI gate                       |
 
-| Command          | Runs                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------ |
-| `make build`     | Compile and every build check: Error Prone, NullAway, Checkstyle, module graph                   |
-| `make test`      | Every test; database tests start PostgreSQL through Testcontainers                               |
-| `make precommit` | Every content hook across the repository: the build, formatting, scanners, SQL and Markdown lint |
-| `make verify`    | Every Gradle root and the seed runner tests, as CI runs them                                     |
-| `make format`    | Apply Google Java Format                                                                         |
+Useful narrower invocations:
 
-`./outpost/gradlew -p outpost test -PskipIntegrationTests` runs the tests that need no
-database.
+```shell
+./outpost/gradlew -p outpost test -PskipIntegrationTests          # tests that need no database
+./outpost/gradlew -p outpost :account:domain:test --tests <FQCN>   # one test class
+```
+
+Database tests use Testcontainers and need Docker, unless `OUTPOST_TEST_DB_URL`,
+`OUTPOST_TEST_DB_USER`, and `OUTPOST_TEST_DB_PASSWORD` point at a PostgreSQL instance.
+
+### Conventions the build enforces
+
+- Every package has a `package-info.java` annotated `@NullMarked`; NullAway treats missing
+  marking as an error. Genuine absence is `@Nullable`.
+- Domain modules depend only on other domain modules, the JDK, JSpecify, and `slf4j-api`.
+  Spring, MyBatis, SQL, and HTTP live in `repository` and `persistence` modules and in the
+  deployables.
+- A new module or dependency edge is declared in both `outpost/settings.gradle` and
+  `outpost/buildSrc/.../ModuleGraphSpec.groovy`; the build fails on a mismatch.
+- Migrations live in `outpost/db/migration/` as `V<yyyyMMdd><NN>__<snake_case>.sql`, PostgreSQL
+  dialect, DDL only. They never run at application startup; `make migrate` applies them.
+- Checkstyle (Google checks) allows zero warnings; Error Prone runs on every compile.
+
+### Git hooks
+
+`make setup` installs pre-commit hooks. On commit: TruffleHog and Gitleaks scan for secrets,
+Google Java Format and Checkstyle run, the Gradle build runs, and file, Markdown, shell,
+Makefile, and SQL hooks validate or format their files. Formatting hooks re-stage their changes;
+validation and security failures block the commit. On push, TruffleHog scans Git history.
+
+`make precommit` runs every content hook across the whole tree. It skips only the
+branch-protection hook, which still blocks direct commits on `main`.
+
+The CI workflow (`.github/workflows/ci.yml`) runs `make verify` when started by hand; its
+automatic triggers are disabled, so `make precommit` on the rebased branch is the merge gate.
 
 ## API
 
-The full contracts are `openapi/gateway-api.yaml` and `openapi/ledger-api.yaml` (OpenAPI 3.1).
-Every setting and environment variable is listed in `CONFIGURATION.md`.
+The full contracts are [`openapi/gateway-api.yaml`](openapi/gateway-api.yaml) and
+[`openapi/ledger-api.yaml`](openapi/ledger-api.yaml) (OpenAPI 3.1).
+
+### Authentication and errors
+
+A merchant signs every request with `X-Outpost-Api-Key` and `X-Outpost-Signature`, the Base64
+HMAC-SHA-256 of the exact raw body under its HMAC secret. The operator sends
+`X-Outpost-Api-Key` alone. A PSP signs its webhook body with its own secret.
+
+Every refused or failed request answers `{"code": "<CODE>"}`; a `500` adds `correlation_id`,
+the identifier of the one log line that records the failure. A bad key or signature answers
+`401 UNAUTHENTICATED` on every merchant and operator route; a body over 1 MiB answers
+`413 BODY_TOO_LARGE` (the PSP webhook answers its `413` with no body). Every route may answer
+`500 INTERNAL_ERROR`.
 
 ### Gateway API
-
-A merchant signs every request with `X-Outpost-Api-Key` and `X-Outpost-Signature`, the
-Base64 HMAC-SHA-256 of the exact raw body under its HMAC secret. The operator sends its
-`X-Outpost-Api-Key` alone. A PSP signs its webhook body with its own secret. Every refused or
-failed request answers `{"code": "<CODE>"}`; a `500` adds `correlation_id`, the identifier of
-the one log line that records the failure. A bad key or signature answers `401 UNAUTHENTICATED`
-on every merchant and operator route, and a body over 1 MiB `413 BODY_TOO_LARGE`; the PSP webhook
-answers its `413` with no body.
 
 | Route                            | Caller   | Success | Errors                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /v1/order`                 | merchant | `201`   | `400` a field's declared `INVALID_*` code, `INVALID_REQUEST`, `UNSUPPORTED_CURRENCY`, `DUPLICATE_MERCHANT_LINE_REFERENCE`, `MIXED_CURRENCIES`, `INVALID_PRODUCT_TYPE`, `TOTAL_AMOUNT_MISMATCH`, `AMOUNT_OVERFLOW`; `401 MERCHANT_NOT_FOUND`; `403 MERCHANT_REQUIRED`; `409 IDEMPOTENCY_CONFLICT`; `422 INVALID_COUNTRY`, `INVALID_STATE`, `TAX_RATE_UNAVAILABLE`, `PSP_UNAVAILABLE`, `MISSING_FEE_CONFIGURATION`, `MISSING_TAX_AUTHORITY`; `503 PSP_RETRYABLE` |
 | `POST /v1/order/modification`    | merchant | `202`   | `400` a field's declared `INVALID_*` code, `INVALID_REQUEST`, `UNSUPPORTED_MODIFICATION_TYPE`; `403 MERCHANT_REQUIRED`; `404 ORDER_NOT_FOUND`; `409 ORDER_NOT_PAID`; `422 REFUND_REJECTED`; `503 PSP_RETRYABLE`                                                                                                                                                                                                                                                |
 | `GET /v1/psps`                   | merchant | `200`   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `GET /v1/report?from=&to=`       | both     | `200`   | `400 INVALID_REPORT_PERIOD`, `INVALID_REQUEST`; `401 MERCHANT_NOT_FOUND`; builds a balance report over at most 30 days and answers its `report_url`; a merchant's report covers its own account, the operator's every merchant, tax authority, and platform account                                                                                                                                                                                            |
-| `GET /v1/report/{reportId}`      | both     | `200`   | `400 INVALID_REQUEST`; `404 REPORT_NOT_FOUND`; the Gateway keeps the 100 most recent reports in memory, and any authenticated key reads any of them                                                                                                                                                                                                                                                                                                            |
-| `POST /v1/psp/{pspCode}/webhook` | PSP      | `200`   | acknowledgements carry `ACCEPTED`, or `UNKNOWN_ORDER`, `PSP_REFERENCE_MISMATCH` for an event that matches no order; `400 INVALID_PAYLOAD`; `401 INVALID_SIGNATURE`; `404 UNKNOWN_PSP`                                                                                                                                                                                                                                                                          |
-
-Every route may answer `500 INTERNAL_ERROR`.
+| `GET /v1/report?from=&to=`       | both     | `200`   | `400 INVALID_REPORT_PERIOD`, `INVALID_REQUEST`; `401 MERCHANT_NOT_FOUND`. Builds a balance report over at most 30 days and answers its `report_url`. A merchant's report covers its own account; the operator's covers every merchant, tax authority, and platform account.                                                                                                                                                                                    |
+| `GET /v1/report/{reportId}`      | both     | `200`   | `400 INVALID_REQUEST`; `404 REPORT_NOT_FOUND`. The Gateway keeps the 100 most recent reports in memory; any authenticated key reads any of them.                                                                                                                                                                                                                                                                                                               |
+| `POST /v1/psp/{pspCode}/webhook` | PSP      | `200`   | Acknowledgements carry `ACCEPTED`, or `UNKNOWN_ORDER` / `PSP_REFERENCE_MISMATCH` for an event that matches no order; `400 INVALID_PAYLOAD`; `401 INVALID_SIGNATURE`; `404 UNKNOWN_PSP`; `503 QUEUE_FULL`                                                                                                                                                                                                                                                       |
 
 ### Ledger API
 
-Every request is signed with `X-Outpost-Signature` under the Gateway's key; an unsigned
-request answers `401 UNAUTHENTICATED`, a signed request to a route the caller is not granted
+Every request is signed with `X-Outpost-Signature` under the Gateway's key. An unsigned request
+answers `401 UNAUTHENTICATED`, a signed request to a route the caller is not granted
 `403 FORBIDDEN`, and a body over 1 MiB `413 BODY_TOO_LARGE`.
 
 | Route                                            | Success | Errors                                                            |
@@ -142,129 +223,97 @@ request answers `401 UNAUTHENTICATED`, a signed request to a route the caller is
 ## How a payment flows
 
 1. `POST /v1/order` prices each line for the shopper's country, subdivision, and product type,
-   stores the shopper, order, and lines in one transaction, then creates the payment at the
-   PSP and answers the payment link. The Gateway queues an `ORDER_CREATED` accounting request.
+   stores the shopper, order, and lines in one transaction, then creates the payment at the PSP
+   and answers the payment link. The Gateway queues an `ORDER_CREATED` accounting request.
 1. The PSP delivers `AUTHORISATION`, `CAPTURE`, and `REFUND` events to the webhook route. Each
    verified event that matches its order is queued as an accounting request.
-1. A Gateway thread pool sends each request to the Ledger, which takes a per-payment
-   transaction lock, answers `202`, and books it: the payment and its pending fee, the
-   authorisation, the capture that moves the net to the merchant and the tax to the tax
-   authority, and the refund that reverses them. A `409 TRANSACTION_LOCKED` or
-   `503 QUEUE_FULL` answer makes the Gateway re-queue the request after a delay.
+1. A Gateway thread pool sends each request to the Ledger, which takes a per-payment transaction
+   lock, answers `202`, and books it: the payment and its pending fee, the authorisation, the
+   capture that moves the net to the merchant and the tax to the tax authority, and the refund
+   that reverses them. A `409 TRANSACTION_LOCKED` or `503 QUEUE_FULL` answer makes the Gateway
+   re-queue the request after a delay.
 1. Each in-memory accounting queue holds at most `accounting-queue.capacity` requests (10,000).
    When the Gateway's queue is full, the PSP webhook answers `503 QUEUE_FULL` so the PSP
-   redelivers, and order creation still answers the order but logs its unqueued
-   `ORDER_CREATED` request at error.
-1. `POST /v1/order/modification` refunds the whole order at the PSP synchronously and stores
-   the accepted refund; the Ledger books it when the PSP's `REFUND` event arrives.
+   redelivers; order creation still answers the order but logs its unqueued `ORDER_CREATED`
+   request at error level.
+1. `POST /v1/order/modification` refunds the whole order at the PSP synchronously and stores the
+   accepted refund; the Ledger books it when the PSP's `REFUND` event arrives.
 
-## Assumptions
+## Design notes
+
+### Assumptions
 
 - Each merchant pays one flat fee per currency, configured in basis points of the net amount;
   the fee is never refunded.
 - Tax is resolved by the shopper's country, subdivision where one is given, and the line's
-  product type, from rates loaded at startup; the rate is applied per line and rounded half
-  even.
-- Amounts are minor units of one currency per order; FX rates and fees are held per currency
+  product type, from rates loaded at startup. The rate is applied per line and rounded half even.
+- Amounts are minor units of one currency per order. FX rates and fees are held per currency
   pair and day.
 - A refund covers the whole order; there are no partial refunds or partial captures.
 - One idempotency key means one request for the life of the merchant account.
 
-## Limitations
+### Key decisions
 
-Each is a recorded decision, cited by its section in the decision record, which is kept with
-the design documents outside this repository.
+- **A double-entry ledger on PostgreSQL** rather than a dedicated ledger product: append-only
+  journal tables guarded by triggers, a deferred per-currency balance constraint, and payment
+  status derived from events rather than stored.
+- **In-memory queues and a Ledger-owned transaction lock** instead of a database-backed queue
+  and a separate worker process: fewer moving parts, at the cost of the limitations below.
+- **Stored timestamps come from the database's `now()`** and are read back with `RETURNING`;
+  application code never binds the current time into a row.
+- **One shared HTTP contract** between the Gateway and the Ledger, declared once in
+  `outpost/accounting/api` and served and consumed through Spring HTTP service interfaces.
+
+### Known limitations
 
 - Queued accounting work is lost when a Gateway or Ledger process stops, and only one Gateway
-  instance is supported (§12.22).
-- A request that reaches the Ledger before its predecessor is booked fails in the Ledger's
-  log; the Ledger never retries a booking and stores no outcome, so a merchant learns nothing
-  after `202` and there is no merchant-facing status endpoint (§12.22, §10.42, §12.16 MG-03).
-- A repeated merchant refund reaches the PSP twice (§12.22).
-- A PSP answer the Gateway cannot classify is answered `503 PSP_RETRYABLE` and nothing is
-  retried (§12.16 MG-01, open item §13).
-- `PSP_RECEIVABLE` is gross of PSP fees; what a PSP owes Outpost is not reported (open item
-  §10, §19.1).
-- Country and subdivision tax is approximate: one rate per jurisdiction and product type, no
-  historical rates (§7.5, §12.16 MG-07).
+  instance is supported.
+- A request that reaches the Ledger before its predecessor is booked fails in the Ledger's log.
+  The Ledger never retries a booking and stores no outcome, so a merchant learns nothing after
+  `202`, and there is no merchant-facing status endpoint.
+- A repeated merchant refund reaches the PSP twice.
+- A PSP answer the Gateway cannot classify is answered `503 PSP_RETRYABLE`; nothing is retried.
+- `PSP_RECEIVABLE` is gross of PSP fees; what a PSP owes Outpost is not reported.
+- Tax is approximate: one rate per jurisdiction and product type, with no historical rates.
 - Settlement, payouts, disputes, chargebacks, partial captures, partial refunds, and accounting
-  periods are out of scope (open items §16, §19, §21).
+  periods are out of scope.
 
-## Trade-offs
-
-- **A double-entry ledger on PostgreSQL** rather than Formance or TigerBeetle (§1): append-only
-  journal tables guarded by triggers, a deferred per-currency balance constraint, and status
-  derived from events rather than stored (§2.7, §4). The interview task asks for this choice to
-  be defended; the decision record does.
-- **In-memory queues and a Ledger-owned transaction lock** instead of a database queue and a
-  Worker (§12.22): fewer moving parts, at the cost of the loss and ordering limitations above.
-- **Stored timestamps come from the database's `now()`** and are read back with `RETURNING`;
-  application code never binds the current time into a row (§12.21).
-- **One shared HTTP contract** between the Gateway and the Ledger, declared once in
-  `outpost/accounting/api` and served and consumed through Spring HTTP service interfaces
-  (§12.20).
-
-## Hooks
-
-Security hooks block private keys and likely secrets. TruffleHog scans the working tree before
-commits and Git history before pushes; its working-tree scan excludes `.git/` and gitignored
-tool binaries. Gitleaks scans staged changes before commits. Java hooks run Google Java Format,
-Checkstyle, and the Gradle build. File, Markdown, Shell, Makefile, and SQL hooks validate or
-format their matching files.
-
-Formatting hooks re-stage their changes before the commit continues. Validation and security
-violations block the commit until corrected.
-
-`make precommit` skips only the branch-protection hook. That hook protects local commits and
-is not a content check, so repository-wide verification must not run it. Direct commits on
-`main` still run the hook and are blocked.
-
-The CI workflow in `.github/workflows/ci.yml` runs `make verify` when started by hand; its
-automatic triggers are disabled, so `make precommit` is the merge gate.
-
-## Git workflow
-
-`main` is the integration branch. Do not commit directly to it.
-
-1. Update the integration branch with `git switch main` followed by `git pull --ff-only`.
-1. Create `mr/<topic>` before staging or committing. Uncommitted work already on `main` moves
-   with `git switch -c mr/<topic>`.
-1. Verify the change with `make precommit`, then create exactly one commit ahead of
-   `origin/main`. If necessary, squash local implementation commits before the first push.
-1. Confirm the invariant with `git rev-list --count origin/main..HEAD`; it must print `1`.
-1. Push the MR branch for review, then immediately return locally to `main`.
-1. Open the pull request. Do not integrate it until review is approved and `make precommit`
-   has passed on the rebased branch.
-1. Before integration, run `git fetch origin`, rebase the MR branch onto `origin/main`, verify
-   it still has exactly one commit, and rerun `make precommit`.
-1. If the already-pushed branch changed during rebase, update it only with
-   `git push --force-with-lease`, then immediately return locally to `main`.
-1. Integrate it locally with `git switch main` followed by `git merge --ff-only mr/<topic>`.
-   Push `main` only with explicit authorization.
-
-Never create a merge commit, rebase `main`, or bypass the configured hooks.
-
-### Parallel work
-
-Run completely independent tasks concurrently in separate Git worktrees under the gitignored
-`.worktrees/` directory: one `mr/<topic>` branch and one worktree per task, started from a base
-containing all declared dependencies, with the repository build run before any change so
-baseline failures are visible. A linked worktree contains tracked files only: before baseline
-verification, run `git -C <worktree> worktreeinclude apply` to copy the ignored scanner
-binaries listed in `.worktreeinclude`. Do not parallelize tasks that modify the same files,
-define an interface the other consumes, require ordered migrations, or otherwise depend on each
-other's output.
-
-## Layout
+## Repository layout
 
 | Path                 | Purpose                                                                 |
 | -------------------- | ----------------------------------------------------------------------- |
-| `.github/workflows/` | The manually started CI workflow.                                       |
-| `bin/`               | Gitignored repository-local scanner binaries from `make setup`.         |
-| `local/`             | Docker Compose platform, migrations and seed scripts, the smoke flow.   |
-| `backoffice/`        | Gradle root of the browser view of the platform.                        |
-| `merchant-cli/`      | Gradle root of the merchant shell.                                      |
-| `openapi/`           | The Gateway and Ledger API contracts.                                   |
 | `outpost/`           | Gradle root of the Outpost modules, deployables, and Flyway migrations. |
 | `psp-simulator/`     | Gradle root of the PSP simulator.                                       |
+| `merchant-cli/`      | Gradle root of the merchant shell.                                      |
+| `backoffice/`        | Gradle root of the browser view of the platform.                        |
+| `openapi/`           | The Gateway and Ledger API contracts.                                   |
+| `local/`             | Docker Compose platform, migration and seed scripts, the smoke flow.    |
+| `.github/workflows/` | The manually started CI workflow.                                       |
+| `bin/`               | Gitignored scanner binaries installed by `make setup`.                  |
 | `CONFIGURATION.md`   | Every setting and environment variable.                                 |
+
+## Contributing
+
+`main` is the integration branch; nothing is committed to it directly.
+
+1. Update `main`: `git switch main && git pull --ff-only`.
+1. Branch: `git switch -c mr/<topic>`.
+1. Verify with `make precommit`, then commit. A branch carries exactly one commit ahead of
+   `origin/main`; squash local commits before the first push. Check with
+   `git rev-list --count origin/main..HEAD`, which must print `1`.
+1. Push the branch and open a pull request. Commit messages read `type(scope): imperative summary`, for example `feat(tax): resolve subdivision rates`.
+1. Before integration, `git fetch origin`, rebase onto `origin/main`, confirm the branch still
+   has one commit, and rerun `make precommit`. Update the pushed branch only with
+   `git push --force-with-lease`.
+1. Integrate with `git switch main && git merge --ff-only mr/<topic>`.
+
+Never create a merge commit, rebase `main`, or bypass the hooks with `--no-verify`.
+
+### Working on several branches at once
+
+Independent tasks can run concurrently in separate Git worktrees under the gitignored
+`.worktrees/` directory, one `mr/<topic>` branch per worktree. A linked worktree contains
+tracked files only; run `git -C <worktree> worktreeinclude apply` to copy the gitignored scanner
+binaries listed in `.worktreeinclude` before running `make precommit` there. Do not parallelise
+tasks that modify the same files, define an interface the other consumes, or need ordered
+migrations.
