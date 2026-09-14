@@ -98,7 +98,7 @@ The same actions run scripted from the built jar:
 ```shell
 java -jar merchant-cli/build/libs/merchant-cli.jar order --psp DEMO_PSP --items EBOOK,TSHIRT
 java -jar merchant-cli/build/libs/merchant-cli.jar pay <order-reference> [--card <number>]
-java -jar merchant-cli/build/libs/merchant-cli.jar refund <order-reference>
+java -jar merchant-cli/build/libs/merchant-cli.jar refund <order-reference> [--lines a,b]
 java -jar merchant-cli/build/libs/merchant-cli.jar status <order-reference>
 java -jar merchant-cli/build/libs/merchant-cli.jar report --from 2026-09-01 --to 2026-09-30
 java -jar merchant-cli/build/libs/merchant-cli.jar report-platform --from 2026-09-01 --to 2026-09-30
@@ -115,8 +115,10 @@ from a CDN, so the browser needs internet access; the server does not.
 
 - **Payments** creates and pays an order in one step, and lists every payment with gross, net,
   tax, platform fee, shopper country, goods types, and the status the Ledger booked last. Captured
-  payments have a refund button. Each order links to its transactions and events, its journal
-  entries line by line, and the balance accounts it posted to.
+  payments have a refund button. Catalogue items are priced in EUR or USD, and an order holds one
+  currency. Each order links to its lines, with a refund button per line not yet refunded and one
+  for every remaining line, its transactions and events, its journal entries line by line, and
+  the balance accounts it posted to.
 - **Balance accounts** lists every balance account of every merchant, tax authority, PSP, and
   platform account in every operating currency, with filters and per-currency totals. Each row
   shows debits and credits separately and the balance on its side (`64.85 Cr`, `1.25 Dr`). With
@@ -198,7 +200,7 @@ the identifier of the one log line that records the failure. A bad key or signat
 | Route                            | Caller   | Success | Errors                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /v1/order`                 | merchant | `201`   | `400` a field's declared `INVALID_*` code, `INVALID_REQUEST`, `UNSUPPORTED_CURRENCY`, `DUPLICATE_MERCHANT_LINE_REFERENCE`, `MIXED_CURRENCIES`, `INVALID_PRODUCT_TYPE`, `TOTAL_AMOUNT_MISMATCH`, `AMOUNT_OVERFLOW`; `401 MERCHANT_NOT_FOUND`; `403 MERCHANT_REQUIRED`; `409 IDEMPOTENCY_CONFLICT`; `422 INVALID_COUNTRY`, `INVALID_STATE`, `TAX_RATE_UNAVAILABLE`, `PSP_UNAVAILABLE`, `MISSING_FEE_CONFIGURATION`, `MISSING_TAX_AUTHORITY`; `503 PSP_RETRYABLE` |
-| `POST /v1/order/modification`    | merchant | `202`   | `400` a field's declared `INVALID_*` code, `INVALID_REQUEST`, `UNSUPPORTED_MODIFICATION_TYPE`; `403 MERCHANT_REQUIRED`; `404 ORDER_NOT_FOUND`; `409 ORDER_NOT_PAID`; `422 REFUND_REJECTED`; `503 PSP_RETRYABLE`                                                                                                                                                                                                                                                |
+| `POST /v1/order/modification`    | merchant | `202`   | `400` a field's declared `INVALID_*` code, `INVALID_REQUEST`, `UNSUPPORTED_MODIFICATION_TYPE`, `ORDER_NOT_FOUND`, `ORDER_LINE_NOT_FOUND`, `DUPLICATE_ORDER_LINE_REFERENCE`; `403 MERCHANT_REQUIRED`; `409 ORDER_NOT_PAID`, `ORDER_LINE_ALREADY_REFUNDED`, `ORDER_ALREADY_REFUNDED`; `422 REFUND_REJECTED`; `503 PSP_RETRYABLE`                                                                                                                                 |
 | `GET /v1/psps`                   | merchant | `200`   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `GET /v1/report?from=&to=`       | both     | `200`   | `400 INVALID_REPORT_PERIOD`, `INVALID_REQUEST`; `401 MERCHANT_NOT_FOUND`. Builds a balance report over at most 30 days and answers its `report_url`. A merchant's report covers its own account; the operator's covers every merchant, tax authority, and platform account.                                                                                                                                                                                    |
 | `GET /v1/report/{reportId}`      | both     | `200`   | `400 INVALID_REQUEST`; `404 REPORT_NOT_FOUND`. The Gateway keeps the 100 most recent reports in memory; any authenticated key reads any of them.                                                                                                                                                                                                                                                                                                               |
@@ -236,8 +238,12 @@ answers `401 UNAUTHENTICATED`, a signed request to a route the caller is not gra
    When the Gateway's queue is full, the PSP webhook answers `503 QUEUE_FULL` so the PSP
    redelivers; order creation still answers the order but logs its unqueued `ORDER_CREATED`
    request at error level.
-1. `POST /v1/order/modification` refunds the whole order at the PSP synchronously and stores the
-   accepted refund; the Ledger books it when the PSP's `REFUND` event arrives.
+1. `POST /v1/order/modification` refunds whole lines of the order: the named ones, or every
+   line not yet refunded. The Gateway claims the lines in the database, then asks the PSP for
+   their total synchronously; the PSP's `REFUND` event, which must echo the refund's amount and
+   lines, is queued with the lines' summed net, tax, and gross, and the Ledger books it. The
+   Ledger refuses any refund that would take the payment's refunded net, tax, or gross past the
+   captured payment's.
 
 ## Design notes
 
@@ -249,7 +255,7 @@ answers `401 UNAUTHENTICATED`, a signed request to a route the caller is not gra
   product type, from rates loaded at startup. The rate is applied per line and rounded half even.
 - Amounts are minor units of one currency per order. FX rates and fees are held per currency
   pair and day.
-- A refund covers the whole order; there are no partial refunds or partial captures.
+- A refund covers whole order lines; there are no amounts per line and no partial captures.
 - One idempotency key means one request for the life of the merchant account.
 
 ### Key decisions
@@ -271,12 +277,17 @@ answers `401 UNAUTHENTICATED`, a signed request to a route the caller is not gra
 - A request that reaches the Ledger before its predecessor is booked fails in the Ledger's log.
   The Ledger never retries a booking and stores no outcome, so a merchant learns nothing after
   `202`, and there is no merchant-facing status endpoint.
-- A repeated merchant refund reaches the PSP twice.
+- A refund whose PSP answer was lost keeps its lines claimed until the PSP's `REFUND` event
+  arrives; if the PSP never reports, they stay claimed until refund reconciliation exists.
+- A repeated refund request, even with the same idempotency key, answers `409`; the first
+  answer is not replayed.
+- A PSP that reports failure after success releases lines whose refund the Ledger booked; the
+  Ledger's cap still refuses any refund beyond the capture.
 - A PSP answer the Gateway cannot classify is answered `503 PSP_RETRYABLE`; nothing is retried.
 - `PSP_RECEIVABLE` is gross of PSP fees; what a PSP owes Outpost is not reported.
 - Tax is approximate: one rate per jurisdiction and product type, with no historical rates.
-- Settlement, payouts, disputes, chargebacks, partial captures, partial refunds, and accounting
-  periods are out of scope.
+- Settlement, payouts, disputes, chargebacks, partial captures, refunds of part of a line, and
+  accounting periods are out of scope.
 
 ## Repository layout
 

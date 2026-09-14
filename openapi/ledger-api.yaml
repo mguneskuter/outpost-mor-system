@@ -193,7 +193,9 @@ components:
       description: |
         Every property is present; the ones a type does not use are `null`. `ORDER_CREATED`
         requires `merchant_code`, `shopper_country`, and the three amounts. `AUTHORISATION` and
-        `CAPTURE` require `success`. `REFUND` requires `success` and `refund_reference`.
+        `CAPTURE` require `success`. `REFUND` requires `success`, `refund_reference`, and the
+        three amounts: net and tax non-negative, gross positive and equal to net plus tax, all in
+        one currency.
       required:
         - type
         - original_reference

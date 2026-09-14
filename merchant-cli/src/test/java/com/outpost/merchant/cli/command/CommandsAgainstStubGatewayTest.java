@@ -167,8 +167,8 @@ class CommandsAgainstStubGatewayTest {
         .isEqualTo(
             """
             order order-1
-              EBOOK  net 19.00 EUR  tax 3.99 EUR (rate 0.2100)
-              TSHIRT  net 25.00 EUR  tax 5.25 EUR (rate 0.2100)
+              line-1  EBOOK  net 19.00 EUR  tax 3.99 EUR (rate 0.2100)
+              line-2  TSHIRT  net 25.00 EUR  tax 5.25 EUR (rate 0.2100)
             net 44.00 EUR  tax 9.24 EUR  total 53.24 EUR
             pay at http://psp/v1/DEMO_PSP/payment  (pay order-1)"""
                 .stripIndent());
@@ -280,8 +280,8 @@ class CommandsAgainstStubGatewayTest {
   }
 
   @Test
-  void refundsTheWholeOrderAndPrintsTheRefundReference() throws Exception {
-    assertThat(orderCommands.refund("order-1")).isEqualTo("refund accepted: refund-9");
+  void refundsEveryLineNotYetRefundedWhenNoLineIsNamed() throws Exception {
+    assertThat(orderCommands.refund("order-1", null)).isEqualTo("refund accepted: refund-9");
 
     StubGateway.Received request = gateway.received().getFirst();
     assertThat(request.path()).isEqualTo("/v1/order/modification");
@@ -290,6 +290,18 @@ class CommandsAgainstStubGatewayTest {
     assertThat(sent.get("order_reference").asString()).isEqualTo("order-1");
     assertThat(sent.get("type").asString()).isEqualTo("REFUND");
     assertThat(sent.get("idempotency_key").asString()).startsWith("refund-");
+    assertThat(sent.has("order_line_references")).isFalse();
+  }
+
+  @Test
+  void refundsTheNamedLines() throws Exception {
+    assertThat(orderCommands.refund("order-1", "line-1, line-2"))
+        .isEqualTo("refund accepted: refund-9");
+
+    var sent = new ObjectMapper().readTree(gateway.received().getFirst().body());
+    assertThat(sent.get("order_line_references")).hasSize(2);
+    assertThat(sent.get("order_line_references").get(0).asString()).isEqualTo("line-1");
+    assertThat(sent.get("order_line_references").get(1).asString()).isEqualTo("line-2");
   }
 
   @Test
@@ -315,7 +327,7 @@ class CommandsAgainstStubGatewayTest {
               new ShellSession(Map.of("DEMO_MERCHANT", new MerchantCredentials(API_KEY, SECRET))),
               Duration.ofSeconds(5));
 
-      assertThat(commands.refund("order-1")).isEqualTo("HTTP 409 ORDER_NOT_PAID");
+      assertThat(commands.refund("order-1", null)).isEqualTo("HTTP 409 ORDER_NOT_PAID");
     }
   }
 

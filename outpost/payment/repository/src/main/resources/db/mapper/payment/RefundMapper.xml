@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.outpost.payment.repository.mybatis.RefundMapper">
-  <resultMap id="refund" type="com.outpost.payment.refund.Refund">
+  <resultMap id="refund" type="com.outpost.payment.repository.mybatis.Refund">
     <constructor>
       <idArg column="refund_id" javaType="long"/>
       <arg column="refund_reference" javaType="string"/>
@@ -10,20 +10,123 @@
       <arg column="merchant_reference" javaType="string"/>
       <arg column="idempotency_key" javaType="string"/>
       <arg column="psp_refund_reference" javaType="string"/>
+      <arg column="currency" javaType="string"/>
       <arg column="created_ts" javaType="java.time.Instant"/>
     </constructor>
   </resultMap>
 
+  <resultMap id="refundItem" type="com.outpost.payment.repository.mybatis.RefundItem">
+    <constructor>
+      <idArg column="refund_item_id" javaType="_long"/>
+      <arg column="refund_id" javaType="_long"/>
+      <arg column="refund_failed" javaType="_boolean"/>
+      <arg column="order_item_id" javaType="_long"/>
+      <arg column="order_id" javaType="_long"/>
+      <arg column="product_type" javaType="string"/>
+      <arg column="order_line_reference" javaType="string"/>
+      <arg column="merchant_line_reference" javaType="string"/>
+      <arg column="net_amount" javaType="_long"/>
+      <arg column="tax_amount" javaType="_long"/>
+      <arg column="tax_rate" javaType="java.math.BigDecimal"/>
+    </constructor>
+  </resultMap>
+
+  <sql id="refundColumns">
+    refund.refund_id, refund.refund_reference, refund.order_id, refund.original_reference,
+    refund.merchant_reference, refund.idempotency_key, refund.psp_refund_reference,
+    currency.currency_code AS currency, refund.created_ts
+  </sql>
+
+  <sql id="refundJoins">
+    JOIN merchant_order o ON o.order_id = refund.order_id
+    JOIN currency ON currency.currency_id = o.currency_id
+  </sql>
+
+  <sql id="refundItemColumns">
+    refund_item.refund_item_id, refund_item.refund_id, refund_item.refund_failed,
+    item.order_item_id, item.order_id, product_type.code AS product_type,
+    item.order_line_reference, item.merchant_line_reference, item.net_amount, item.tax_amount,
+    item.tax_rate
+  </sql>
+
+  <sql id="refundItemJoins">
+    JOIN order_item item ON item.order_item_id = refund_item.order_item_id
+    JOIN product_type ON product_type.product_type_id = item.product_type_id
+  </sql>
+
   <select id="insertRefund" resultMap="refund">
-    INSERT INTO merchant_refund (
-      refund_reference, order_id, original_reference, merchant_reference, idempotency_key,
-      psp_refund_reference, created_ts
+    WITH refund AS (
+      INSERT INTO merchant_refund (
+        refund_reference, order_id, original_reference, merchant_reference, idempotency_key,
+        psp_refund_reference, created_ts
+      )
+      VALUES (
+        #{refundReference}, #{orderId}, #{originalReference}, #{merchantReference},
+        #{idempotencyKey}, #{pspRefundReference,jdbcType=VARCHAR}, now()
+      )
+      RETURNING *
     )
-    VALUES (
-      #{refundReference}, #{orderId}, #{originalReference}, #{merchantReference},
-      #{idempotencyKey}, #{pspRefundReference}, now()
-    )
-    RETURNING refund_id, refund_reference, order_id, original_reference, merchant_reference,
-              idempotency_key, psp_refund_reference, created_ts
+    SELECT <include refid="refundColumns"/>
+      FROM refund
+      <include refid="refundJoins"/>
   </select>
+
+  <select id="insertRefundItem" resultMap="refundItem">
+    WITH refund_item AS (
+      INSERT INTO refund_item (refund_id, order_item_id)
+      VALUES (#{refundId}, #{orderItemId})
+      ON CONFLICT (order_item_id) WHERE NOT refund_failed DO NOTHING
+      RETURNING *
+    )
+    SELECT <include refid="refundItemColumns"/>
+      FROM refund_item
+      <include refid="refundItemJoins"/>
+  </select>
+
+  <select id="findRefundByRefundReference" resultMap="refund">
+    SELECT <include refid="refundColumns"/>
+      FROM merchant_refund refund
+      <include refid="refundJoins"/>
+     WHERE refund.refund_reference = #{refundReference}
+  </select>
+
+  <select id="findRefundsByOriginalReference" resultMap="refund">
+    SELECT <include refid="refundColumns"/>
+      FROM merchant_refund refund
+      <include refid="refundJoins"/>
+     WHERE refund.original_reference = #{originalReference}
+     ORDER BY refund.refund_id
+  </select>
+
+  <select id="findRefundItems" resultMap="refundItem">
+    SELECT <include refid="refundItemColumns"/>
+      FROM refund_item
+      <include refid="refundItemJoins"/>
+     WHERE refund_item.refund_id = #{refundId}
+     ORDER BY refund_item.refund_item_id
+  </select>
+
+  <select id="findRefundItemsByOriginalReference" resultMap="refundItem">
+    SELECT <include refid="refundItemColumns"/>
+      FROM refund_item
+      JOIN merchant_refund refund ON refund.refund_id = refund_item.refund_id
+      <include refid="refundItemJoins"/>
+     WHERE refund.original_reference = #{originalReference}
+     ORDER BY refund_item.refund_id, refund_item.refund_item_id
+  </select>
+
+  <update id="updateRefundPspRefundReference">
+    UPDATE merchant_refund
+       SET psp_refund_reference = #{pspRefundReference}
+     WHERE refund_reference = #{refundReference}
+  </update>
+
+  <update id="updateRefundItemRefundFailed">
+    UPDATE refund_item
+       SET refund_failed = true
+      FROM merchant_refund refund
+     WHERE refund.refund_id = refund_item.refund_id
+       AND refund.refund_reference = #{refundReference}
+       AND NOT refund_item.refund_failed
+  </update>
 </mapper>

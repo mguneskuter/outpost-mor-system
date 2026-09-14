@@ -16,8 +16,9 @@ public record CreatedOrder(
       @JsonProperty("total_amount") long totalAmount,
       @JsonProperty("payment_link") String paymentLink) {}
 
-  /** One priced line. */
+  /** One priced line; {@code orderLineReference} is what a refund names. */
   public record Line(
+      @JsonProperty("order_line_reference") String orderLineReference,
       @JsonProperty("merchant_line_reference") String merchantLineReference,
       @JsonProperty("amount") long amount,
       @JsonProperty("tax_amount") long taxAmount,

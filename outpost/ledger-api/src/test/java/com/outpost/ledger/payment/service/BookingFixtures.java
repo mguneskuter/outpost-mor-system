@@ -34,6 +34,12 @@ final class BookingFixtures {
       new Register(20008L, merchant, RegisterTypes.PENDING_FEE.getValue());
   final Register platformPendingFee =
       new Register(10008L, platform, RegisterTypes.PENDING_FEE.getValue());
+  final Register pspReceivable = new Register(30003L, psp, RegisterTypes.PSP_RECEIVABLE.getValue());
+  final Register taxPayable =
+      new Register(100604L, taxAuthority, RegisterTypes.TAX_PAYABLE.getValue());
+  final Register merchantPayable =
+      new Register(20001L, merchant, RegisterTypes.MERCHANT_PAYABLE.getValue());
+  final Register feeRevenue = new Register(10005L, platform, RegisterTypes.FEE_REVENUE.getValue());
 
   /** A stored payment of EUR 120.00 gross, 100.00 net, and 20.00 tax to a German shopper. */
   PaymentDetail payment() {
@@ -52,9 +58,19 @@ final class BookingFixtures {
         eur(2_000L));
   }
 
-  /** A stored child transaction of {@code payment}. */
+  /** A stored child transaction of {@code payment} for the payment's whole amount. */
   Transaction child(
       Transaction payment, long transactionId, TransactionTypes type, String reference) {
+    return child(payment, transactionId, type, reference, payment.getAmount());
+  }
+
+  /** A stored child transaction of {@code payment} for {@code amount}. */
+  Transaction child(
+      Transaction payment,
+      long transactionId,
+      TransactionTypes type,
+      String reference,
+      Amount amount) {
     Transaction storedPayment =
         Transaction.of(
             payment.getTransactionId().orElseThrow(),
@@ -64,13 +80,7 @@ final class BookingFixtures {
             payment.getAmount(),
             NOW);
     return Transaction.childOf(
-        storedPayment,
-        transactionId,
-        type.getValue(),
-        merchant,
-        reference,
-        payment.getAmount(),
-        NOW);
+        storedPayment, transactionId, type.getValue(), merchant, reference, amount, NOW);
   }
 
   static TransactionEvent event(long id, Transaction transaction, TransactionEventTypes type) {

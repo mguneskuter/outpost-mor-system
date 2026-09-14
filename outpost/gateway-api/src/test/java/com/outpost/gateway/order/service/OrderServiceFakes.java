@@ -24,6 +24,8 @@ import com.outpost.payment.ShopperDetail;
 import com.outpost.payment.order.Order;
 import com.outpost.payment.order.OrderItem;
 import com.outpost.payment.order.repository.OrderRepository;
+import com.outpost.payment.refund.Refund;
+import com.outpost.payment.refund.repository.RefundRepository;
 import com.outpost.tax.TaxRate;
 import com.outpost.tax.provider.TaxRateProvider;
 import java.math.BigDecimal;
@@ -94,6 +96,36 @@ public final class OrderServiceFakes {
     return (country, subdivision, productType) ->
         new TaxRate(country, subdivision, productType, rate);
   }
+
+  /** A refund store no test scenario reaches; every call fails. */
+  public static final RefundRepository UNREACHED_REFUNDS =
+      new RefundRepository() {
+        @Override
+        public Optional<Refund> insertRefund(Refund refund) {
+          throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<Refund> findRefundByRefundReference(String refundReference) {
+          throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<Refund> findRefundsByOriginalReference(String originalReference) {
+          throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void updateRefundPspRefundReference(
+            String refundReference, String pspRefundReference) {
+          throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void updateRefundItemRefundFailed(String refundReference) {
+          throw new UnsupportedOperationException();
+        }
+      };
 
   /** Accepts every order unless a result is queued; refunds are not supported. */
   public static final class FakePspClient implements PspClient {

@@ -14,11 +14,13 @@ import com.outpost.accounting.transaction.repository.TransactionRepository;
 import com.outpost.framework.logging.LogFields;
 import com.outpost.framework.logging.StructuredLogField;
 import com.outpost.framework.logging.StructuredLogger;
+import com.outpost.payment.common.Amount;
+import java.util.List;
 import java.util.Optional;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Books a PSP-confirmed full refund of a captured payment. */
+/** Books a PSP-confirmed refund of a captured payment. */
 public class RefundService {
   private static final StructuredLogger LOGGER =
       new StructuredLogger(LoggerFactory.getLogger(RefundService.class));
@@ -32,14 +34,17 @@ public class RefundService {
   }
 
   /**
-   * Books the full refund confirmed by the PSP under {@code refundReference}: the REFUND
-   * transaction for the payment's gross, its refund detail for the payment's net and tax, the
-   * REFUNDED event, and the REFUND entry. A repeat of a booked refund writes nothing.
+   * Books the refund confirmed by the PSP under {@code refundReference}: the REFUND transaction for
+   * {@code netAmount} plus {@code taxAmount}, its refund detail, the REFUNDED event, and the REFUND
+   * entry. A repeat of a booked refund with the same amounts writes nothing.
    *
-   * @throws BookingException when the request is not booked; its code says why
+   * @throws BookingException when the request is not booked; its code says why: {@code
+   *     REFUND_EXCEEDS_CAPTURE} means the payment's refunds would exceed its captured net, tax, or
+   *     gross, and {@code INVALID_REQUEST} that the amounts are not in the payment's currency
    */
   @Transactional
-  public void bookRefund(String originalReference, String refundReference) {
+  public void bookRefund(
+      String originalReference, String refundReference, Amount netAmount, Amount taxAmount) {
     PaymentDetail payment =
         transactions
             .findPaymentDetailByReferenceForUpdate(originalReference)
@@ -47,7 +52,7 @@ public class RefundService {
     Transaction paymentTransaction = payment.getPaymentTransaction();
     Optional<RefundDetail> bookedRefund = transactions.findRefundDetailByReference(refundReference);
     if (bookedRefund.isPresent()) {
-      if (isRefundOf(bookedRefund.get(), originalReference)) {
+      if (isRepeatOf(bookedRefund.get(), originalReference, netAmount, taxAmount)) {
         LOGGER.info(
             "Refund already booked",
             new StructuredLogField(LogFields.ORIGINAL_REFERENCE, originalReference),
@@ -59,12 +64,18 @@ public class RefundService {
     if (!isCapturedInFull(paymentTransaction)) {
       throw refused(BookingErrorCodes.NOT_CAPTURED);
     }
-    if (!transactions.findRefundDetailsByPayment(paymentTransaction).isEmpty()) {
-      throw refused(BookingErrorCodes.ALREADY_REFUNDED);
+    if (!netAmount.currency().equals(paymentTransaction.getAmount().currency())
+        || !taxAmount.currency().equals(paymentTransaction.getAmount().currency())) {
+      throw refused(BookingErrorCodes.INVALID_REQUEST);
+    }
+    // Cap the payment's refunds at its capture — net, tax, and gross each stay within what was
+    // captured, so a merchant never refunds more than the shopper paid.
+    if (exceedsCapture(payment, netAmount, taxAmount)) {
+      throw refused(BookingErrorCodes.REFUND_EXCEEDS_CAPTURE);
     }
     RefundDetail refund =
         transactions
-            .insertRefundDetail(requestedRefund(payment, refundReference))
+            .insertRefundDetail(requestedRefund(payment, refundReference, netAmount, taxAmount))
             .orElseThrow(() -> refused(BookingErrorCodes.REFERENCE_CONFLICT));
     TransactionEvent refunded =
         transactions
@@ -77,7 +88,7 @@ public class RefundService {
             .orElseThrow(() -> refused(BookingErrorCodes.INCONSISTENT_BOOKING));
     journalEntries.insertJournalEntry(refundEntry(refunded, refund, captureRegisters));
     LOGGER.info(
-        "Refund booked: the capture's net and tax reversed",
+        "Refund booked",
         new StructuredLogField(LogFields.ORIGINAL_REFERENCE, originalReference),
         new StructuredLogField(LogFields.REFUND_REFERENCE, refundReference));
   }
@@ -92,15 +103,41 @@ public class RefundService {
         .isPresent();
   }
 
-  private static boolean isRefundOf(RefundDetail refund, String originalReference) {
-    return refund
-        .getRefundTransaction()
-        .getParentTransaction()
-        .filter(payment -> payment.getReference().equals(originalReference))
-        .isPresent();
+  private boolean exceedsCapture(PaymentDetail payment, Amount netAmount, Amount taxAmount) {
+    List<RefundDetail> bookedRefunds =
+        transactions.findRefundDetailsByPayment(payment.getPaymentTransaction());
+    long net = netAmount.quantity();
+    long tax = taxAmount.quantity();
+    long gross;
+    try {
+      gross = Math.addExact(net, tax);
+      for (RefundDetail booked : bookedRefunds) {
+        net = Math.addExact(net, booked.getNetAmount().quantity());
+        tax = Math.addExact(tax, booked.getTaxAmount().quantity());
+        gross = Math.addExact(gross, booked.getRefundTransaction().getAmount().quantity());
+      }
+    } catch (ArithmeticException overflow) {
+      return true;
+    }
+    return net > payment.getNetAmount().quantity()
+        || tax > payment.getTaxAmount().quantity()
+        || gross > payment.getPaymentTransaction().getAmount().quantity();
   }
 
-  private static RefundDetail requestedRefund(PaymentDetail payment, String refundReference) {
+  /** Whether a booked refund is this request again: the same payment, net, and tax. */
+  private static boolean isRepeatOf(
+      RefundDetail refund, String originalReference, Amount netAmount, Amount taxAmount) {
+    return refund
+            .getRefundTransaction()
+            .getParentTransaction()
+            .filter(payment -> payment.getReference().equals(originalReference))
+            .isPresent()
+        && refund.getNetAmount().equals(netAmount)
+        && refund.getTaxAmount().equals(taxAmount);
+  }
+
+  private static RefundDetail requestedRefund(
+      PaymentDetail payment, String refundReference, Amount netAmount, Amount taxAmount) {
     Transaction paymentTransaction = payment.getPaymentTransaction();
     try {
       return new RefundDetail(
@@ -110,11 +147,11 @@ public class RefundService {
               TransactionTypes.REFUND.getValue(),
               paymentTransaction.getMerchantAccount(),
               refundReference,
-              paymentTransaction.getAmount(),
+              netAmount.plus(taxAmount),
               null),
-          payment.getNetAmount(),
-          payment.getTaxAmount());
-    } catch (IllegalArgumentException exception) {
+          netAmount,
+          taxAmount);
+    } catch (IllegalArgumentException | ArithmeticException exception) {
       throw new BookingException(BookingErrorCodes.INVALID_REQUEST, exception);
     }
   }

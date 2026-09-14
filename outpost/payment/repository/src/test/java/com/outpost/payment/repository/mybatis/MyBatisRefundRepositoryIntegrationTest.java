@@ -14,11 +14,18 @@ import com.outpost.payment.common.ProductTypes;
 import com.outpost.payment.order.Order;
 import com.outpost.payment.order.OrderItem;
 import com.outpost.payment.refund.Refund;
+import com.outpost.payment.refund.RefundItem;
 import com.zaxxer.hikari.HikariDataSource;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
@@ -40,9 +47,11 @@ class MyBatisRefundRepositoryIntegrationTest {
       PostgresTestDatabase.startContainer(
           "outpost_refund_repository", "outpost_refund_repository", "outpost_refund_repository");
   private static @Nullable HikariDataSource dataSource;
+  private static @Nullable MyBatisOrderRepository orders;
   private static @Nullable MyBatisRefundRepository refunds;
   private static @Nullable JdbcTemplate jdbcTemplate;
-  private static long orderId;
+  private static @Nullable Account merchantAccount;
+  private static @Nullable Account pspAccount;
 
   @BeforeAll
   static void migrateAndSeed() throws Exception {
@@ -67,7 +76,8 @@ class MyBatisRefundRepositoryIntegrationTest {
         new ClassPathResource("db/mapper/payment/RefundMapper.xml"));
     SqlSessionTemplate sqlSession =
         new SqlSessionTemplate(Objects.requireNonNull(sessionFactory.getObject()));
-    refunds = new MyBatisRefundRepository(sqlSession.getMapper(RefundMapper.class));
+    DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(database);
+    refunds = new MyBatisRefundRepository(sqlSession, transactionManager);
     JdbcTemplate jdbc = new JdbcTemplate(database);
     jdbcTemplate = jdbc;
     seedReferenceData(jdbc);
@@ -79,15 +89,11 @@ class MyBatisRefundRepositoryIntegrationTest {
     Account psp =
         KnownAccounts.underRoot(
             account(jdbc, AccountTypes.PSP, "REFUND_PSP"), AccountTypes.PSP, "REFUND_PSP");
-    orderId =
+    merchantAccount = merchant;
+    pspAccount = psp;
+    orders =
         new MyBatisOrderRepository(
-                sqlSession,
-                new DataSourceTransactionManager(database),
-                new KnownAccounts(merchant, psp))
-            .insertOrder(shopper(), anOrder(merchant, psp))
-            .orElseThrow()
-            .getOrderId()
-            .orElseThrow();
+            sqlSession, transactionManager, new KnownAccounts(merchant, psp));
   }
 
   @AfterAll
@@ -99,54 +105,135 @@ class MyBatisRefundRepositoryIntegrationTest {
   }
 
   @Test
-  void insertingRefundReturnsItWithItsIdAndTheWritingTransactionTime() {
+  void insertingRefundReturnsItAndItsItemsWithIdsAndTheWritingTransactionTime() {
+    Order order = storedOrder("dated");
     new TransactionTemplate(new DataSourceTransactionManager(Objects.requireNonNull(dataSource)))
         .executeWithoutResult(
             status -> {
-              Refund stored = refunds().insertRefund(unsavedRefund("refund-dated"));
+              Refund stored =
+                  refunds().insertRefund(unsavedRefund("refund-dated", order)).orElseThrow();
 
               Instant transactionTime =
                   Objects.requireNonNull(jdbc().queryForObject("SELECT now()", Instant.class));
               assertThat(stored.refundId()).isNotNull().isPositive();
               assertThat(stored.createdAt()).isEqualTo(transactionTime);
-              assertThat(stored.refundReference()).isEqualTo("refund-dated");
-              assertThat(stored.orderId()).isEqualTo(orderId);
-              assertThat(
-                      jdbc()
-                          .queryForObject(
-                              "SELECT created_ts FROM merchant_refund WHERE refund_reference = ?",
-                              Instant.class,
-                              "refund-dated"))
-                  .isEqualTo(transactionTime);
+              assertThat(stored.pspRefundReference()).isNull();
+              assertThat(stored.items())
+                  .hasSize(2)
+                  .allSatisfy(item -> assertThat(item.refundItemId()).isNotNull().isPositive())
+                  .allSatisfy(item -> assertThat(item.isRefundFailed()).isFalse());
+              assertThat(stored.items().stream().map(RefundItem::orderItem))
+                  .containsExactlyElementsOf(order.getItems());
+              assertThat(refunds().findRefundByRefundReference("refund-dated")).contains(stored);
+              assertThat(refunds().findRefundsByOriginalReference(order.getOrderReference()))
+                  .containsExactly(stored);
             });
   }
 
   @Test
-  void rejectsSecondRefundWithTheSameRefundReference() {
-    refunds().insertRefund(unsavedRefund("refund-twice"));
+  void insertClaimingAnAlreadyClaimedLineStoresNothing() {
+    Order order = storedOrder("claimed");
+    store(unsavedRefund("refund-claimed-first", order, 0));
 
-    assertThatThrownBy(() -> refunds().insertRefund(unsavedRefund("refund-twice")))
+    Optional<Refund> second = refunds().insertRefund(unsavedRefund("refund-claimed-second", order));
+
+    assertThat(second).isEmpty();
+    assertThat(refunds().findRefundByRefundReference("refund-claimed-second")).isEmpty();
+    assertThat(refundItemCount(order)).isEqualTo(1);
+  }
+
+  @Test
+  void releasesTheLinesOfRefundMarkedFailed() {
+    Order order = storedOrder("released");
+    store(unsavedRefund("refund-released-first", order));
+
+    refunds().updateRefundItemRefundFailed("refund-released-first");
+    Optional<Refund> second =
+        refunds().insertRefund(unsavedRefund("refund-released-second", order));
+
+    assertThat(second).isPresent();
+    assertThat(refunds().findRefundByRefundReference("refund-released-first").orElseThrow().items())
+        .allSatisfy(item -> assertThat(item.isRefundFailed()).isTrue());
+  }
+
+  @Test
+  void storesThePspRefundReferenceOnce() {
+    Order order = storedOrder("acknowledged");
+    store(unsavedRefund("refund-acknowledged", order));
+
+    refunds().updateRefundPspRefundReference("refund-acknowledged", "psp-refund-77");
+    refunds().updateRefundPspRefundReference("refund-acknowledged", "psp-refund-77");
+
+    assertThat(
+            refunds()
+                .findRefundByRefundReference("refund-acknowledged")
+                .orElseThrow()
+                .pspRefundReference())
+        .isEqualTo("psp-refund-77");
+    assertThatThrownBy(
+            () -> refunds().updateRefundPspRefundReference("refund-acknowledged", "psp-refund-78"))
+        .isInstanceOf(DataAccessException.class);
+  }
+
+  @Test
+  void exactlyOneOfTwoConcurrentRefundsClaimsTheSameLine() throws Exception {
+    Order order = storedOrder("raced");
+    CyclicBarrier bothReady = new CyclicBarrier(2);
+
+    List<Optional<Refund>> stored;
+    try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+      Future<Optional<Refund>> first =
+          executor.submit(() -> claim(bothReady, unsavedRefund("refund-raced-first", order)));
+      Future<Optional<Refund>> second =
+          executor.submit(() -> claim(bothReady, unsavedRefund("refund-raced-second", order)));
+      stored = List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS));
+    }
+
+    assertThat(stored).filteredOn(Optional::isPresent).hasSize(1);
+    assertThat(refundItemCount(order)).isEqualTo(2);
+    assertThat(refunds().findRefundsByOriginalReference(order.getOrderReference())).hasSize(1);
+  }
+
+  private static Optional<Refund> claim(CyclicBarrier bothReady, Refund refund) throws Exception {
+    bothReady.await(10, TimeUnit.SECONDS);
+    return refunds().insertRefund(refund);
+  }
+
+  @Test
+  void rejectsSecondRefundWithTheSameRefundReference() {
+    Order order = storedOrder("twice");
+    refunds().insertRefund(unsavedRefund("refund-twice", order, 0));
+
+    assertThatThrownBy(() -> refunds().insertRefund(unsavedRefund("refund-twice", order, 1)))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
-  void rejectsChangingOrDeletingStoredRefund() {
-    refunds().insertRefund(unsavedRefund("refund-fixed"));
+  void rejectsDeletingAnItemAndClearingItsFailure() {
+    Order order = storedOrder("fixed");
+    store(unsavedRefund("refund-fixed", order));
+    refunds().updateRefundItemRefundFailed("refund-fixed");
+    long refundId =
+        Objects.requireNonNull(
+            refunds().findRefundByRefundReference("refund-fixed").orElseThrow().refundId());
 
-    assertThatThrownBy(
-            () ->
-                jdbc()
-                    .update(
-                        "UPDATE merchant_refund SET merchant_reference = 'other' "
-                            + "WHERE refund_reference = ?",
-                        "refund-fixed"))
+    assertThatThrownBy(() -> jdbc().update("DELETE FROM refund_item WHERE refund_id = ?", refundId))
         .isInstanceOf(DataAccessException.class);
     assertThatThrownBy(
             () ->
                 jdbc()
                     .update(
-                        "DELETE FROM merchant_refund WHERE refund_reference = ?", "refund-fixed"))
+                        "UPDATE refund_item SET refund_failed = false WHERE refund_id = ?",
+                        refundId))
         .isInstanceOf(DataAccessException.class);
+    assertThatThrownBy(
+            () -> jdbc().update("DELETE FROM merchant_refund WHERE refund_id = ?", refundId))
+        .isInstanceOf(DataAccessException.class);
+  }
+
+  /** Stores a refund whose lines are free, failing the test if they are not. */
+  private static Refund store(Refund refund) {
+    return refunds().insertRefund(refund).orElseThrow();
   }
 
   private static MyBatisRefundRepository refunds() {
@@ -157,49 +244,89 @@ class MyBatisRefundRepositoryIntegrationTest {
     return Objects.requireNonNull(jdbcTemplate);
   }
 
-  private static Refund unsavedRefund(String refundReference) {
+  private int refundItemCount(Order order) {
+    return Objects.requireNonNull(
+        jdbc()
+            .queryForObject(
+                "SELECT count(*) FROM refund_item JOIN order_item USING (order_item_id) "
+                    + "WHERE order_item.order_id = ?",
+                Integer.class,
+                order.getOrderId().orElseThrow()));
+  }
+
+  /** A refund of every line of {@code order}. */
+  private static Refund unsavedRefund(String refundReference, Order order) {
+    return refund(
+        refundReference,
+        order,
+        order.getItems().stream().map(item -> new RefundItem(null, item, false)).toList());
+  }
+
+  /** A refund of one line of {@code order}. */
+  private static Refund unsavedRefund(String refundReference, Order order, int line) {
+    return refund(
+        refundReference, order, List.of(new RefundItem(null, order.getItems().get(line), false)));
+  }
+
+  private static Refund refund(String refundReference, Order order, List<RefundItem> items) {
     return new Refund(
         null,
         refundReference,
-        orderId,
-        "refund-order",
+        order.getOrderId().orElseThrow(),
+        order.getOrderReference(),
         "merchant-" + refundReference,
         refundReference + "-key",
-        "77",
+        null,
+        items,
         null);
   }
 
-  private static ShopperDetail shopper() {
-    return new ShopperDetail(
-        null, "refund@example.test", "Refund Shopper", Countries.GERMANY.getValue(), null, null);
+  private static Order storedOrder(String name) {
+    ShopperDetail shopper =
+        new ShopperDetail(
+            null,
+            name + "@example.test",
+            "Shopper " + name,
+            Countries.GERMANY.getValue(),
+            null,
+            null);
+    return Objects.requireNonNull(orders).insertOrder(shopper, anOrder(name)).orElseThrow();
   }
 
-  private static Order anOrder(Account merchantAccount, Account pspAccount) {
+  private static Order anOrder(String name) {
     return new Order(
         null,
-        "refund-order",
-        "merchant-refund-order",
-        merchantAccount,
+        "refund-order-" + name,
+        "merchant-refund-order-" + name,
+        Objects.requireNonNull(merchantAccount),
         null,
         Countries.GERMANY.getValue(),
         null,
         eur(100L),
         eur(19L),
         eur(119L),
-        "refund-order-key",
-        "refund-order-fingerprint",
-        pspAccount,
+        "refund-order-" + name + "-key",
+        "refund-order-" + name + "-fingerprint",
+        Objects.requireNonNull(pspAccount),
         "41",
-        "https://pay.example/refund-order",
+        "https://pay.example/" + name,
         null,
         List.of(
             new OrderItem(
                 null,
                 ProductTypes.DIGITAL_GOODS.getValue(),
-                "refund-order-line",
-                "merchant-refund-order-line",
-                eur(100L),
-                eur(19L),
+                name + "-line-1",
+                name + "-merchant-line-1",
+                eur(60L),
+                eur(11L),
+                new BigDecimal("0.1900")),
+            new OrderItem(
+                null,
+                ProductTypes.DIGITAL_GOODS.getValue(),
+                name + "-line-2",
+                name + "-merchant-line-2",
+                eur(40L),
+                eur(8L),
                 new BigDecimal("0.1900"))));
   }
 

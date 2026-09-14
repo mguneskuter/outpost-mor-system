@@ -10,7 +10,10 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Refunds a captured order and reports the outcome by REFUND webhook. */
+/**
+ * Acknowledges a refund of a captured order and reports by REFUND webhook whether it succeeded: it
+ * does when the order is captured and the amount fits what its earlier successful refunds left.
+ */
 public final class RefundService {
   private static final Logger LOGGER = LoggerFactory.getLogger(RefundService.class);
 
@@ -29,9 +32,11 @@ public final class RefundService {
   }
 
   /**
-   * Refunds a captured order, or returns the existing refund when the refund reference repeats.
+   * Acknowledges a refund and schedules its REFUND webhook, or returns the existing refund when the
+   * refund reference repeats.
    *
    * @throws NotFoundException when the order is unknown
+   * @throws IllegalArgumentException when the payment reference or currency is not the order's
    * @throws ConflictException when the refund reference was used for another order
    */
   public RefundResult refund(String pspCode, RefundCommand command) {
@@ -42,30 +47,40 @@ public final class RefundService {
                 () ->
                     new NotFoundException(
                         "no order with psp reference: " + command.pspReference()));
-    boolean accepted = order.status() == OrderStatuses.CAPTURED;
+    if (!order.paymentReference().equals(command.paymentReference())) {
+      throw new IllegalArgumentException(
+          "payment reference is not the order's: " + command.paymentReference());
+    }
+    if (!order.currencyCode().equals(command.currencyCode())) {
+      throw new IllegalArgumentException("currency is not the order's: " + command.currencyCode());
+    }
+    boolean succeeded =
+        order.status() == OrderStatuses.CAPTURED
+            && command.amountMinor()
+                <= order.amountMinor()
+                    - refundRepository.sumSucceededAmount(pspCode, command.pspReference());
     Optional<Refund> inserted =
         refundRepository.insert(
             pspCode,
             command.pspReference(),
             command.refundReference(),
-            order.amountMinor(),
-            order.currencyCode(),
-            accepted);
+            command.amountMinor(),
+            command.currencyCode(),
+            succeeded);
     if (inserted.isPresent()) {
       Refund refund = inserted.get();
       LOGGER.info(
           "refund {} pspCode={} pspReference={} pspRefundReference={} refundReference={} "
-              + "orderStatus={}",
-          refund.accepted() ? "accepted" : "rejected",
+              + "amount={} orderStatus={}",
+          refund.succeeded() ? "succeeded" : "failed",
           pspCode,
           order.pspReference(),
           refund.pspRefundReference(),
           command.refundReference(),
+          refund.amountMinor(),
           order.status().getCode());
-      if (refund.accepted()) {
-        webhookScheduler.scheduleRefund(order, refund);
-      }
-      return new RefundResult(refund.pspRefundReference(), refund.accepted());
+      webhookScheduler.scheduleRefund(order, refund, command.refundLines());
+      return new RefundResult(refund.pspRefundReference(), true);
     }
     Refund existing =
         refundRepository
@@ -79,9 +94,9 @@ public final class RefundService {
       throw new ConflictException(
           "refund reference " + command.refundReference() + " was used for another order");
     }
-    return new RefundResult(existing.pspRefundReference(), existing.accepted());
+    return new RefundResult(existing.pspRefundReference(), true);
   }
 
-  /** The result of a refund command: the PSP refund reference and whether it was accepted. */
+  /** The result of a refund command: the PSP refund reference and whether it was acknowledged. */
   public record RefundResult(String pspRefundReference, boolean accepted) {}
 }

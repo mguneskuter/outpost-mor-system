@@ -32,9 +32,9 @@ final class PspWebhookResponder {
       case UNKNOWN_PSP -> HttpStatus.NOT_FOUND;
       case INVALID_SIGNATURE -> HttpStatus.UNAUTHORIZED;
       case INVALID_PAYLOAD -> HttpStatus.BAD_REQUEST;
-      // An authenticated event that matches no stored order is acknowledged as processed with a
-      // negative result, so the PSP does not redeliver it; it is never queued.
-      case UNKNOWN_ORDER, PSP_REFERENCE_MISMATCH -> HttpStatus.OK;
+      // An authenticated event that matches no stored order or refund is acknowledged as processed
+      // with a negative result, so the PSP does not redeliver it; it is never queued.
+      case UNKNOWN_ORDER, PSP_REFERENCE_MISMATCH, UNKNOWN_REFUND -> HttpStatus.OK;
       // A full queue refuses the event without acknowledging it, so the PSP redelivers it.
       case QUEUE_FULL -> HttpStatus.SERVICE_UNAVAILABLE;
     };

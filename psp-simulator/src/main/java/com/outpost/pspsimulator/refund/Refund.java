@@ -1,6 +1,9 @@
 package com.outpost.pspsimulator.refund;
 
-/** A refund the simulator accepted or rejected on behalf of a PSP. */
+/**
+ * A refund the simulator acknowledged on behalf of a PSP; {@code succeeded} is what its REFUND
+ * webhook reports.
+ */
 public record Refund(
     String pspCode,
     String pspReference,
@@ -8,4 +11,4 @@ public record Refund(
     String refundReference,
     long amountMinor,
     String currencyCode,
-    boolean accepted) {}
+    boolean succeeded) {}

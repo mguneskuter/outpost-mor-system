@@ -18,6 +18,7 @@ import com.outpost.backoffice.gateway.GatewayClient;
 import com.outpost.backoffice.merchant.Merchant;
 import com.outpost.backoffice.merchant.MerchantRepository;
 import com.outpost.backoffice.merchant.Psp;
+import com.outpost.backoffice.payment.OrderLine;
 import com.outpost.backoffice.payment.Payment;
 import com.outpost.backoffice.payment.PaymentEvent;
 import com.outpost.backoffice.payment.PaymentJournalLine;
@@ -25,6 +26,7 @@ import com.outpost.backoffice.payment.PaymentRepository;
 import com.outpost.backoffice.psp.PspPaymentClient;
 import com.outpost.backoffice.register.RegisterBalance;
 import com.outpost.backoffice.register.RegisterBalanceRepository;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -60,6 +62,7 @@ import org.springframework.test.web.servlet.MockMvc;
     })
 class PagesTest {
   private static final Instant CREATED_AT = Instant.parse("2026-09-13T10:00:00Z");
+  private static final BigDecimal RATE = new BigDecimal("0.2100");
   private static final Payment CAPTURED =
       new Payment(
           "order-1",
@@ -181,6 +184,11 @@ class PagesTest {
                 line(1, "FEE_PENDING", "OUTPOST", "Outpost", "PENDING_FEE", -220),
                 line(2, "CAPTURE", "DEMO_MERCHANT", "Demo Merchant", "PENDING_FEE", -220),
                 line(2, "CAPTURE", "DEMO_MERCHANT", "Demo Merchant", "MERCHANT_PAYABLE", -4180)));
+    when(payments.findOrderLines("order-1"))
+        .thenReturn(
+            List.of(
+                new OrderLine("line-1", "EBOOK", "DIGITAL_GOODS", 1900, 399, RATE, true),
+                new OrderLine("line-2", "TSHIRT", "PHYSICAL_GOODS", 2500, 525, RATE, false)));
 
     String page =
         mvc.perform(get("/payments/order-1"))
@@ -190,6 +198,13 @@ class PagesTest {
             .getContentAsString();
 
     assertThat(page)
+        .contains(">line-1<")
+        .contains(">refunded<")
+        .contains(">line-2<")
+        .contains("name=\"lines\" value=\"line-2\"")
+        .doesNotContain("name=\"lines\" value=\"line-1\"")
+        .contains(">Refund line<")
+        .contains(">Refund every remaining line<")
         .contains(">capture-1<")
         .contains(">CAPTURED<")
         .contains(">FEE_PENDING<")
@@ -201,6 +216,32 @@ class PagesTest {
         .contains(">MERCHANT_PAYABLE<")
         .contains(">46.20<")
         .contains(">2.20<");
+  }
+
+  @Test
+  void refundingChosenLinesFromThePaymentPageSendsThemAndReturnsToIt() throws Exception {
+    when(gateway.refund(any(), eq("order-1"), any(), eq(List.of("line-2")))).thenReturn("refund-9");
+
+    mvc.perform(
+            post("/payments/order-1/refund")
+                .param("merchant", "DEMO_MERCHANT")
+                .param("origin", "payment")
+                .param("lines", "line-2"))
+        .andExpect(status().is3xxRedirection())
+        .andExpect(redirectedUrl("/payments/order-1?merchant=DEMO_MERCHANT"));
+
+    verify(gateway).refund(any(), eq("order-1"), any(), eq(List.of("line-2")));
+  }
+
+  @Test
+  void refundingFromTheListSendsNoLinesSoEveryRemainingLineIsRefunded() throws Exception {
+    when(gateway.refund(any(), eq("order-1"), any(), eq(List.of()))).thenReturn("refund-9");
+
+    mvc.perform(post("/payments/order-1/refund").param("merchant", "DEMO_MERCHANT"))
+        .andExpect(status().is3xxRedirection())
+        .andExpect(redirectedUrl("/payments?merchant=DEMO_MERCHANT"));
+
+    verify(gateway).refund(any(), eq("order-1"), any(), eq(List.of()));
   }
 
   private static PaymentJournalLine line(

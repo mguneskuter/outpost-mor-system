@@ -10,7 +10,8 @@ public interface PspClient {
   CreatePspOrderResult createOrder(CreatePspOrderRequest request);
 
   /**
-   * Requests a full refund of an order.
+   * Asks the PSP to refund the request's amount of the order. The PSP only acknowledges the call;
+   * whether it refunded is reported by its {@code REFUND} event.
    *
    * @throws UnknownPspResultException when the PSP may or may not have accepted the refund
    */

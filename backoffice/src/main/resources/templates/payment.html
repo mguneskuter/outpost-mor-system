@@ -5,6 +5,7 @@
 <div th:replace="~{fragments :: nav('payments')}"></div>
 <main class="p-6 space-y-6">
   <div class="breadcrumbs text-sm"><ul><li><a th:href="@{/payments}">Payments</a></li><li th:text="${payment.orderReference}"></li></ul></div>
+  <div th:replace="~{fragments :: notices}"></div>
 
   <div class="card bg-base-100 shadow-sm">
     <div class="card-body">
@@ -18,6 +19,38 @@
           <tr><th>Shopper country</th><td th:text="${payment.shopperCountry}"></td><th>Goods</th><td th:text="${payment.goodsTypes}"></td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <div class="card bg-base-100 shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title">Order lines</h2>
+      <div class="overflow-auto">
+        <table class="table table-sm">
+          <thead><tr><th>Line</th><th>Merchant line</th><th>Goods</th><th class="text-right">Net</th><th class="text-right">Tax</th><th>Rate</th><th>Refund</th></tr></thead>
+          <tbody>
+            <tr th:each="l : ${orderLines}">
+              <td th:text="${l.orderLineReference}"></td><td th:text="${l.merchantLineReference}"></td><td th:text="${l.productType}"></td>
+              <td class="text-right tabular-nums" th:text="${l.net}"></td><td class="text-right tabular-nums" th:text="${l.tax}"></td><td th:text="${l.taxRate}"></td>
+              <td>
+                <span class="badge badge-ghost" th:if="${l.refunded}">refunded</span>
+                <form th:if="${!l.refunded and payment.refundable}" method="post" th:action="@{/payments/{ref}/refund(ref=${payment.orderReference})}">
+                  <input type="hidden" name="merchant" th:value="${payment.merchantCode}">
+                  <input type="hidden" name="origin" value="payment">
+                  <input type="hidden" name="lines" th:value="${l.orderLineReference}">
+                  <button class="btn btn-xs btn-outline btn-primary" type="submit">Refund line</button>
+                </form>
+              </td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(orderLines)}"><td colspan="7" class="opacity-60">No lines stored.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <form th:if="${payment.refundable and hasOpenLines}" method="post" th:action="@{/payments/{ref}/refund(ref=${payment.orderReference})}">
+        <input type="hidden" name="merchant" th:value="${payment.merchantCode}">
+        <input type="hidden" name="origin" value="payment">
+        <button class="btn btn-sm btn-primary" type="submit">Refund every remaining line</button>
+      </form>
     </div>
   </div>
 

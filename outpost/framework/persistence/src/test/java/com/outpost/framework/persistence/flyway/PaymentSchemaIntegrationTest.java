@@ -395,9 +395,12 @@ class PaymentSchemaIntegrationTest {
       strings = {
         "UPDATE merchant_refund SET merchant_reference = 'other' "
             + "WHERE refund_reference = 'refund-1'",
+        "UPDATE merchant_refund SET psp_refund_reference = 'other' "
+            + "WHERE refund_reference = 'refund-1'",
         "DELETE FROM merchant_refund WHERE refund_reference = 'refund-1'"
       })
-  void merchantRefundIsAppendOnly(String statement) throws SQLException {
+  void merchantRefundIsImmutableOnceItsPspRefundReferenceIsStored(String statement)
+      throws SQLException {
     try (Connection connection = database.createConnection("")) {
       connection.setAutoCommit(false);
       insertOrder(connection);

@@ -236,7 +236,28 @@ class AccountingQueueIntakeIntegrationTest {
             refused),
         Arguments.of(
             "REFUND without refund_reference",
-            CAPTURE_REQUEST.replace("\"type\":\"CAPTURE\"", "\"type\":\"REFUND\""),
+            refund(
+                null,
+                "{\"quantity\":4000,\"currency\":\"EUR\"}",
+                "{\"quantity\":800,\"currency\":\"EUR\"}",
+                "{\"quantity\":4800,\"currency\":\"EUR\"}"),
+            refused),
+        Arguments.of("REFUND without amounts", refund("refund-1", "null", "null", "null"), refused),
+        Arguments.of(
+            "REFUND whose gross is not net plus tax",
+            refund(
+                "refund-1",
+                "{\"quantity\":4000,\"currency\":\"EUR\"}",
+                "{\"quantity\":800,\"currency\":\"EUR\"}",
+                "{\"quantity\":4801,\"currency\":\"EUR\"}"),
+            refused),
+        Arguments.of(
+            "REFUND with mixed currencies",
+            refund(
+                "refund-1",
+                "{\"quantity\":4000,\"currency\":\"EUR\"}",
+                "{\"quantity\":800,\"currency\":\"USD\"}",
+                "{\"quantity\":4800,\"currency\":\"EUR\"}"),
             refused),
         Arguments.of(
             "ORDER_CREATED without currency",
@@ -271,6 +292,22 @@ class AccountingQueueIntakeIntegrationTest {
 
     assertThat(lockCount(REFERENCE)).isZero();
     assertThat(accountingQueue.size()).isZero();
+  }
+
+  private static String refund(
+      @Nullable String refundReference, String netAmount, String taxAmount, String grossAmount) {
+    return """
+        {"type":"REFUND","original_reference":"%s","merchant_reference":"merchant-order-1",
+        "psp_code":"DEMO_PSP","psp_reference":"41","success":true,"refund_reference":%s,
+        "merchant_code":null,"shopper_country":null,"shopper_country_subdivision":null,
+        "net_amount":%s,"tax_amount":%s,"gross_amount":%s}
+        """
+        .formatted(
+            REFERENCE,
+            refundReference == null ? "null" : "\"" + refundReference + "\"",
+            netAmount,
+            taxAmount,
+            grossAmount);
   }
 
   private static String orderCreated(

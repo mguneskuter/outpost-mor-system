@@ -1,6 +1,7 @@
 package com.outpost.pspsimulator.refund;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,7 +21,7 @@ public class RefundRepository {
               resultSet.getString("refund_reference"),
               resultSet.getLong("amount"),
               resultSet.getString("currency_code"),
-              resultSet.getBoolean("accepted"));
+              resultSet.getBoolean("succeeded"));
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -41,13 +42,13 @@ public class RefundRepository {
       String refundReference,
       long amountMinor,
       String currencyCode,
-      boolean accepted) {
+      boolean succeeded) {
     List<Refund> rows =
         jdbcTemplate.query(
             """
             INSERT INTO psp_refund (
                 psp_refund_reference, psp_code, psp_reference, refund_reference, amount,
-                currency_code, accepted
+                currency_code, succeeded
             )
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (psp_code, refund_reference) DO NOTHING
@@ -58,7 +59,7 @@ public class RefundRepository {
                 refund_reference,
                 amount,
                 currency_code,
-                accepted
+                succeeded
             """,
             ROW_MAPPER,
             "psp-refund-" + UUID.randomUUID(),
@@ -67,7 +68,7 @@ public class RefundRepository {
             refundReference,
             amountMinor,
             currencyCode,
-            accepted);
+            succeeded);
     return rows.stream().findFirst();
   }
 
@@ -83,7 +84,7 @@ public class RefundRepository {
                 refund_reference,
                 amount,
                 currency_code,
-                accepted
+                succeeded
             FROM psp_refund
             WHERE psp_code = ? AND refund_reference = ?
             """,
@@ -91,5 +92,19 @@ public class RefundRepository {
             pspCode,
             refundReference);
     return rows.stream().findFirst();
+  }
+
+  /** Returns the sum in minor units of the order's refunds that succeeded. */
+  public long sumSucceededAmount(String pspCode, String pspReference) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            """
+            SELECT COALESCE(SUM(amount), 0)
+            FROM psp_refund
+            WHERE psp_code = ? AND psp_reference = ? AND succeeded
+            """,
+            Long.class,
+            pspCode,
+            pspReference));
   }
 }

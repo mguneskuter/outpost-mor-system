@@ -39,7 +39,6 @@ import com.outpost.payment.order.repository.OrderRepository;
 import com.outpost.payment.refund.repository.RefundRepository;
 import com.outpost.payment.repository.mybatis.MyBatisOrderRepository;
 import com.outpost.payment.repository.mybatis.MyBatisRefundRepository;
-import com.outpost.payment.repository.mybatis.RefundMapper;
 import com.outpost.tax.provider.TaxRateProvider;
 import com.outpost.tax.provider.cached.CachedTaxRateProvider;
 import com.outpost.tax.repository.TaxRateRepository;
@@ -129,8 +128,10 @@ public class ApplicationBeanConfiguration {
 
   @Bean
   PspWebhookService pspWebhookService(
-      OrderRepository orders, TimeOrderedQueue<AccountingQueueRequest> accountingQueue) {
-    return new PspWebhookService(orders, accountingQueue);
+      OrderRepository orders,
+      RefundRepository refunds,
+      TimeOrderedQueue<AccountingQueueRequest> accountingQueue) {
+    return new PspWebhookService(orders, refunds, accountingQueue);
   }
 
   @Bean
@@ -220,8 +221,9 @@ public class ApplicationBeanConfiguration {
   }
 
   @Bean
-  RefundRepository refundRepository(RefundMapper mapper) {
-    return new MyBatisRefundRepository(mapper);
+  RefundRepository refundRepository(
+      SqlSessionTemplate sqlSessionTemplate, PlatformTransactionManager transactionManager) {
+    return new MyBatisRefundRepository(sqlSessionTemplate, transactionManager);
   }
 
   @Bean

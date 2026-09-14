@@ -231,13 +231,31 @@ public class OrderCommands {
     return events.stream().anyMatch(event -> event.eventType().equals(eventType));
   }
 
-  /** Refunds the whole order. */
-  @Command(group = "Order", name = "refund", description = "Refund the whole order at its PSP")
+  /** Refunds the named order lines, or every line not yet refunded. */
+  @Command(
+      group = "Order",
+      name = "refund",
+      description = "Refund the named order lines, or every line not yet refunded, at its PSP")
   public String refund(
-      @Argument(index = 0, description = "order reference") String orderReference) {
+      @Argument(index = 0, description = "order reference") String orderReference,
+      @Option(
+              longName = "lines",
+              description =
+                  "comma-separated order line references; every line not yet refunded when omitted")
+          @Nullable String lines) {
+    List<String> orderLineReferences = new ArrayList<>();
+    if (lines != null) {
+      for (String line : lines.split(",", -1)) {
+        orderLineReferences.add(line.trim());
+      }
+    }
     try {
       String refundReference =
-          gateway.refund(session.credentials(), orderReference, "refund-" + UUID.randomUUID());
+          gateway.refund(
+              session.credentials(),
+              orderReference,
+              "refund-" + UUID.randomUUID(),
+              orderLineReferences);
       return "refund accepted: " + refundReference;
     } catch (GatewayException refused) {
       return refused.describe();
@@ -251,6 +269,8 @@ public class OrderCommands {
     for (CreatedOrder.Line line : order.orderLines()) {
       lines.add(
           "  "
+              + line.orderLineReference()
+              + "  "
               + line.merchantLineReference()
               + "  net "
               + Money.format(line.amount(), payment.currency())

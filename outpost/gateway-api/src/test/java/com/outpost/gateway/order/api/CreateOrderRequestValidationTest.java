@@ -45,11 +45,7 @@ class CreateOrderRequestValidationTest {
               new OrderController(
                   fakes.service,
                   new OrderModificationService(
-                      fakes.repository,
-                      fakes.psp,
-                      refund -> {
-                        throw new UnsupportedOperationException();
-                      })))
+                      fakes.repository, fakes.psp, OrderServiceFakes.UNREACHED_REFUNDS)))
           .setControllerAdvice(new GatewayErrorAdvice())
           .setCustomArgumentResolvers(new GatewayPrincipalArgumentResolver())
           .build();
