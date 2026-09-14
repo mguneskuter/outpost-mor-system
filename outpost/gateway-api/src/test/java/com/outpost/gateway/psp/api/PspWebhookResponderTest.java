@@ -48,8 +48,8 @@ class PspWebhookResponderTest {
   @ParameterizedTest
   @EnumSource(
       value = PspWebhookResults.class,
-      names = {"UNKNOWN_ORDER", "PSP_REFERENCE_MISMATCH"})
-  void acknowledgesAuthenticatedEventThatMatchesNoStoredPayment(PspWebhookResults reason) {
+      names = {"UNKNOWN_ORDER", "PSP_REFERENCE_MISMATCH", "UNKNOWN_REFUND"})
+  void acknowledgesAuthenticatedEventThatMatchesNoStoredPaymentOrRefund(PspWebhookResults reason) {
     assertThat(PspWebhookResponder.respond(reason).getStatusCode().value()).isEqualTo(200);
   }
 

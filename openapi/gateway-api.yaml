@@ -100,10 +100,14 @@ paths:
   /v1/order/modification:
     post:
       tags: [Orders]
-      summary: Refund an order in full
+      summary: Refund whole lines of an order
       description: |
-        Asks the PSP to refund the whole payment and stores the accepted refund. The Ledger books
-        the refund when the PSP's `REFUND` event arrives. A repeated request reaches the PSP again.
+        Refunds the named order lines, or every line not yet refunded when none is named. The
+        lines are claimed in the store before the PSP is asked for their total, so a line is never
+        refunded twice: a request naming a claimed line, or an order with no line left, answers
+        `409`, and a repeated request answers `409` rather than replaying the first answer. The
+        Ledger books the refund when the PSP's `REFUND` event confirms it; a refund the PSP refuses
+        releases its lines.
       operationId: modifyOrder
       requestBody:
         required: true
@@ -113,7 +117,7 @@ paths:
               $ref: "#/components/schemas/OrderModificationRequest"
       responses:
         "202":
-          description: The PSP accepted the refund
+          description: The PSP acknowledged the refund; its `REFUND` event reports the outcome
           content:
             application/json:
               schema:
@@ -121,8 +125,11 @@ paths:
         "400":
           description: |
             Codes: `INVALID_ORDER_REFERENCE`, `INVALID_IDEMPOTENCY_KEY`,
-            `INVALID_MERCHANT_REFERENCE`, `INVALID_TYPE`, `INVALID_REQUEST`,
-            `UNSUPPORTED_MODIFICATION_TYPE`.
+            `INVALID_MERCHANT_REFERENCE`, `INVALID_TYPE`, `INVALID_ORDER_LINE_REFERENCES`,
+            `INVALID_ORDER_LINE_REFERENCE`, `INVALID_REQUEST`, `UNSUPPORTED_MODIFICATION_TYPE`,
+            `ORDER_NOT_FOUND` (no order of this merchant has the reference),
+            `ORDER_LINE_NOT_FOUND` (a named reference is not a line of the order),
+            `DUPLICATE_ORDER_LINE_REFERENCE`.
           content:
             application/json:
               schema:
@@ -135,14 +142,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: "`ORDER_NOT_FOUND`: no order of this merchant has the reference"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: "`ORDER_NOT_PAID`: the order has no payment at the PSP yet"
+          description: |
+            Codes: `ORDER_NOT_PAID` (the order has no payment at the PSP yet),
+            `ORDER_LINE_ALREADY_REFUNDED` (a named line has a refund that has not failed),
+            `ORDER_ALREADY_REFUNDED` (every line has a refund that has not failed).
           content:
             application/json:
               schema:
@@ -158,7 +162,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
         "503":
-          description: "`PSP_RETRYABLE`: the PSP's answer was lost or unclassifiable; nothing is stored"
+          description: "`PSP_RETRYABLE`: the PSP's answer was lost or unclassifiable; the lines stay claimed until the PSP's `REFUND` event arrives"
           content:
             application/json:
               schema:
@@ -537,6 +541,15 @@ components:
         type:
           type: string
           enum: [REFUND]
+        order_line_references:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          description: The `order_line_reference` of each line to refund; absent means every line not yet refunded
     OrderModificationResponse:
       type: object
       required: [refund_reference]
@@ -648,6 +661,26 @@ components:
         refund_reference:
           type: [string, "null"]
           description: Required for a `REFUND` event
+        refund_lines:
+          type: [array, "null"]
+          description: Required for a `REFUND` event; the refunded lines exactly as the refund named them
+          items:
+            type: object
+            required: [order_line_reference, tax_rate, net_amount, gross_amount]
+            properties:
+              order_line_reference:
+                type: string
+              tax_rate:
+                type: string
+                description: Decimal rate, compared by value
+              net_amount:
+                type: integer
+                format: int64
+                description: The line's net in minor units
+              gross_amount:
+                type: integer
+                format: int64
+                description: The line's net plus tax in minor units
     PspWebhookEventResponse:
       type: object
       required: [code]
@@ -662,3 +695,4 @@ components:
             - UNKNOWN_PAYMENT
             - FOREIGN_PAYMENT
             - PSP_REFERENCE_MISMATCH
+            - UNKNOWN_REFUND

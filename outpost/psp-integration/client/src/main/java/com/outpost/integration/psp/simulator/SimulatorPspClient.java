@@ -5,6 +5,7 @@ import com.outpost.integration.psp.CreatePspOrderRequest;
 import com.outpost.integration.psp.CreatePspOrderResult;
 import com.outpost.integration.psp.PspClient;
 import com.outpost.integration.psp.PspResultCodes;
+import com.outpost.integration.psp.RefundPspOrderLine;
 import com.outpost.integration.psp.RefundPspOrderRequest;
 import com.outpost.integration.psp.RefundPspOrderResult;
 import com.outpost.integration.psp.UnknownPspResultException;
@@ -12,6 +13,7 @@ import com.outpost.integration.psp.simulator.repository.PspConfigurationReposito
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -146,9 +148,33 @@ public final class SimulatorPspClient implements PspClient {
 
   private record SimulatorRefundRequest(
       @JsonProperty("psp_reference") String pspReference,
-      @JsonProperty("refund_reference") String refundReference) {
+      @JsonProperty("payment_reference") String paymentReference,
+      @JsonProperty("refund_reference") String refundReference,
+      long amount,
+      String currency,
+      @JsonProperty("refund_lines") List<SimulatorRefundLine> refundLines) {
     static SimulatorRefundRequest from(RefundPspOrderRequest request) {
-      return new SimulatorRefundRequest(request.pspReference(), request.refundReference());
+      return new SimulatorRefundRequest(
+          request.pspReference(),
+          request.orderReference(),
+          request.refundReference(),
+          request.amount().quantity(),
+          request.amount().currency().getCurrencyCode(),
+          request.lines().stream().map(SimulatorRefundLine::from).toList());
+    }
+  }
+
+  private record SimulatorRefundLine(
+      @JsonProperty("order_line_reference") String orderLineReference,
+      @JsonProperty("tax_rate") String taxRate,
+      @JsonProperty("net_amount") long netAmount,
+      @JsonProperty("gross_amount") long grossAmount) {
+    static SimulatorRefundLine from(RefundPspOrderLine line) {
+      return new SimulatorRefundLine(
+          line.orderLineReference(),
+          line.taxRate().toPlainString(),
+          line.netAmount().quantity(),
+          line.grossAmount().quantity());
     }
   }
 

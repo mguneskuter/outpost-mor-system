@@ -1,5 +1,6 @@
 package com.outpost.backoffice.gateway;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.outpost.backoffice.configuration.BackOfficeProperties.MerchantCredentials;
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.net.http.HttpResponse.BodyHandlers;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -43,11 +45,23 @@ public final class GatewayClient {
         CreatedOrder.class);
   }
 
-  /** Refunds the whole order and answers the refund's reference. */
-  public String refund(MerchantCredentials merchant, String orderReference, String idempotencyKey) {
+  /**
+   * Refunds the named order lines, or every line not yet refunded when none is named, and answers
+   * the refund's reference.
+   */
+  public String refund(
+      MerchantCredentials merchant,
+      String orderReference,
+      String idempotencyKey,
+      List<String> orderLineReferences) {
     byte[] body =
         json.writeValueAsBytes(
-            new RefundRequest(orderReference, idempotencyKey, "refund-of-" + orderReference));
+            new RefundRequest(
+                orderReference,
+                idempotencyKey,
+                "refund-of-" + orderReference,
+                "REFUND",
+                orderLineReferences.isEmpty() ? null : orderLineReferences));
     String refundReference =
         send(merchantRequest(merchant, "POST", "/v1/order/modification", body), Refund.class)
             .refundReference();
@@ -147,11 +161,9 @@ public final class GatewayClient {
       @JsonProperty("order_reference") String orderReference,
       @JsonProperty("idempotency_key") String idempotencyKey,
       @JsonProperty("merchant_reference") String merchantReference,
-      @JsonProperty("type") String type) {
-    private RefundRequest(String orderReference, String idempotencyKey, String merchantReference) {
-      this(orderReference, idempotencyKey, merchantReference, "REFUND");
-    }
-  }
+      @JsonProperty("type") String type,
+      @JsonProperty("order_line_references") @JsonInclude(JsonInclude.Include.NON_NULL)
+          @Nullable List<String> orderLineReferences) {}
 
   private record Refund(@JsonProperty("refund_reference") @Nullable String refundReference) {}
 

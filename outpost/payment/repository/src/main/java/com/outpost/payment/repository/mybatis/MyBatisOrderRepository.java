@@ -182,7 +182,7 @@ public final class MyBatisOrderRepository implements OrderRepository {
         items.stream().map(item -> toOrderItem(item, currency)).toList());
   }
 
-  private static com.outpost.payment.order.OrderItem toOrderItem(OrderItem row, Currency currency) {
+  static com.outpost.payment.order.OrderItem toOrderItem(OrderItem row, Currency currency) {
     return new com.outpost.payment.order.OrderItem(
         row.orderItemId(),
         ProductTypes.fromCode(row.productType())

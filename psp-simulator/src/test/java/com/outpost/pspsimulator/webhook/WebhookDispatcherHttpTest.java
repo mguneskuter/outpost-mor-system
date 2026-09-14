@@ -16,6 +16,7 @@ import com.outpost.pspsimulator.order.OrderStatuses;
 import com.outpost.pspsimulator.order.ResultCodes;
 import com.outpost.pspsimulator.psp.PspAccount;
 import com.outpost.pspsimulator.psp.PspAccounts;
+import com.outpost.pspsimulator.refund.RefundLine;
 import com.outpost.pspsimulator.refund.RefundService;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,8 +42,14 @@ class WebhookDispatcherHttpTest {
               List.of(new PspAccount("DEMO_PSP", "api-key", "secret")));
       WebhookDispatcher dispatcher =
           new WebhookDispatcher(properties, new PspAccounts(properties), new ObjectMapper());
-      dispatcher.dispatch(payload(WebhookEventCodes.AUTHORISATION, ResultCodes.APPROVED, null));
-      dispatcher.dispatch(payload(WebhookEventCodes.REFUND, ResultCodes.APPROVED, "refund-1"));
+      dispatcher.dispatch(
+          payload(WebhookEventCodes.AUTHORISATION, ResultCodes.APPROVED, null, null));
+      dispatcher.dispatch(
+          payload(
+              WebhookEventCodes.REFUND,
+              ResultCodes.APPROVED,
+              "refund-1",
+              List.of(new RefundLine("line-1", "0.21", 1000, 1250))));
 
       RecordingWebhookServer.WebhookDelivery authorisation =
           java.util.Objects.requireNonNull(server.awaitDelivery(Duration.ofSeconds(2)));
@@ -52,7 +59,11 @@ class WebhookDispatcherHttpTest {
           .isEqualTo(new WebhookSigner().signBase64("secret", authorisation.body()));
       assertThat(refund.signature())
           .isEqualTo(new WebhookSigner().signBase64("secret", refund.body()));
-      assertThat(refund.bodyText()).contains("\"refund_reference\":\"refund-1\"");
+      assertThat(refund.bodyText())
+          .contains("\"refund_reference\":\"refund-1\"", "\"success\":true")
+          .contains(
+              "\"refund_lines\":[{\"order_line_reference\":\"line-1\",\"tax_rate\":\"0.21\","
+                  + "\"net_amount\":1000,\"gross_amount\":1250}]");
       assertThat(refund.path()).isEqualTo("/v1/psp/DEMO_PSP/webhook");
     }
   }
@@ -119,7 +130,10 @@ class WebhookDispatcherHttpTest {
   }
 
   private static WebhookPayload payload(
-      WebhookEventCodes code, ResultCodes result, @Nullable String refundReference) {
+      WebhookEventCodes code,
+      ResultCodes result,
+      @Nullable String refundReference,
+      @Nullable List<RefundLine> refundLines) {
     return new WebhookPayload(
         "DEMO_PSP",
         "psp-1",
@@ -131,6 +145,7 @@ class WebhookDispatcherHttpTest {
         result,
         1250,
         "EUR",
-        refundReference);
+        refundReference,
+        refundLines);
   }
 }

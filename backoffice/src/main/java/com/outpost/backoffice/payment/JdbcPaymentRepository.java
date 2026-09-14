@@ -93,6 +93,40 @@ public final class JdbcPaymentRepository implements PaymentRepository {
   }
 
   @Override
+  public List<OrderLine> findOrderLines(String orderReference) {
+    return jdbc.sql(
+            """
+            SELECT order_item.order_line_reference,
+                   order_item.merchant_line_reference,
+                   product_type.code AS product_type,
+                   order_item.net_amount,
+                   order_item.tax_amount,
+                   order_item.tax_rate,
+                   EXISTS (SELECT 1
+                             FROM refund_item
+                            WHERE refund_item.order_item_id = order_item.order_item_id
+                              AND NOT refund_item.refund_failed) AS refunded
+              FROM order_item
+              JOIN merchant_order ON merchant_order.order_id = order_item.order_id
+              JOIN product_type ON product_type.product_type_id = order_item.product_type_id
+             WHERE merchant_order.order_reference = :orderReference
+             ORDER BY order_item.order_item_id
+            """)
+        .param("orderReference", orderReference)
+        .query(
+            (row, index) ->
+                new OrderLine(
+                    row.getString("order_line_reference"),
+                    row.getString("merchant_line_reference"),
+                    row.getString("product_type"),
+                    row.getLong("net_amount"),
+                    row.getLong("tax_amount"),
+                    row.getBigDecimal("tax_rate"),
+                    row.getBoolean("refunded")))
+        .list();
+  }
+
+  @Override
   public List<PaymentEvent> findPaymentEvents(String orderReference) {
     return jdbc.sql(
             """

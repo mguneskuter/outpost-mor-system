@@ -7,8 +7,10 @@ import com.outpost.pspsimulator.order.OrderRepository;
 import com.outpost.pspsimulator.order.OrderStatuses;
 import com.outpost.pspsimulator.order.ResultCodes;
 import com.outpost.pspsimulator.refund.Refund;
+import com.outpost.pspsimulator.refund.RefundLine;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,10 +64,10 @@ public final class WebhookScheduler {
     }
   }
 
-  /** Schedules the REFUND webhook for an accepted refund. */
-  public void scheduleRefund(Order order, Refund refund) {
+  /** Schedules the REFUND webhook that reports whether the refund succeeded, echoing its lines. */
+  public void scheduleRefund(Order order, Refund refund, List<RefundLine> refundLines) {
     Instant refundAt = Instant.now().plus(delays.refund());
-    taskScheduler.schedule(refundEvent(order, refund), refundAt);
+    taskScheduler.schedule(refundEvent(order, refund, List.copyOf(refundLines)), refundAt);
     LOGGER.info(
         "refund webhook scheduled pspCode={} pspReference={} pspRefundReference={} at={}",
         order.pspCode(),
@@ -97,7 +99,7 @@ public final class WebhookScheduler {
     };
   }
 
-  private Runnable refundEvent(Order order, Refund refund) {
+  private Runnable refundEvent(Order order, Refund refund, List<RefundLine> refundLines) {
     return () ->
         dispatcher.dispatch(
             new WebhookPayload(
@@ -107,11 +109,12 @@ public final class WebhookScheduler {
                 order.paymentReference(),
                 WebhookEventCodes.REFUND,
                 Instant.now().getEpochSecond(),
-                true,
-                ResultCodes.APPROVED,
+                refund.succeeded(),
+                refund.succeeded() ? ResultCodes.APPROVED : ResultCodes.ACQUIRER_REFUSED,
                 refund.amountMinor(),
                 refund.currencyCode(),
-                refund.refundReference()));
+                refund.refundReference(),
+                refundLines));
   }
 
   private static WebhookPayload eventPayload(
@@ -127,6 +130,7 @@ public final class WebhookScheduler {
         resultCode,
         order.amountMinor(),
         order.currencyCode(),
+        null,
         null);
   }
 

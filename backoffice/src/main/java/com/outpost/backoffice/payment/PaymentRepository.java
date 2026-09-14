@@ -7,6 +7,9 @@ public interface PaymentRepository {
   /** Lists every payment, newest first. */
   List<Payment> findPayments();
 
+  /** Lists the order's lines in line order, each with whether a live refund claims it. */
+  List<OrderLine> findOrderLines(String orderReference);
+
   /** Lists the events booked on the payment and its captures and refunds, oldest first. */
   List<PaymentEvent> findPaymentEvents(String orderReference);
 

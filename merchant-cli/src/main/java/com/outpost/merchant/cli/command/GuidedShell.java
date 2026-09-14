@@ -184,7 +184,7 @@ public final class GuidedShell {
     if (reference.isEmpty()) {
       return true;
     }
-    return print(orderCommands.refund(reference.orElseThrow()));
+    return print(orderCommands.refund(reference.orElseThrow(), null));
   }
 
   private boolean status() {

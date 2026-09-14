@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.outpost.common.iso.Currencies;
 import com.outpost.integration.psp.CreatePspOrderRequest;
 import com.outpost.integration.psp.CreatePspOrderResult;
+import com.outpost.integration.psp.RefundPspOrderLine;
 import com.outpost.integration.psp.RefundPspOrderRequest;
 import com.outpost.integration.psp.RefundPspOrderResult;
 import com.outpost.integration.psp.UnknownPspResultException;
@@ -15,6 +16,7 @@ import com.outpost.payment.common.Amount;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -48,7 +50,7 @@ class SimulatorPspClientTest {
   @Test
   void sendsCreateAndRefundRequestsAndMapsResponses() {
     var create = client.createOrder(new CreatePspOrderRequest("DEMO_PSP", "pay-1", amount(10)));
-    var refund = client.refund(new RefundPspOrderRequest("DEMO_PSP", "psp-1", "refund-1"));
+    var refund = client.refund(refundRequest());
 
     assertThat(create).isEqualTo(new CreatePspOrderResult("psp-1", "https://pay", ACCEPTED));
     assertThat(refund).isEqualTo(new RefundPspOrderResult("psp-1", "refund-1", ACCEPTED));
@@ -56,15 +58,17 @@ class SimulatorPspClientTest {
         .containsExactly(
             "/v1/DEMO_PSP/order|{\"payment_reference\":\"pay-1\",\"amount\":10,"
                 + "\"currency\":\"EUR\"}|secret",
-            "/v1/DEMO_PSP/refund|{\"psp_reference\":\"psp-1\",\"refund_reference\":\"refund-1\"}"
-                + "|secret");
+            "/v1/DEMO_PSP/refund|{\"psp_reference\":\"psp-1\",\"payment_reference\":\"pay-1\","
+                + "\"refund_reference\":\"refund-1\",\"amount\":9680,\"currency\":\"EUR\","
+                + "\"refund_lines\":[{\"order_line_reference\":\"line-1\",\"tax_rate\":\"0.21\","
+                + "\"net_amount\":8000,\"gross_amount\":9680}]}|secret");
   }
 
   @Test
   void mapsRejectedRefundResponse() {
     answerEveryCall(200, "{\"psp_refund_reference\":\"refund-1\",\"accepted\":false}");
 
-    var result = client.refund(new RefundPspOrderRequest("DEMO_PSP", "psp-1", "refund-1"));
+    var result = client.refund(refundRequest());
 
     assertThat(result).isEqualTo(new RefundPspOrderResult("psp-1", "refund-1", REJECTED));
   }
@@ -82,8 +86,7 @@ class SimulatorPspClientTest {
   void reportsServerErrorAsUnknownResult() {
     answerEveryCall(500, "{}");
 
-    assertThatThrownBy(
-            () -> client.refund(new RefundPspOrderRequest("DEMO_PSP", "psp-1", "refund-1")))
+    assertThatThrownBy(() -> client.refund(refundRequest()))
         .isInstanceOf(UnknownPspResultException.class);
   }
 
@@ -110,6 +113,17 @@ class SimulatorPspClientTest {
       released.countDown();
     }
     assertThat(requests).isEmpty();
+  }
+
+  private RefundPspOrderRequest refundRequest() {
+    return new RefundPspOrderRequest(
+        "DEMO_PSP",
+        "psp-1",
+        "pay-1",
+        "refund-1",
+        amount(9680),
+        List.of(
+            new RefundPspOrderLine("line-1", new BigDecimal("0.21"), amount(8000), amount(9680))));
   }
 
   private void answerEveryCall(int status, String body) {

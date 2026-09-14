@@ -36,11 +36,7 @@ class OrderModificationRequestValidationTest {
               new OrderController(
                   fakes.service,
                   new OrderModificationService(
-                      fakes.repository,
-                      fakes.psp,
-                      refund -> {
-                        throw new UnsupportedOperationException();
-                      })))
+                      fakes.repository, fakes.psp, OrderServiceFakes.UNREACHED_REFUNDS)))
           .setControllerAdvice(new GatewayErrorAdvice())
           .setCustomArgumentResolvers(new GatewayPrincipalArgumentResolver())
           .build();
@@ -77,6 +73,17 @@ class OrderModificationRequestValidationTest {
             VALID.replace("\"type\":\"REFUND\"", "\"type\":\"\""),
             OrderModificationRequest.INVALID_TYPE),
         Arguments.of(
+            "empty order_line_references",
+            VALID.replace(
+                "\"type\":\"REFUND\"", "\"type\":\"REFUND\",\"order_line_references\":[]"),
+            OrderModificationRequest.INVALID_ORDER_LINE_REFERENCES),
+        Arguments.of(
+            "blank order line reference",
+            VALID.replace(
+                "\"type\":\"REFUND\"",
+                "\"type\":\"REFUND\",\"order_line_references\":[\"line-1\",\" \"]"),
+            OrderModificationRequest.INVALID_ORDER_LINE_REFERENCE),
+        Arguments.of(
             "unsupported type",
             VALID.replace("\"type\":\"REFUND\"", "\"type\":\"PARTIAL_REFUND\""),
             OrderModificationErrorCodes.UNSUPPORTED_MODIFICATION_TYPE.name()));
@@ -94,7 +101,7 @@ class OrderModificationRequestValidationTest {
   void handsValidRequestToTheService() throws Exception {
     mockMvc
         .perform(modification(VALID))
-        .andExpect(status().isNotFound())
+        .andExpect(status().isBadRequest())
         .andExpect(content().json("{\"code\":\"ORDER_NOT_FOUND\"}"));
 
     assertThat(fakes.repository.orders).isEmpty();

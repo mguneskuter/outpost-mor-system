@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.outpost.backoffice.merchant.MerchantRepository;
+import com.outpost.backoffice.payment.OrderLine;
 import com.outpost.backoffice.payment.Payment;
 import com.outpost.backoffice.payment.PaymentEvent;
 import com.outpost.backoffice.payment.PaymentJournalLine;
@@ -127,6 +128,14 @@ class JdbcRepositoriesTest {
             + "merchant_line_reference, net_amount, tax_amount, tax_rate) VALUES "
             + "(1, 1, 1, 'line-1', 'TSHIRT', 60, 11, 0.19), "
             + "(2, 1, 2, 'line-2', 'EBOOK', 40, 8, 0.19)");
+    seed.update(
+        "INSERT INTO merchant_refund (refund_id, refund_reference, order_id, original_reference, "
+            + "merchant_reference, idempotency_key, psp_refund_reference, created_ts) VALUES "
+            + "(1, 'refund-live', 1, 'order-paid', 'mr-1', 'rk-1', 'psp-refund-1', now()), "
+            + "(2, 'refund-failed', 1, 'order-paid', 'mr-2', 'rk-2', NULL, now())");
+    seed.update(
+        "INSERT INTO refund_item (refund_id, order_item_id, refund_failed) VALUES "
+            + "(1, 1, false), (2, 2, true)");
     seed.update("INSERT INTO transaction_type (transaction_type_id, code) VALUES (1, 'PAYMENT')");
     seed.update(
         "INSERT INTO transaction_event_type (transaction_event_type_id, code, "
@@ -188,6 +197,22 @@ class JdbcRepositoriesTest {
                 5L,
                 "DE",
                 java.util.List.of("PHYSICAL_GOODS", "DIGITAL_GOODS")));
+  }
+
+  @Test
+  void listsAnOrdersLinesWithWhetherLiveRefundClaimsThem() {
+    assertThat(payments.findOrderLines("order-paid"))
+        .extracting(
+            OrderLine::orderLineReference,
+            OrderLine::merchantLineReference,
+            OrderLine::productType,
+            OrderLine::netAmount,
+            OrderLine::taxAmount,
+            OrderLine::refunded)
+        .containsExactly(
+            tuple("line-1", "TSHIRT", "PHYSICAL_GOODS", 60L, 11L, true),
+            tuple("line-2", "EBOOK", "DIGITAL_GOODS", 40L, 8L, false));
+    assertThat(payments.findOrderLines("order-failed")).isEmpty();
   }
 
   @Test

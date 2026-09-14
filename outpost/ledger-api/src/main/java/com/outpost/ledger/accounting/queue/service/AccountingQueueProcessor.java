@@ -66,7 +66,10 @@ public final class AccountingQueueProcessor
             case REFUND -> {
               if (required(request.success())) {
                 refundService.bookRefund(
-                    request.originalReference(), required(request.refundReference()));
+                    request.originalReference(),
+                    required(request.refundReference()),
+                    required(request.netAmount()),
+                    required(request.taxAmount()));
                 yield BOOKED;
               }
               yield "Refund failed at the PSP";

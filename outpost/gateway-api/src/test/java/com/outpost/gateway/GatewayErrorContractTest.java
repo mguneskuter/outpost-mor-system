@@ -75,11 +75,7 @@ class GatewayErrorContractTest {
               new OrderController(
                   orderFakes.service,
                   new OrderModificationService(
-                      orderFakes.repository,
-                      orderFakes.psp,
-                      refund -> {
-                        throw new UnsupportedOperationException();
-                      })),
+                      orderFakes.repository, orderFakes.psp, OrderServiceFakes.UNREACHED_REFUNDS)),
               new ReportController(
                   new ReportService(
                       new FailingLedger(), new NoAccounts(), new GeneratedReports(1))),

@@ -240,7 +240,9 @@ class PaymentBookingIntegrationTest {
     BookingException rejected =
         catchThrowableOfType(
             BookingException.class,
-            () -> refundService.bookRefund("refund-unknown-payment", "refund-unknown-payment-ref"));
+            () ->
+                refundService.bookRefund(
+                    "refund-unknown-payment", "refund-unknown-payment-ref", eur(NET), eur(TAX)));
     assertThat(writes()).isEqualTo(writes);
   }
 
@@ -329,7 +331,7 @@ class PaymentBookingIntegrationTest {
     createCapturedPayment(reference);
     long paymentId = transactionId(reference);
 
-    refundService.bookRefund(reference, "refund-booking-ref");
+    refundService.bookRefund(reference, "refund-booking-ref", eur(NET), eur(TAX));
 
     long refundId = transactionId("refund-booking-ref");
     assertThat(
@@ -363,10 +365,10 @@ class PaymentBookingIntegrationTest {
   void repeatedRefundWritesNothing() {
     String reference = "refund-repeat";
     createCapturedPayment(reference);
-    refundService.bookRefund(reference, "refund-repeat-ref");
+    refundService.bookRefund(reference, "refund-repeat-ref", eur(NET), eur(TAX));
     Writes writes = writes();
 
-    refundService.bookRefund(reference, "refund-repeat-ref");
+    refundService.bookRefund(reference, "refund-repeat-ref", eur(NET), eur(TAX));
 
     assertThat(writes()).isEqualTo(writes);
   }
@@ -381,23 +383,82 @@ class PaymentBookingIntegrationTest {
     BookingException rejected =
         catchThrowableOfType(
             BookingException.class,
-            () -> refundService.bookRefund(reference, "refund-uncaptured-ref"));
+            () -> refundService.bookRefund(reference, "refund-uncaptured-ref", eur(NET), eur(TAX)));
     assertThat(rejected.code()).isEqualTo(BookingErrorCodes.NOT_CAPTURED);
     assertThat(writes()).isEqualTo(writes);
   }
 
   @Test
-  void secondRefundOfPaymentIsRejectedWithoutWrites() {
-    String reference = "refund-second";
+  void twoRefundsAddingUpToThePaymentReverseItsCaptureAndOneMoreMinorUnitIsRefused() {
+    String reference = "refund-in-parts";
     createCapturedPayment(reference);
-    refundService.bookRefund(reference, "refund-second-first");
-    Writes writes = writes();
+    long paymentId = transactionId(reference);
+    long firstNet = 4_000L;
+    long firstTax = 800L;
 
+    refundService.bookRefund(reference, "refund-in-parts-first", eur(firstNet), eur(firstTax));
+    refundService.bookRefund(
+        reference, "refund-in-parts-second", eur(NET - firstNet), eur(TAX - firstTax));
+
+    long firstId = transactionId("refund-in-parts-first");
+    long secondId = transactionId("refund-in-parts-second");
+    for (long refundId : List.of(firstId, secondId)) {
+      assertThat(
+              jdbcTemplate.queryForObject(
+                  "SELECT parent_transaction_id FROM transaction WHERE transaction_id = ?",
+                  Long.class,
+                  refundId))
+          .isEqualTo(paymentId);
+      assertThat(count("refund_detail", "transaction_id = " + refundId)).isEqualTo(1);
+      assertThat(lineCount(refundId)).isEqualTo(3);
+      assertThat(sumOfLines(refundId)).isZero();
+    }
+    assertThat(
+            jdbcTemplate.queryForMap(
+                "SELECT net_quantity, tax_quantity FROM refund_detail WHERE transaction_id = ?",
+                firstId))
+        .containsEntry("net_quantity", firstNet)
+        .containsEntry("tax_quantity", firstTax);
+    // Together the two refunds reverse the whole capture: the fee is not refunded, so the
+    // merchant's line reverses the full net, not the net less the fee the capture credited.
+    assertThat(lineQuantity(firstId, "PSP_RECEIVABLE") + lineQuantity(secondId, "PSP_RECEIVABLE"))
+        .isEqualTo(-GROSS);
+    assertThat(lineQuantity(firstId, "TAX_PAYABLE") + lineQuantity(secondId, "TAX_PAYABLE"))
+        .isEqualTo(TAX);
+    assertThat(
+            lineQuantity(firstId, "MERCHANT_PAYABLE") + lineQuantity(secondId, "MERCHANT_PAYABLE"))
+        .isEqualTo(NET);
+    long captureId =
+        ((Number) Objects.requireNonNull(captureChild(paymentId).get("transaction_id")))
+            .longValue();
+    for (String register : List.of("PSP_RECEIVABLE", "TAX_PAYABLE", "MERCHANT_PAYABLE")) {
+      assertThat(lineRegisterId(secondId, register)).isEqualTo(lineRegisterId(captureId, register));
+    }
+
+    Writes writes = writes();
     BookingException rejected =
         catchThrowableOfType(
             BookingException.class,
-            () -> refundService.bookRefund(reference, "refund-second-second"));
-    assertThat(rejected.code()).isEqualTo(BookingErrorCodes.ALREADY_REFUNDED);
+            () -> refundService.bookRefund(reference, "refund-in-parts-third", eur(1L), eur(0L)));
+    assertThat(rejected.code()).isEqualTo(BookingErrorCodes.REFUND_EXCEEDS_CAPTURE);
+    assertThat(writes()).isEqualTo(writes);
+  }
+
+  @Test
+  void refundInAnotherCurrencyThanThePaymentIsRejectedWithoutWrites() {
+    String reference = "refund-foreign-currency";
+    createCapturedPayment(reference);
+    Writes writes = writes();
+
+    for (long[] amounts : List.of(new long[] {NET, TAX}, new long[] {4_000L, 800L})) {
+      BookingException rejected =
+          catchThrowableOfType(
+              BookingException.class,
+              () ->
+                  refundService.bookRefund(
+                      reference, "refund-foreign-currency-ref", usd(amounts[0]), usd(amounts[1])));
+      assertThat(rejected.code()).isEqualTo(BookingErrorCodes.INVALID_REQUEST);
+    }
     assertThat(writes()).isEqualTo(writes);
   }
 
@@ -405,7 +466,7 @@ class PaymentBookingIntegrationTest {
   void paymentCaptureAndRefundCarryTheTimeTheirTransactionStored() {
     String reference = "dated-payment";
     createCapturedPayment(reference);
-    refundService.bookRefund(reference, "dated-refund");
+    refundService.bookRefund(reference, "dated-refund", eur(NET), eur(TAX));
 
     long paymentId = transactionId(reference);
     long captureId =
@@ -496,6 +557,14 @@ class PaymentBookingIntegrationTest {
     paymentService.bookPayment(orderCreated);
     authorisationService.bookAuthorisation(reference, true);
     captureService.bookCapture(reference, true);
+  }
+
+  private static Amount eur(long quantity) {
+    return new Amount(Currencies.EUR.getValue(), quantity);
+  }
+
+  private static Amount usd(long quantity) {
+    return new Amount(Currencies.USD.getValue(), quantity);
   }
 
   private static AccountingQueueRequest orderCreated(String reference) {

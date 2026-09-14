@@ -8,6 +8,7 @@ import com.outpost.common.iso.CountrySubdivisions.CountrySubdivision;
 import com.outpost.framework.logging.StructuredLogger;
 import com.outpost.framework.queue.QueueFullException;
 import com.outpost.framework.queue.TimeOrderedQueue;
+import com.outpost.payment.common.Amount;
 import java.time.Duration;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -58,7 +59,10 @@ public final class AccountingQueueService {
                   && request.grossAmount() != null
                   && belongsToShopperCountry(request);
           case AUTHORISATION, CAPTURE -> request.success() != null;
-          case REFUND -> request.success() != null && !blank(request.refundReference());
+          case REFUND ->
+              request.success() != null
+                  && !blank(request.refundReference())
+                  && carriesRefundAmounts(request);
         };
     if (!complete) {
       throw new AccountingQueueRefusedException(AccountingQueueErrorTypes.INVALID_REQUEST, request);
@@ -76,6 +80,30 @@ public final class AccountingQueueService {
     } catch (QueueFullException full) {
       transactionLocks.deleteTransactionLock(lock);
       throw new AccountingQueueRefusedException(AccountingQueueErrorTypes.QUEUE_FULL, request);
+    }
+  }
+
+  /**
+   * A refund's net and tax are non-negative, its gross is positive and equals net plus tax, and all
+   * three share one currency.
+   */
+  private static boolean carriesRefundAmounts(AccountingQueueRequest request) {
+    Amount net = request.netAmount();
+    Amount tax = request.taxAmount();
+    Amount gross = request.grossAmount();
+    if (net == null || tax == null || gross == null) {
+      return false;
+    }
+    if (!net.currency().equals(tax.currency()) || !net.currency().equals(gross.currency())) {
+      return false;
+    }
+    if (net.quantity() < 0 || tax.quantity() < 0 || gross.quantity() <= 0) {
+      return false;
+    }
+    try {
+      return Math.addExact(net.quantity(), tax.quantity()) == gross.quantity();
+    } catch (ArithmeticException overflow) {
+      return false;
     }
   }
 

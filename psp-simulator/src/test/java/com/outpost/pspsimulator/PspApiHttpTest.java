@@ -90,7 +90,10 @@ class PspApiHttpTest {
         .thenReturn(new RefundService.RefundResult("psp-refund-1", true));
     String body =
         """
-        {"psp_reference":"psp-1","refund_reference":"refund-1"}
+        {"psp_reference":"psp-1","payment_reference":"payment-1","refund_reference":"refund-1",
+         "amount":1250,"currency":"EUR",
+         "refund_lines":[{"order_line_reference":"line-1","tax_rate":"0.25",
+         "net_amount":1000,"gross_amount":1250}]}
         """;
     mvc.perform(
             post("/v1/DEMO_PSP/refund")

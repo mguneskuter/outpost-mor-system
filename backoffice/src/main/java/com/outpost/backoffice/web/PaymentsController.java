@@ -9,6 +9,7 @@ import com.outpost.backoffice.gateway.GatewayClient;
 import com.outpost.backoffice.gateway.GatewayException;
 import com.outpost.backoffice.merchant.Merchant;
 import com.outpost.backoffice.merchant.MerchantRepository;
+import com.outpost.backoffice.payment.OrderLine;
 import com.outpost.backoffice.payment.Payment;
 import com.outpost.backoffice.payment.PaymentEvent;
 import com.outpost.backoffice.payment.PaymentJournalLine;
@@ -217,8 +218,12 @@ public class PaymentsController {
               line.quantity() < 0 ? -line.quantity() : 0),
           RegisterMovement::plus);
     }
+    List<OrderLineRow> orderLines =
+        payments.findOrderLines(orderReference).stream().map(OrderLineRow::of).toList();
     model.addAttribute("tab", "payments");
     model.addAttribute("payment", PaymentRow.of(payment));
+    model.addAttribute("orderLines", orderLines);
+    model.addAttribute("hasOpenLines", orderLines.stream().anyMatch(line -> !line.refunded()));
     model.addAttribute(
         "events", payments.findPaymentEvents(orderReference).stream().map(EventRow::of).toList());
     model.addAttribute("lines", lines.stream().map(LineRow::of).toList());
@@ -228,30 +233,65 @@ public class PaymentsController {
     return "payment";
   }
 
-  /** Refunds the whole order at its PSP. */
+  /**
+   * Refunds the named order lines at the PSP, or every line not yet refunded when none is named;
+   * {@code origin=payment} returns to the payment's page instead of the list.
+   */
   @PostMapping("/payments/{orderReference}/refund")
   public String refund(
       @PathVariable String orderReference,
       @RequestParam String merchant,
+      @RequestParam(required = false) @Nullable List<String> lines,
+      @RequestParam(required = false) @Nullable String origin,
       RedirectAttributes redirect) {
+    String target = "payment".equals(origin) ? "/payments/" + orderReference : "/payments";
     redirect.addAttribute("merchant", merchant);
     MerchantCredentials credentials = properties.merchants().get(merchant);
     if (credentials == null) {
-      return failed(redirect, "no credentials configured for " + merchant);
+      return failed(redirect, target, "no credentials configured for " + merchant);
     }
     try {
       String refundReference =
-          gateway.refund(credentials, orderReference, "refund-" + UUID.randomUUID());
+          gateway.refund(
+              credentials,
+              orderReference,
+              "refund-" + UUID.randomUUID(),
+              lines == null ? List.of() : lines);
       redirect.addFlashAttribute("message", "refund accepted: " + refundReference);
     } catch (GatewayException refused) {
-      return failed(redirect, "refund refused: " + refused.describe());
+      return failed(redirect, target, "refund refused: " + refused.describe());
     }
-    return "redirect:/payments";
+    return "redirect:" + target;
   }
 
   private static String failed(RedirectAttributes redirect, String error) {
+    return failed(redirect, "/payments", error);
+  }
+
+  private static String failed(RedirectAttributes redirect, String target, String error) {
     redirect.addFlashAttribute("error", error);
-    return "redirect:/payments";
+    return "redirect:" + target;
+  }
+
+  /** One order line as the breakdown shows it, with whether it can still be refunded. */
+  public record OrderLineRow(
+      String orderLineReference,
+      String merchantLineReference,
+      String productType,
+      String net,
+      String tax,
+      String taxRate,
+      boolean refunded) {
+    static OrderLineRow of(OrderLine line) {
+      return new OrderLineRow(
+          line.orderLineReference(),
+          line.merchantLineReference(),
+          line.productType(),
+          Money.format(line.netAmount()),
+          Money.format(line.taxAmount()),
+          line.taxRate().toPlainString(),
+          line.refunded());
+    }
   }
 
   /** One booked event as the breakdown shows it. */

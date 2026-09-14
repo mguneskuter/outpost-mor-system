@@ -67,7 +67,7 @@ class AccountingQueueProcessorTest {
             yield captureService;
           }
           case REFUND -> {
-            verify(refundService).bookRefund("order-1", "refund-1");
+            verify(refundService).bookRefund("order-1", "refund-1", eur(4_000), eur(800));
             yield refundService;
           }
         };
@@ -121,6 +121,7 @@ class AccountingQueueProcessorTest {
   private static AccountingQueueRequest request(
       AccountingQueueRequestTypes type, @Nullable Boolean success) {
     boolean orderCreated = type == AccountingQueueRequestTypes.ORDER_CREATED;
+    boolean refund = type == AccountingQueueRequestTypes.REFUND;
     return new AccountingQueueRequest(
         type,
         "order-1",
@@ -128,13 +129,13 @@ class AccountingQueueProcessorTest {
         "DEMO_PSP",
         "41",
         orderCreated ? null : success,
-        type == AccountingQueueRequestTypes.REFUND ? "refund-1" : null,
+        refund ? "refund-1" : null,
         orderCreated ? "DEMO_MERCHANT" : null,
         orderCreated ? Countries.GERMANY.getValue() : null,
         null,
-        orderCreated ? eur(10_000) : null,
-        orderCreated ? eur(2_000) : null,
-        orderCreated ? eur(12_000) : null);
+        orderCreated ? eur(10_000) : refund ? eur(4_000) : null,
+        orderCreated ? eur(2_000) : refund ? eur(800) : null,
+        orderCreated ? eur(12_000) : refund ? eur(4_800) : null);
   }
 
   private static Amount eur(long quantity) {

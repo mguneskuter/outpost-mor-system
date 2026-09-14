@@ -10,6 +10,8 @@ public enum PspWebhookResults {
   UNKNOWN_ORDER,
   /** The event's PSP reference is not the one stored for the order, or none is stored. */
   PSP_REFERENCE_MISMATCH,
+  /** No stored refund of the event's order has the event's refund reference. */
+  UNKNOWN_REFUND,
   /** The event matches its order, but the accounting queue holds its capacity. */
   QUEUE_FULL
 }

@@ -14,7 +14,8 @@ public enum BookingErrorCodes {
   CAPTURE_CONFLICT,
   INVALID_CAPTURE,
   NOT_CAPTURED,
-  ALREADY_REFUNDED,
+  /** The payment's refunds would exceed its captured net, tax, or gross. */
+  REFUND_EXCEEDS_CAPTURE,
   /** Stored accounting data does not fit the booking; the cause names what disagreed. */
   INCONSISTENT_BOOKING
 }

@@ -110,9 +110,13 @@ public final class GatewayErrorAdvice {
   private static HttpStatus status(OrderModificationErrorCodes code) {
     return switch (code) {
       case MERCHANT_REQUIRED -> HttpStatus.FORBIDDEN;
-      case UNSUPPORTED_MODIFICATION_TYPE -> HttpStatus.BAD_REQUEST;
-      case ORDER_NOT_FOUND -> HttpStatus.NOT_FOUND;
-      case ORDER_NOT_PAID -> HttpStatus.CONFLICT;
+      case UNSUPPORTED_MODIFICATION_TYPE,
+          ORDER_NOT_FOUND,
+          ORDER_LINE_NOT_FOUND,
+          DUPLICATE_ORDER_LINE_REFERENCE ->
+          HttpStatus.BAD_REQUEST;
+      case ORDER_NOT_PAID, ORDER_LINE_ALREADY_REFUNDED, ORDER_ALREADY_REFUNDED ->
+          HttpStatus.CONFLICT;
       case REFUND_REJECTED -> HttpStatus.UNPROCESSABLE_ENTITY;
       case PSP_RETRYABLE -> HttpStatus.SERVICE_UNAVAILABLE;
     };

@@ -60,7 +60,8 @@ public class PspApiController {
   }
 
   /**
-   * Refunds a captured order in full, echoing the caller's refund reference on the REFUND webhook.
+   * Acknowledges a refund of a captured order; the REFUND webhook reports whether it was refunded,
+   * echoing the caller's refund reference and lines.
    */
   @PostMapping("/refund")
   public ResponseEntity<RefundResponse> refund(
